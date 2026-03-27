@@ -1,0 +1,124 @@
+"""
+pipeline.block_builder
+
+Convert Deepgram JSON into structured Block objects.
+This is the foundation of the block-based transcript pipeline.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, List
+
+from spec_engine.models import Block, Word
+from spec_engine.speaker_resolver import normalize_speaker_id
+
+
+def build_blocks_from_deepgram(deepgram_json: Dict[str, Any]) -> List[Block]:
+    """
+    Convert Deepgram utterances into structured blocks.
+
+    If utterances are missing, fall back to a single transcript block so the
+    caller gets a clear, structured object instead of a silent empty pipeline.
+    """
+    utterances = deepgram_json.get("utterances") or []
+    blocks: List[Block] = []
+
+    for utterance in utterances:
+        transcript = (utterance.get("transcript") or "").strip()
+        if not transcript:
+            continue
+        blocks.append(
+            Block(
+                raw_text=utterance.get("transcript", ""),
+                text=transcript,
+                speaker_id=normalize_speaker_id(utterance.get("speaker", 0)),
+                words=[
+                    Word(
+                        text=w.get("word", "") or "",
+                        start=w.get("start"),
+                        end=w.get("end"),
+                        confidence=w.get("confidence"),
+                        speaker=w.get("speaker"),
+                    )
+                    for w in (utterance.get("words") or [])
+                    if (w.get("word") or "").strip()
+                ],
+                meta={
+                    "start": utterance.get("start"),
+                    "end": utterance.get("end"),
+                    "confidence": utterance.get("confidence"),
+                },
+            )
+        )
+
+    if blocks:
+        return blocks
+
+    transcript_text = (deepgram_json.get("transcript") or "").strip()
+    if transcript_text:
+        return [
+            Block(
+                raw_text=transcript_text,
+                text=transcript_text,
+                speaker_id=None,
+                meta={"source": "transcript_fallback"},
+            )
+        ]
+
+    raise ValueError("Deepgram returned no utterances and no transcript text.")
+
+
+_TEXT_ABBREV_RE = re.compile(
+    r'\b(Dr|Mr|Mrs|Ms|Jr|Sr|vs|No|Vol|Dept|Corp|Inc|Ltd|P\.C|PLLC)\.$',
+    re.IGNORECASE,
+)
+_TEXT_SPLIT_RE = re.compile(r'(?<=[.?!])\s+(?=[A-Z])')
+
+
+def build_blocks_from_text(raw_text: str) -> List[Block]:
+    """
+    Recover a minimal block stream from plain transcript text.
+    This is a pipeline fallback, not a UI concern.
+    """
+    stripped = (raw_text or "").strip()
+    if not stripped:
+        raise ValueError("No transcript text provided.")
+
+    parts = _TEXT_SPLIT_RE.split(stripped)
+    blocks: List[Block] = []
+    buffer = ""
+
+    for part in parts:
+        if buffer and _TEXT_ABBREV_RE.search(buffer.rstrip()):
+            buffer = (buffer + " " + part).strip()
+            continue
+        if buffer:
+            blocks.append(
+                Block(
+                    raw_text=buffer,
+                    text=buffer,
+                    speaker_id=None,
+                    meta={"source": "sentence_split_fallback"},
+                )
+            )
+        buffer = part.strip()
+
+    if buffer:
+        blocks.append(
+            Block(
+                raw_text=buffer,
+                text=buffer,
+                speaker_id=None,
+                meta={"source": "sentence_split_fallback"},
+            )
+        )
+
+    return blocks or [
+        Block(
+            raw_text=stripped,
+            text=stripped,
+            speaker_id=None,
+            meta={"source": "sentence_split_fallback"},
+        )
+    ]

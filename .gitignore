@@ -1,0 +1,13 @@
+﻿.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+temp/
+logs/
+output/
+work_files/transcripts/
+*.log
+.pytest_cache/
+.idea/
+.claude/

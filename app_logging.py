@@ -1,0 +1,120 @@
+import logging
+import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+MAX_BYTES = 5 * 1024 * 1024
+BACKUP_COUNT = 3
+
+RESET = "\033[0m"
+RED = "\033[91m"
+YELLOW = "\033[93m"
+GREEN = "\033[92m"
+GRAY = "\033[90m"
+
+LEVEL_COLORS = {
+    "DEBUG": GRAY,
+    "INFO": GREEN,
+    "WARNING": YELLOW,
+    "ERROR": RED,
+    "CRITICAL": RED,
+}
+
+
+class ColorFormatter(logging.Formatter):
+    FMT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+    DATEFMT = "%H:%M:%S"
+
+    def format(self, record):
+        color = LEVEL_COLORS.get(record.levelname, RESET)
+        return logging.Formatter(
+            f"{color}{self.FMT}{RESET}", datefmt=self.DATEFMT
+        ).format(record)
+
+
+class FileFormatter(logging.Formatter):
+    FMT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+    DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+    def __init__(self):
+        super().__init__(fmt=self.FMT, datefmt=self.DATEFMT)
+
+
+def _make_rotating_handler(filename: str, level: int) -> RotatingFileHandler:
+    LOG_DIR.mkdir(exist_ok=True)
+    h = RotatingFileHandler(
+        LOG_DIR / filename, maxBytes=MAX_BYTES,
+        backupCount=BACKUP_COUNT, encoding="utf-8")
+    h.setLevel(level)
+    h.setFormatter(FileFormatter())
+    return h
+
+
+def _make_console_handler(level: int) -> logging.StreamHandler:
+    h = logging.StreamHandler(sys.stdout)
+    h.setLevel(level)
+    h.setFormatter(ColorFormatter())
+    return h
+
+
+def _setup_root_logger():
+    root = logging.getLogger()
+    if root.handlers:
+        return
+    root.setLevel(logging.DEBUG)
+    root.addHandler(_make_console_handler(logging.WARNING))
+    root.addHandler(_make_rotating_handler("app.log", logging.INFO))
+    root.addHandler(_make_rotating_handler("errors.log", logging.ERROR))
+
+
+def get_logger(name: str) -> logging.Logger:
+    _setup_root_logger()
+    return logging.getLogger(name)
+
+
+def get_ai_logger() -> logging.Logger:
+    _setup_root_logger()
+    logger = logging.getLogger("ai")
+    if not any(
+        isinstance(h, RotatingFileHandler) and "ai.log" in str(h.baseFilename)
+        for h in logger.handlers
+    ):
+        logger.addHandler(_make_rotating_handler("ai.log", logging.DEBUG))
+        logger.propagate = True
+    return logger
+
+
+def get_format_logger() -> logging.Logger:
+    _setup_root_logger()
+    logger = logging.getLogger("formatting")
+    if not any(
+        isinstance(h, RotatingFileHandler)
+        and "formatting.log" in str(h.baseFilename)
+        for h in logger.handlers
+    ):
+        logger.addHandler(
+            _make_rotating_handler("formatting.log", logging.DEBUG))
+        logger.propagate = True
+    return logger
+
+
+def log_section(logger: logging.Logger, title: str):
+    bar = "-" * 60
+    logger.info(bar)
+    logger.info(f"  {title}")
+    logger.info(bar)
+
+
+def log_api_call(logger: logging.Logger, model: str, input_chars: int,
+                 output_chars: int, elapsed_ms: int, success: bool,
+                 error: str = ""):
+    status = "OK" if success else "FAIL"
+    msg = (f"API {status} | model={model} | "
+           f"in={input_chars:,}ch | out={output_chars:,}ch | {elapsed_ms}ms")
+    if error:
+        msg += f" | error={error[:120]}"
+    if success:
+        logger.info(msg)
+    else:
+        logger.error(msg)
