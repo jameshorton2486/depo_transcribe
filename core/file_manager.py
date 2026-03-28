@@ -5,8 +5,10 @@ Case folder path building, creation, and verification helpers.
 from __future__ import annotations
 
 import logging
+import json
 import os
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +19,8 @@ MONTH_ABBR = {
 }
 
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
+KEYTERMS_FILENAME = "keyterms.json"
+CONFIRMED_SPELLINGS_FILE = "confirmed_spellings.json"
 
 
 def build_case_path(
@@ -95,3 +99,113 @@ def resolve_or_create_case(
     )
     status = create_case_folders(case_path)
     return case_path, status
+
+
+def save_job_vocabulary(
+    case_folder: str,
+    intake_result: Any,
+    final_keyterms: list[str],
+    reporter_terms: list[str] | None = None,
+) -> str | None:
+    """
+    Save all vocabulary data to the case folder as keyterms.json.
+    """
+    if not case_folder or not os.path.isdir(case_folder):
+        logger.warning("[FileManager] Case folder not found: %s", case_folder)
+        return None
+
+    path = os.path.join(case_folder, KEYTERMS_FILENAME)
+    term_counts = {
+        "total": len(final_keyterms),
+        "reporter": len(reporter_terms or []),
+        "PERSON": 0,
+        "COMPANY": 0,
+        "LOCATION": 0,
+        "LEGAL": 0,
+        "TECHNICAL": 0,
+        "CUSTOM": 0,
+    }
+
+    vocabulary_terms: list[dict[str, str]] = []
+    if intake_result and getattr(intake_result, "vocabulary_terms", None):
+        for term in intake_result.vocabulary_terms:
+            vocabulary_terms.append(
+                {
+                    "term": term.term,
+                    "term_type": term.term_type,
+                    "field_name": term.field_name,
+                    "reason": term.reason,
+                }
+            )
+            if term.term_type in term_counts:
+                term_counts[term.term_type] += 1
+
+    case_info = {}
+    if intake_result:
+        case_info = {
+            "cause_number": intake_result.cause_number,
+            "case_style": intake_result.case_style,
+            "court": intake_result.court,
+            "deposition_date": intake_result.deposition_date,
+            "deposition_method": intake_result.deposition_method,
+            "plaintiffs": intake_result.plaintiffs,
+            "defendants": intake_result.defendants,
+            "deponents": intake_result.deponents,
+            "ordering_attorney": intake_result.ordering_attorney,
+            "copy_attorneys": intake_result.copy_attorneys,
+            "reporter_name": intake_result.reporter_name,
+            "reporter_csr": intake_result.reporter_csr,
+            "reporter_firm": intake_result.reporter_firm,
+            "reporter_address": intake_result.reporter_address,
+            "subpoena_duces_tecum": intake_result.subpoena_duces_tecum,
+            "signature_waived": intake_result.signature_waived,
+            "video_recorded": intake_result.video_recorded,
+        }
+
+    payload = {
+        "saved_at": datetime.now().isoformat(),
+        "case_info": case_info,
+        "vocabulary_terms": vocabulary_terms,
+        "final_keyterms": final_keyterms,
+        "reporter_terms": reporter_terms or [],
+        "confirmed_spellings": (
+            dict(getattr(intake_result, "confirmed_spellings", {}))
+            if intake_result else {}
+        ),
+        "term_counts": term_counts,
+    }
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
+        logger.info("[FileManager] Saved keyterms.json  %s terms  %s", len(final_keyterms), path)
+        return path
+    except Exception as exc:
+        logger.error("[FileManager] Failed to save keyterms.json: %s", exc)
+        return None
+
+
+def load_job_vocabulary(case_folder: str) -> dict | None:
+    """
+    Load keyterms.json from the case folder.
+    """
+    path = os.path.join(case_folder, KEYTERMS_FILENAME)
+    if not os.path.isfile(path):
+        logger.info("[FileManager] No keyterms.json found in: %s", case_folder)
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        logger.info(
+            "[FileManager] Loaded keyterms.json  %s terms",
+            len(data.get("final_keyterms", [])),
+        )
+        return data
+    except Exception as exc:
+        logger.error("[FileManager] Failed to load keyterms.json: %s", exc)
+        return None
+
+
+def get_keyterms_path(case_folder: str) -> str:
+    return os.path.join(case_folder, KEYTERMS_FILENAME)

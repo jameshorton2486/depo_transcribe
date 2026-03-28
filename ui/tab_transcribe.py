@@ -698,6 +698,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text: str = ""
         self._current_keyterms: list[str] | None = None
         self._confirmed_spellings: dict = {}
+        self._last_intake_result = None
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
 
@@ -1025,6 +1026,40 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._apply_save_btn.pack(fill="x", padx=12, pady=(8, 10))
 
+        ctk.CTkFrame(container, fg_color="transparent", height=8).pack()
+
+        self._create_transcript_btn = ctk.CTkButton(
+            container,
+            text=" CREATE TRANSCRIPT",
+            height=52,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color="#C8860A",
+            hover_color="#A06A08",
+            command=self._on_create_transcript,
+        )
+        self._create_transcript_btn.pack(fill="x", padx=16, pady=(4, 6))
+
+        bottom_row = ctk.CTkFrame(container, fg_color="transparent")
+        bottom_row.pack(fill="x", padx=16, pady=(0, 12))
+
+        self._bottom_open_folder_btn = ctk.CTkButton(
+            bottom_row,
+            text="Open Output Folder",
+            width=160,
+            state="disabled",
+            command=self._open_output_folder,
+        )
+        self._bottom_open_folder_btn.pack(side="left", padx=(0, 4))
+
+        self._bottom_open_transcript_btn = ctk.CTkButton(
+            bottom_row,
+            text="Open Transcript",
+            width=150,
+            state="disabled",
+            command=self._open_transcript,
+        )
+        self._bottom_open_transcript_btn.pack(side="left")
+
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -1080,6 +1115,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text = ""
         self._current_keyterms = None
         self._confirmed_spellings = {}
+        self._last_intake_result = None
         self._extracted_case_data = {}
         self._current_case_path = None
         self._last_transcript_path = None
@@ -1091,6 +1127,9 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
+        self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
+        self._bottom_open_folder_btn.configure(state="disabled")
+        self._bottom_open_transcript_btn.configure(state="disabled")
         self._upload_reporter_notes_btn.configure(
             text="+ Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
@@ -1119,10 +1158,43 @@ class TranscribeTab(ctk.CTkFrame):
         Only runs when the case folder exists on disk.
         """
         from core.pdf_extractor import find_case_pdf, find_reporter_notes
+        from core.file_manager import load_job_vocabulary
 
         base_path = self._get_current_save_path()
         if not base_path or not os.path.isdir(base_path):
             return
+
+        existing_vocab = load_job_vocabulary(base_path)
+        if existing_vocab and not self._pdf_already_loaded:
+            logger.info("[AutoDetect] Found existing keyterms.json  reloading.")
+            terms = existing_vocab.get("final_keyterms", [])
+            if terms:
+                self._keyterms_box.configure(state="normal")
+                self._keyterms_box.delete("1.0", "end")
+                self._keyterms_box.insert("1.0", "\n".join(terms))
+                self._keyterms_box.configure(state="disabled")
+                self._current_keyterms = list(terms)
+
+            self._confirmed_spellings = existing_vocab.get("confirmed_spellings", {})
+            case_info = existing_vocab.get("case_info", {})
+            if case_info.get("cause_number") and not self._cause_var.get().strip():
+                self._cause_var.set(case_info["cause_number"])
+            if not self._date_var.get().strip():
+                dep_date = case_info.get("deposition_date", "")
+                if dep_date:
+                    self._date_var.set(dep_date)
+
+            counts = existing_vocab.get("term_counts", {})
+            self._extract_status_label.configure(
+                text=(
+                    f"Reloaded {counts.get('total', len(terms))}/100 keyterms "
+                    f"from saved vocabulary  "
+                    f"(saved {existing_vocab.get('saved_at', '')[:10]})"
+                ),
+                text_color="#44AA66",
+            )
+            self._update_keyterms_count()
+            self._pdf_already_loaded = True
 
         if not self._pdf_already_loaded:
             pdf_path = find_case_pdf(str(base_path))
@@ -1264,6 +1336,13 @@ class TranscribeTab(ctk.CTkFrame):
             app.transcript_tab.load_transcript(self._last_transcript_path)
             app.tab_view.set("Transcript")
 
+    def _on_create_transcript(self):
+        """
+        Trigger transcription from the Transcribe tab and switch to Transcript.
+        """
+        self.winfo_toplevel().tab_view.set("Transcript")
+        self.start_transcription()
+
     def _handle_pdf_upload(self, pdf_path: str | None = None, auto_detected: bool = False):
         """Load one PDF and extract both case fields and keyterms."""
         filepath = pdf_path or filedialog.askopenfilename(
@@ -1291,6 +1370,8 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _apply_pdf_results(self, results: dict, auto_detected: bool = False):
         """Populate fields and keyterms from one PDF extraction result."""
+        from core.file_manager import save_job_vocabulary
+
         self._upload_pdf_btn.configure(
             state="normal",
             text="PDF Auto-Detected" if auto_detected else "+ Upload PDF",
@@ -1340,6 +1421,7 @@ class TranscribeTab(ctk.CTkFrame):
         if intake_result and intake_result.all_proper_nouns:
             from core.keyterm_extractor import merge_from_intake
 
+            self._last_intake_result = intake_result
             reporter_terms: list[str] = []
             if self._reporter_notes_text:
                 reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
@@ -1368,6 +1450,15 @@ class TranscribeTab(ctk.CTkFrame):
                 f"Prepared {len(final_keyterms)} keyterms from PDF"
                 + (f" + {reporter_count} reporter-note terms" if reporter_count else "")
             )
+            if self._current_case_path:
+                self._create_case_folders_now()
+                save_job_vocabulary(
+                    case_folder=self._current_case_path,
+                    intake_result=intake_result,
+                    final_keyterms=final_keyterms,
+                    reporter_terms=reporter_terms,
+                )
+                logger.info("[UI] Vocabulary saved to case folder: %s", self._current_case_path)
 
         sources = [cause_src, witness_src, date_src]
         filled = sum(1 for s in sources if s != "failed")
@@ -1427,6 +1518,8 @@ class TranscribeTab(ctk.CTkFrame):
 
     def start_transcription(self):
         """Public entry point called by TranscriptTab."""
+        from core.file_manager import load_job_vocabulary, save_job_vocabulary
+
         # Validate file
         if not self._selected_file or not os.path.isfile(self._selected_file):
             messagebox.showerror("No file selected", "Please select an audio or video file first.")
@@ -1475,11 +1568,24 @@ class TranscribeTab(ctk.CTkFrame):
             text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
         )
 
+        if self._current_case_path:
+            self._create_case_folders_now()
+            existing = load_job_vocabulary(self._current_case_path)
+            if not existing and self._last_intake_result:
+                save_job_vocabulary(
+                    case_folder=self._current_case_path,
+                    intake_result=self._last_intake_result,
+                    final_keyterms=final_keyterms,
+                )
+
         # Disable button
         self._running = True
         transcript_tab = self.winfo_toplevel().transcript_tab
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
+        self._create_transcript_btn.configure(state="disabled", text="Transcribing...")
+        self._bottom_open_folder_btn.configure(state="disabled")
+        self._bottom_open_transcript_btn.configure(state="disabled")
         transcript_tab._open_folder_btn.configure(state="disabled")
         transcript_tab._open_transcript_btn.configure(state="disabled")
         transcript_tab.set_transcription_running()
@@ -1538,6 +1644,9 @@ class TranscribeTab(ctk.CTkFrame):
             self._last_output_dir = result.get("output_dir", "")
             self._open_folder_btn.configure(state="normal")
             self._open_transcript_btn.configure(state="normal")
+            self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
+            self._bottom_open_folder_btn.configure(state="normal")
+            self._bottom_open_transcript_btn.configure(state="normal")
 
             # Show speaker labels section
             self._show_speaker_section()
@@ -1556,6 +1665,9 @@ class TranscribeTab(ctk.CTkFrame):
                 self._review_btn.configure(state="normal")
         else:
             error_msg = result.get("error", "Unknown error")
+            self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
+            self._bottom_open_folder_btn.configure(state="disabled")
+            self._bottom_open_transcript_btn.configure(state="disabled")
             transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
 
