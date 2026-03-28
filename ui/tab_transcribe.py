@@ -1054,6 +1054,17 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_transcript_btn.pack(side="left")
 
+        self._create_inline_btn = ctk.CTkButton(
+            kt_inner,
+            text="CREATE TRANSCRIPT",
+            height=38,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#B8860B",
+            hover_color="#9A7209",
+            command=self.start_transcription,
+        )
+        self._create_inline_btn.pack(fill="x", pady=(8, 0))
+
         # ── Fixed footer: CREATE TRANSCRIPT button ──────────────────────────
         footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
         footer.pack(fill="x", side="bottom", padx=10, pady=(4, 8))
@@ -1119,6 +1130,11 @@ class TranscribeTab(ctk.CTkFrame):
     def _set_transcript_status(self, text: str, color: str = "gray"):
         self.winfo_toplevel().transcript_tab.set_status(text, color)
 
+    def _set_create_buttons(self, state: str, text: str):
+        self._create_btn.configure(state=state, text=text)
+        if hasattr(self, "_create_inline_btn"):
+            self._create_inline_btn.configure(state=state, text=text)
+
     def _update_path_preview(self):
         """Update the live path preview label based on case info fields."""
         from core.file_manager import build_case_path
@@ -1170,7 +1186,7 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
-        self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
+        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
             text="+ Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
@@ -1189,7 +1205,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._load_path_entry.delete(0, "end")
             self._load_path_entry.configure(state="disabled")
         if self._correction_mode:
-            self._create_btn.configure(state="disabled", text="CORRECTION MODE — Transcription Disabled")
+            self._set_create_buttons(state="disabled", text="CORRECTION MODE — Transcription Disabled")
         logger.info("Case state reset.")
 
     def _force_rescan(self):
@@ -1530,7 +1546,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._load_action_frame.pack(fill="x", pady=(2, 0))
         self._clear_load_btn.configure(state="normal")
 
-        self._create_btn.configure(state="disabled", text="CORRECTION MODE — Transcription Disabled")
+        self._set_create_buttons(state="disabled", text="CORRECTION MODE — Transcription Disabled")
 
         self._current_case_path = os.path.dirname(deepgram_dir)
         self._update_path_preview()
@@ -1569,7 +1585,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._clear_load_btn.configure(state="disabled")
         self._review_loaded_btn.configure(state="disabled")
 
-        self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
+        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
 
         self._reset_case_state()
 
@@ -1857,7 +1873,7 @@ class TranscribeTab(ctk.CTkFrame):
         transcript_tab = self.winfo_toplevel().transcript_tab
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
-        self._create_btn.configure(state="disabled", text="Transcribing...")
+        self._set_create_buttons(state="disabled", text="Transcribing...")
         transcript_tab._open_folder_btn.configure(state="disabled")
         transcript_tab._open_transcript_btn.configure(state="disabled")
         transcript_tab.set_transcription_running()
@@ -1916,7 +1932,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._last_output_dir = result.get("output_dir", "")
             self._open_folder_btn.configure(state="normal")
             self._open_transcript_btn.configure(state="normal")
-            self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
+            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
 
             # Show speaker labels section
             self._show_speaker_section()
@@ -1935,7 +1951,7 @@ class TranscribeTab(ctk.CTkFrame):
                 self._review_btn.configure(state="normal")
         else:
             error_msg = result.get("error", "Unknown error")
-            self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
+            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
             transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
 
