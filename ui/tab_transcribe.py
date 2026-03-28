@@ -5,6 +5,7 @@ Main transcription UI — file picker, settings, case info, and keyterms.
 Includes IntakeReviewDialog for reviewing/editing AI-extracted case data.
 """
 
+import json
 import os
 import re
 import threading
@@ -315,8 +316,6 @@ class IntakeReviewDialog(ctk.CTkToplevel):
     # ── Save Changes ─────────────────────────────────────────────────────────
 
     def _save_changes(self):
-        import json as _json
-
         ufm = self._collect_ufm_fields()
 
         # Store on parent
@@ -347,7 +346,7 @@ class IntakeReviewDialog(ctk.CTkToplevel):
             ufm_path = Path(out_dir) / f"{cause}_{lname}_{stamp}_ufm_fields.json"
             try:
                 with open(ufm_path, "w", encoding="utf-8") as f:
-                    _json.dump(ufm, f, indent=2, ensure_ascii=False)
+                    json.dump(ufm, f, indent=2, ensure_ascii=False)
                 self._parent.winfo_toplevel().transcript_tab.append_log(
                     f"Saved UFM fields: {ufm_path.name}"
                 )
@@ -701,102 +700,214 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_intake_result = None
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
+        self._correction_mode: bool = False
+        self._loaded_transcript_path: str | None = None
+        self._loaded_case_folder: str | None = None
 
         self._build_ui()
 
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # Scrollable container for the whole tab
-        container = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True)
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=10, pady=(6, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
         file_card = ctk.CTkFrame(container)
-        file_card.pack(fill="x", pady=(0, 10))
-
-        ctk.CTkLabel(
-            file_card,
-            text="Audio / Video File",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w", padx=12, pady=(10, 0))
-
-        ctk.CTkLabel(
-            file_card,
-            text="MP3  \u00b7  MP4  \u00b7  WAV  \u00b7  M4A  \u00b7  MOV  \u00b7  AVI  \u00b7  MKV  \u00b7  FLAC",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-        ).pack(anchor="w", padx=12)
+        file_card.pack(fill="x", pady=(0, 6))
 
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_row.pack(fill="x", padx=12, pady=(6, 10))
+        file_row.pack(fill="x", padx=8, pady=6)
+
+        ctk.CTkLabel(
+            file_row,
+            text="Audio / Video File",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            width=130,
+            anchor="w",
+        ).pack(side="left")
 
         self._file_entry = ctk.CTkEntry(
-            file_row, placeholder_text="No file selected", state="disabled"
+            file_row,
+            placeholder_text="No file selected — MP3 · MP4 · WAV · M4A · MOV · MKV · FLAC",
+            state="disabled",
         )
-        self._file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._file_entry.pack(side="left", fill="x", expand=True, padx=(6, 8))
 
         ctk.CTkButton(
-            file_row, text="Browse\u2026", width=90, command=self._browse_file
+            file_row, text="Browse…", width=80, command=self._browse_file
+        ).pack(side="right")
+
+        # ── "or" separator ─────────────────────────────────────────────────
+        sep_row = ctk.CTkFrame(container, fg_color="transparent")
+        sep_row.pack(fill="x", pady=(0, 4))
+        ctk.CTkLabel(
+            sep_row,
+            text="───  or open an existing transcript to review / correct  ───",
+            font=ctk.CTkFont(size=10),
+            text_color="#445566",
+        ).pack()
+
+        # ── Load Existing Transcript card ──────────────────────────────────
+        self._load_card = ctk.CTkFrame(container, border_width=1, border_color="#1A3A4A")
+        self._load_card.pack(fill="x", pady=(0, 6))
+
+        load_inner = ctk.CTkFrame(self._load_card, fg_color="transparent")
+        load_inner.pack(fill="x", padx=8, pady=6)
+
+        load_hdr = ctk.CTkFrame(load_inner, fg_color="transparent")
+        load_hdr.pack(fill="x", pady=(0, 6))
+
+        ctk.CTkLabel(
+            load_hdr,
+            text="Load Existing Transcript",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#7DD8E8",
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            load_hdr,
+            text="Restore a prior case to review or correct",
+            font=ctk.CTkFont(size=10),
+            text_color="#445566",
+        ).pack(side="left", padx=(12, 0))
+
+        self._clear_load_btn = ctk.CTkButton(
+            load_hdr,
+            text="✕ Clear",
+            width=70,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#441A1A",
+            text_color="#CC4444",
+            hover_color="#2A0A0A",
+            state="disabled",
+            command=self._clear_correction_mode,
+        )
+        self._clear_load_btn.pack(side="right")
+
+        load_file_row = ctk.CTkFrame(load_inner, fg_color="transparent")
+        load_file_row.pack(fill="x", pady=(0, 4))
+
+        self._load_path_entry = ctk.CTkEntry(
+            load_file_row,
+            placeholder_text="Browse to a saved transcript .txt file…",
+            state="disabled",
+        )
+        self._load_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        self._load_browse_btn = ctk.CTkButton(
+            load_file_row,
+            text="Browse…",
+            width=80,
+            fg_color="#0F5A6A",
+            hover_color="#0A3A4A",
+            command=self._browse_existing_transcript,
+        )
+        self._load_browse_btn.pack(side="right")
+
+        self._load_meta_frame = ctk.CTkFrame(load_inner, fg_color="transparent")
+
+        self._load_meta_cause = ctk.CTkLabel(
+            self._load_meta_frame, text="", font=ctk.CTkFont(size=11), text_color="#4488CC"
+        )
+        self._load_meta_name = ctk.CTkLabel(
+            self._load_meta_frame, text="", font=ctk.CTkFont(size=11), text_color="#4488CC"
+        )
+        self._load_meta_date = ctk.CTkLabel(
+            self._load_meta_frame, text="", font=ctk.CTkFont(size=11), text_color="#4488CC"
+        )
+        self._load_meta_ufm = ctk.CTkLabel(
+            self._load_meta_frame, text="", font=ctk.CTkFont(size=11), text_color="#4488CC"
+        )
+
+        for lbl in (
+            self._load_meta_cause,
+            self._load_meta_name,
+            self._load_meta_date,
+            self._load_meta_ufm,
+        ):
+            lbl.pack(side="left", padx=(0, 16))
+
+        self._load_action_frame = ctk.CTkFrame(load_inner, fg_color="transparent")
+
+        self._open_loaded_btn = ctk.CTkButton(
+            self._load_action_frame,
+            text="Open in Transcript Tab →",
+            width=180,
+            fg_color="#0F5A6A",
+            hover_color="#0A3A4A",
+            command=self._open_loaded_transcript,
+        )
+        self._open_loaded_btn.pack(side="left")
+
+        self._review_loaded_btn = ctk.CTkButton(
+            self._load_action_frame,
+            text="☰ Review & Edit UFM",
+            width=150,
+            state="disabled",
+            command=self._open_review_dialog,
+        )
+        self._review_loaded_btn.pack(side="left", padx=(8, 0))
+
+        ctk.CTkLabel(
+            self._load_action_frame,
+            text="Transcription disabled in correction mode",
+            font=ctk.CTkFont(size=10),
+            text_color="#334455",
         ).pack(side="right")
 
         # ── SECTION 2: Settings Row ──────────────────────────────────────────
         settings_card = ctk.CTkFrame(container)
-        settings_card.pack(fill="x", pady=(0, 10))
+        settings_card.pack(fill="x", pady=(0, 6))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
-        settings_row.pack(fill="x", padx=12, pady=10)
-        settings_row.columnconfigure((0, 1), weight=1)
+        settings_row.pack(fill="x", padx=8, pady=6)
+        settings_row.columnconfigure(0, weight=0)
+        settings_row.columnconfigure(1, weight=1)
+        settings_row.columnconfigure(2, weight=0)
 
-        # LEFT — Model
-        model_frame = ctk.CTkFrame(settings_row, fg_color="transparent")
-        model_frame.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-
-        ctk.CTkLabel(model_frame, text="Model", font=ctk.CTkFont(weight="bold")).pack(
-            anchor="w"
-        )
+        model_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
+        model_inner.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        ctk.CTkLabel(model_inner, text="Model", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
         self._model_var = ctk.StringVar(value="nova-3")
         self._model_combo = ctk.CTkComboBox(
-            model_frame,
+            model_inner,
             values=["nova-3", "nova-3-medical"],
             variable=self._model_var,
             state="readonly",
+            width=150,
         )
-        self._model_combo.pack(fill="x", pady=(4, 0))
+        self._model_combo.pack(fill="x", pady=(2, 0))
 
-        ctk.CTkLabel(
-            model_frame,
-            text="Utterance Split (utt_split)",
-            font=ctk.CTkFont(weight="bold"),
-        ).pack(anchor="w", pady=(10, 0))
+        split_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
+        split_inner.grid(row=0, column=1, sticky="ew", padx=(0, 12))
+        split_hdr = ctk.CTkFrame(split_inner, fg_color="transparent")
+        split_hdr.pack(fill="x")
+        ctk.CTkLabel(split_hdr, text="Utterance Split", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left")
         self._utt_split_var = ctk.DoubleVar(value=1.2)
         self._utt_split_label = ctk.CTkLabel(
-            model_frame,
+            split_hdr,
             text="1.20",
             font=ctk.CTkFont(size=11),
             text_color="gray",
         )
-        utt_slider = ctk.CTkSlider(
-            model_frame,
+        self._utt_split_label.pack(side="right")
+        ctk.CTkSlider(
+            split_inner,
             from_=0.3,
             to=2.0,
             number_of_steps=17,
             variable=self._utt_split_var,
             command=lambda v: self._utt_split_label.configure(text=f"{float(v):.2f}"),
-        )
-        utt_slider.pack(fill="x", pady=(4, 0))
-        self._utt_split_label.pack(anchor="e")
+        ).pack(fill="x", pady=(4, 0))
 
-        # RIGHT — Audio Quality
-        quality_frame = ctk.CTkFrame(settings_row, fg_color="transparent")
-        quality_frame.grid(row=0, column=1, sticky="ew", padx=(8, 0))
-
-        ctk.CTkLabel(
-            quality_frame, text="Audio Quality", font=ctk.CTkFont(weight="bold")
-        ).pack(anchor="w")
+        quality_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
+        quality_inner.grid(row=0, column=2, sticky="ew")
+        ctk.CTkLabel(quality_inner, text="Audio Quality", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
         self._quality_var = ctk.StringVar(value="Clean (good/excellent audio)")
         self._quality_combo = ctk.CTkComboBox(
-            quality_frame,
+            quality_inner,
             values=[
                 "Clean (good/excellent audio)",
                 "Default (fair audio)",
@@ -804,196 +915,162 @@ class TranscribeTab(ctk.CTkFrame):
             ],
             variable=self._quality_var,
             state="readonly",
-            width=240,
+            width=210,
         )
-        self._quality_combo.pack(fill="x", pady=(4, 0))
+        self._quality_combo.pack(fill="x", pady=(2, 0))
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
-        case_card.pack(fill="x", pady=(0, 10))
+        case_card.pack(fill="x", pady=(0, 6))
 
-        case_header_row = ctk.CTkFrame(case_card, fg_color="transparent")
-        case_header_row.pack(fill="x", padx=12, pady=(10, 6))
+        case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
+        case_inner.pack(fill="x", padx=8, pady=(6, 4))
+        case_inner.columnconfigure((0, 1, 2, 3), weight=1)
 
-        ctk.CTkLabel(
-            case_header_row, text="Case Information",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(side="left")
-
-        case_grid = ctk.CTkFrame(case_card, fg_color="transparent")
-        case_grid.pack(fill="x", padx=12, pady=(0, 4))
-        case_grid.columnconfigure((0, 1), weight=1)
-
-        # Row 0 — Base Save Folder (full width)
-        base_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        base_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=2)
-
-        ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 6))
+        ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
         base_row = ctk.CTkFrame(base_frame, fg_color="transparent")
         base_row.pack(fill="x", pady=(2, 0))
-
         self._base_dir_var = ctk.StringVar(value=_DEFAULT_BASE_DIR)
         self._base_dir_entry = ctk.CTkEntry(base_row, textvariable=self._base_dir_var)
         self._base_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
         self._base_dir_var.trace_add("write", lambda *_: self._update_path_preview())
+        ctk.CTkButton(base_row, text="Browse…", width=80, command=self._browse_base_dir).pack(side="right")
 
-        ctk.CTkButton(
-            base_row, text="Browse\u2026", width=80, command=self._browse_base_dir
-        ).pack(side="right")
-
-        # Row 1 — Cause Number + Witness Last Name
-        cause_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=2)
-
-        cause_label_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
-        cause_label_row.pack(fill="x")
-        ctk.CTkLabel(cause_label_row, text="Cause Number", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        self._cause_badge = ctk.CTkLabel(cause_label_row, text="", font=ctk.CTkFont(size=10), width=0)
-        self._cause_badge.pack(side="left", padx=(6, 0))
-
+        cause_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
+        cause_lbl_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
+        cause_lbl_row.pack(fill="x")
+        ctk.CTkLabel(cause_lbl_row, text="Cause Number", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left")
+        self._cause_badge = ctk.CTkLabel(cause_lbl_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._cause_badge.pack(side="left", padx=(4, 0))
         self._cause_var = ctk.StringVar()
         ctk.CTkEntry(cause_frame, textvariable=self._cause_var, placeholder_text="e.g. 2025CI19595").pack(fill="x", pady=(2, 0))
         self._cause_var.trace_add("write", self._on_cause_changed)
 
-        name_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        name_frame.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=2)
-
-        name_label_row = ctk.CTkFrame(name_frame, fg_color="transparent")
-        name_label_row.pack(fill="x")
-        ctk.CTkLabel(name_label_row, text="Witness Last Name", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        self._witness_badge = ctk.CTkLabel(name_label_row, text="", font=ctk.CTkFont(size=10), width=0)
-        self._witness_badge.pack(side="left", padx=(6, 0))
-
+        name_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        name_frame.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=(0, 4))
+        name_lbl_row = ctk.CTkFrame(name_frame, fg_color="transparent")
+        name_lbl_row.pack(fill="x")
+        ctk.CTkLabel(name_lbl_row, text="Last Name", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left")
+        self._witness_badge = ctk.CTkLabel(name_lbl_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._witness_badge.pack(side="left", padx=(4, 0))
         self._lastname_var = ctk.StringVar()
         ctk.CTkEntry(name_frame, textvariable=self._lastname_var, placeholder_text="e.g. Coger").pack(fill="x", pady=(2, 0))
         self._lastname_var.trace_add("write", self._on_lastname_changed)
 
-        # Row 2 — Witness First Name + Deposition Date
-        first_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        first_frame.grid(row=2, column=0, sticky="ew", padx=(0, 8), pady=2)
-
-        ctk.CTkLabel(first_frame, text="Witness First Name", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        first_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        first_frame.grid(row=1, column=2, sticky="ew", padx=(0, 6), pady=(0, 4))
+        ctk.CTkLabel(first_frame, text="First Name", font=ctk.CTkFont(size=11, weight="bold")).pack(anchor="w")
         self._firstname_var = ctk.StringVar()
         ctk.CTkEntry(first_frame, textvariable=self._firstname_var, placeholder_text="e.g. Matthew").pack(fill="x", pady=(2, 0))
         self._firstname_var.trace_add("write", lambda *_: self._update_path_preview())
 
-        date_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        date_frame.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=2)
-
-        date_label_row = ctk.CTkFrame(date_frame, fg_color="transparent")
-        date_label_row.pack(fill="x")
-        ctk.CTkLabel(date_label_row, text="Deposition Date", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        self._date_badge = ctk.CTkLabel(date_label_row, text="", font=ctk.CTkFont(size=10), width=0)
-        self._date_badge.pack(side="left", padx=(6, 0))
-
-        self._date_var = ctk.StringVar(value=datetime.now().strftime("%m/%d/%Y"))
-        ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="MM/DD/YYYY").pack(fill="x", pady=(2, 0))
+        date_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        date_frame.grid(row=1, column=3, sticky="ew", pady=(0, 4))
+        date_lbl_row = ctk.CTkFrame(date_frame, fg_color="transparent")
+        date_lbl_row.pack(fill="x")
+        ctk.CTkLabel(date_lbl_row, text="Deposition Date", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left")
+        self._date_badge = ctk.CTkLabel(date_lbl_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._date_badge.pack(side="left", padx=(4, 0))
+        self._date_var = ctk.StringVar()
+        ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="From NOD PDF").pack(fill="x", pady=(2, 0))
         self._date_var.trace_add("write", lambda *_: self._update_path_preview())
 
-        # Extraction status label (shown during PDF extraction)
         self._extract_status_label = ctk.CTkLabel(
             case_card, text="", font=ctk.CTkFont(size=11),
-            text_color="gray", wraplength=900, anchor="w", justify="left",
+            text_color="gray", wraplength=860, anchor="w", justify="left",
         )
-        self._extract_status_label.pack(anchor="w", padx=12, pady=(0, 0))
+        self._extract_status_label.pack(anchor="w", padx=8, pady=(0, 0))
 
-        # Path preview
         self._path_preview_label = ctk.CTkLabel(
-            case_card, text="", font=ctk.CTkFont(size=11),
-            text_color="gray", wraplength=900, anchor="w", justify="left",
+            case_card, text="", font=ctk.CTkFont(size=10),
+            text_color="gray", wraplength=860, anchor="w",
         )
-        self._path_preview_label.pack(anchor="w", padx=12, pady=(4, 10))
+        self._path_preview_label.pack(anchor="w", padx=8, pady=(2, 6))
         self._update_path_preview()
 
         # ── SECTION 2c: Keyterms ─────────────────────────────────────────────
         keyterms_card = ctk.CTkFrame(container)
-        keyterms_card.pack(fill="x", pady=(0, 10))
+        keyterms_card.pack(fill="x", pady=(0, 6))
+
+        kt_inner = ctk.CTkFrame(keyterms_card, fg_color="transparent")
+        kt_inner.pack(fill="x", padx=8, pady=(6, 4))
+
+        kt_hdr = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        kt_hdr.pack(fill="x", pady=(0, 4))
 
         ctk.CTkLabel(
-            keyterms_card,
-            text="Keyterms (optional)",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).pack(anchor="w", padx=12, pady=(10, 0))
-
-        ctk.CTkLabel(
-            keyterms_card,
-            text=(
-                "Upload a PDF or Reporter Notes to extract keyterms.\n"
-                "Deepgram uses these to improve spelling accuracy during transcription."
-            ),
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            justify="left",
-        ).pack(anchor="w", padx=12, pady=(0, 6))
-
-        kt_btn_row = ctk.CTkFrame(keyterms_card, fg_color="transparent")
-        kt_btn_row.pack(fill="x", padx=12)
-
-        self._upload_pdf_btn = ctk.CTkButton(
-            kt_btn_row, text="+ Upload PDF", width=120,
-            command=self._handle_pdf_upload,
-        )
-        self._upload_pdf_btn.pack(side="left")
-
-        self._upload_reporter_notes_btn = ctk.CTkButton(
-            kt_btn_row,
-            text="+ Reporter Notes",
-            width=140,
-            command=self._upload_reporter_notes,
-        )
-        self._upload_reporter_notes_btn.pack(side="left", padx=(8, 0))
-
-        self._review_btn = ctk.CTkButton(
-            kt_btn_row,
-            text="\U0001f4cb Review & Edit",
-            width=150,
-            state="disabled",
-            command=self._open_review_dialog,
-        )
-
-        self._rescan_btn = ctk.CTkButton(
-            kt_btn_row,
-            text="\U0001f504 Re-Scan",
-            width=90,
-            command=self._force_rescan,
-        )
-
-        self._review_btn.pack(side="right", padx=(4, 0))
-        self._rescan_btn.pack(side="right", padx=(4, 0))
+            kt_hdr, text="Keyterms",
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
 
         self._keyterms_count_label = ctk.CTkLabel(
-            kt_btn_row, text=f"0/{MAX_KEYTERMS} keyterms", font=ctk.CTkFont(size=11),
-            text_color="gray",
+            kt_hdr, text=f"0/{MAX_KEYTERMS}",
+            font=ctk.CTkFont(size=11), text_color="gray",
         )
-        self._keyterms_count_label.pack(side="left", padx=(12, 0))
+        self._keyterms_count_label.pack(side="left", padx=(8, 0))
 
-        self._keyterms_box = ctk.CTkTextbox(keyterms_card, height=100)
-        self._keyterms_box.pack(fill="x", padx=12, pady=(6, 10))
+        self._review_btn = ctk.CTkButton(
+            kt_hdr, text="📋 Review & Edit", width=130, state="disabled",
+            command=self._open_review_dialog,
+        )
+        self._review_btn.pack(side="right", padx=(4, 0))
+
+        self._rescan_btn = ctk.CTkButton(
+            kt_hdr, text="🔄 Re-Scan", width=80, command=self._force_rescan,
+        )
+        self._rescan_btn.pack(side="right", padx=(4, 0))
+
+        self._upload_reporter_notes_btn = ctk.CTkButton(
+            kt_hdr, text="+ Reporter Notes", width=120,
+            command=self._upload_reporter_notes,
+        )
+        self._upload_reporter_notes_btn.pack(side="right", padx=(4, 0))
+
+        self._upload_pdf_btn = ctk.CTkButton(
+            kt_hdr, text="+ Upload PDF", width=100, command=self._handle_pdf_upload,
+        )
+        self._upload_pdf_btn.pack(side="right", padx=(4, 0))
+
+        self._keyterms_box = ctk.CTkTextbox(kt_inner, height=52)
+        self._keyterms_box.pack(fill="x", pady=(0, 4))
         self._keyterms_box.insert("1.0", "")
         self._keyterms_box.configure(state="disabled")
 
-        output_row = ctk.CTkFrame(keyterms_card, fg_color="transparent")
-        output_row.pack(fill="x", padx=12, pady=(0, 8))
+        output_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        output_row.pack(fill="x")
 
         self._open_folder_btn = ctk.CTkButton(
-            output_row,
-            text="Open Output Folder",
-            width=160,
-            state="disabled",
+            output_row, text="Open Output Folder", width=150, state="disabled",
             command=self._open_output_folder,
         )
         self._open_folder_btn.pack(side="left", padx=(0, 4))
 
         self._open_transcript_btn = ctk.CTkButton(
-            output_row,
-            text="Open Transcript",
-            width=150,
-            state="disabled",
+            output_row, text="Open Transcript", width=130, state="disabled",
             command=self._open_transcript,
         )
         self._open_transcript_btn.pack(side="left")
 
-        # ── SECTION 3: Speaker Labels (hidden until transcript completes) ────
+        # ── Fixed footer: CREATE TRANSCRIPT button ──────────────────────────
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
+        footer.pack(fill="x", side="bottom", padx=10, pady=(4, 8))
+        footer.pack_propagate(False)
+
+        self._create_btn = ctk.CTkButton(
+            footer,
+            text="CREATE TRANSCRIPT",
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#B8860B",
+            hover_color="#9A7209",
+            command=self.start_transcription,
+        )
+        self._create_btn.pack(fill="x")
+
+        # ── Speaker Labels (hidden until transcript completes) ──────────────
         self._speaker_card = ctk.CTkFrame(container)
         # Not packed yet — shown by _show_speaker_section() after transcription
 
@@ -1025,40 +1102,6 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._apply_and_save_labels,
         )
         self._apply_save_btn.pack(fill="x", padx=12, pady=(8, 10))
-
-        ctk.CTkFrame(container, fg_color="transparent", height=8).pack()
-
-        self._create_transcript_btn = ctk.CTkButton(
-            container,
-            text=" CREATE TRANSCRIPT",
-            height=52,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color="#C8860A",
-            hover_color="#A06A08",
-            command=self._on_create_transcript,
-        )
-        self._create_transcript_btn.pack(fill="x", padx=16, pady=(4, 6))
-
-        bottom_row = ctk.CTkFrame(container, fg_color="transparent")
-        bottom_row.pack(fill="x", padx=16, pady=(0, 12))
-
-        self._bottom_open_folder_btn = ctk.CTkButton(
-            bottom_row,
-            text="Open Output Folder",
-            width=160,
-            state="disabled",
-            command=self._open_output_folder,
-        )
-        self._bottom_open_folder_btn.pack(side="left", padx=(0, 4))
-
-        self._bottom_open_transcript_btn = ctk.CTkButton(
-            bottom_row,
-            text="Open Transcript",
-            width=150,
-            state="disabled",
-            command=self._open_transcript,
-        )
-        self._bottom_open_transcript_btn.pack(side="left")
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -1127,17 +1170,26 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
-        self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
-        self._bottom_open_folder_btn.configure(state="disabled")
-        self._bottom_open_transcript_btn.configure(state="disabled")
+        self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
             text="+ Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
         )
+        self._review_loaded_btn.configure(state="disabled")
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
         self._extract_status_label.configure(text="")
         self._update_keyterms_count()
+        if hasattr(self, "_load_meta_frame"):
+            self._load_meta_frame.pack_forget()
+        if hasattr(self, "_load_action_frame"):
+            self._load_action_frame.pack_forget()
+        if hasattr(self, "_load_path_entry"):
+            self._load_path_entry.configure(state="normal")
+            self._load_path_entry.delete(0, "end")
+            self._load_path_entry.configure(state="disabled")
+        if self._correction_mode:
+            self._create_btn.configure(state="disabled", text="CORRECTION MODE — Transcription Disabled")
         logger.info("Case state reset.")
 
     def _force_rescan(self):
@@ -1224,7 +1276,7 @@ class TranscribeTab(ctk.CTkFrame):
         raw = self._keyterms_box.get("1.0", "end").strip()
         count = len([line for line in raw.splitlines() if line.strip()])
         suffix = " + notes" if self._reporter_notes_text.strip() else ""
-        self._keyterms_count_label.configure(text=f"{count}/{MAX_KEYTERMS} keyterms{suffix}")
+        self._keyterms_count_label.configure(text=f"{count}/{MAX_KEYTERMS}{suffix}")
 
     def _append_keyterms(self, terms: list[str]):
         self._keyterms_box.configure(state="normal")
@@ -1235,8 +1287,57 @@ class TranscribeTab(ctk.CTkFrame):
         self._keyterms_box.configure(state="disabled")
         self._update_keyterms_count()
 
+    def _build_case_data_from_ufm_fields(self, ufm_fields: dict, witness_fallback: str = "") -> dict:
+        """Convert flat saved UFM fields back into the intake-shaped data the review dialog expects."""
+        case_data = {
+            "deposition_details": {
+                "cause_number": ufm_fields.get("cause_number", ""),
+                "witness": ufm_fields.get("witness_name", witness_fallback),
+                "date": ufm_fields.get("depo_date", ""),
+                "court": ufm_fields.get("court_type", ""),
+                "case_style": ufm_fields.get("case_style", ""),
+                "method": ufm_fields.get("depo_method", ""),
+                "county": ufm_fields.get("county", ""),
+                "state": ufm_fields.get("state", ""),
+                "ordered_by": ufm_fields.get("ordered_by", ""),
+                "location": ufm_fields.get("depo_location", ""),
+                "scheduled_time": ufm_fields.get("depo_time_start", ""),
+            },
+            "ordering_attorney": {
+                "firm": ufm_fields.get("ordering_firm", ""),
+            },
+            "copy_attorneys": list(ufm_fields.get("copy_attorneys", [])),
+            "all_attorneys": [],
+            "court_reporter": {
+                "name": ufm_fields.get("reporter_name", ""),
+                "csr_number": ufm_fields.get("csr_number", ""),
+                "agency": ufm_fields.get("reporter_agency", ""),
+            },
+            "discrepancies": list(ufm_fields.get("discrepancies", [])),
+        }
+
+        for role, key in (("plaintiff", "plaintiff_counsel"), ("defense", "defense_counsel")):
+            for atty in ufm_fields.get(key, []):
+                case_data["all_attorneys"].append({
+                    "name": atty.get("name", ""),
+                    "firm": atty.get("firm", ""),
+                    "bar_no": atty.get("sbot", ""),
+                    "address": atty.get("address", ""),
+                    "phone": atty.get("phone", ""),
+                    "email": atty.get("email", ""),
+                    "party_represented": atty.get("party", ""),
+                    "role": role,
+                })
+
+        return case_data
+
     def _populate_case_fields(self, data: dict):
         """Refresh main UI fields from extracted case data."""
+        if "deposition_details" not in data and any(
+            key in data for key in ("cause_number", "witness_name", "depo_date")
+        ):
+            data = self._build_case_data_from_ufm_fields(data)
+
         depo = data.get("deposition_details", {})
         if depo.get("cause_number"):
             self._cause_var.set(depo["cause_number"])
@@ -1254,6 +1355,8 @@ class TranscribeTab(ctk.CTkFrame):
     def _browse_file(self):
         path = filedialog.askopenfilename(filetypes=_AUDIO_VIDEO_EXTENSIONS)
         if path:
+            if self._correction_mode:
+                self._clear_correction_mode()
             self._reset_case_state()
             self._selected_file = path
             self._set_entry_text(self._file_entry, path)
@@ -1261,7 +1364,7 @@ class TranscribeTab(ctk.CTkFrame):
             self.after(300, self._auto_detect_source_docs)
 
     def _apply_filename_extraction(self, filepath: str):
-        """Parse the audio filename for date and witness name."""
+        """Parse the audio filename for witness name."""
         from core.pdf_extractor import extract_from_filename
 
         results = extract_from_filename(filepath)
@@ -1270,13 +1373,6 @@ class TranscribeTab(ctk.CTkFrame):
             "filename": ("\U0001f7e9 Filename", "#44AA66"),
             "failed":   ("\u26a0\ufe0f Manual", "#888888"),
         }
-
-        # Date
-        date_val, date_src = results.get("date", (None, "failed"))
-        if date_val:
-            self._date_var.set(date_val)
-            txt, col = _BADGE.get(date_src, _BADGE["failed"])
-            self._date_badge.configure(text=txt, text_color=col)
 
         # Witness Last Name
         witness_val, witness_src = results.get("witness_last", (None, "failed"))
@@ -1292,7 +1388,7 @@ class TranscribeTab(ctk.CTkFrame):
         # Cause number is never in filename — prompt PDF upload if empty
         if not self._cause_var.get().strip():
             self._extract_status_label.configure(
-                text="Cause number not in filename \u2014 upload a PDF notice or enter manually.",
+                text="Cause number and deposition date not in filename \u2014 upload the NOD PDF to extract them.",
                 text_color="#CCAA44",
             )
             self._cause_badge.configure(text="\u26a0\ufe0f Manual", text_color="#888888")
@@ -1335,6 +1431,149 @@ class TranscribeTab(ctk.CTkFrame):
             app = self.winfo_toplevel()
             app.transcript_tab.load_transcript(self._last_transcript_path)
             app.tab_view.set("Transcript")
+
+    # ── Load Existing Transcript ─────────────────────────────────────────────────
+
+    def _browse_existing_transcript(self):
+        """Open file dialog to select an existing transcript .txt file."""
+        filepath = filedialog.askopenfilename(
+            title="Select Existing Transcript",
+            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
+            initialdir=self._base_dir_var.get(),
+        )
+        if filepath:
+            self._load_existing_case(filepath)
+
+    def _load_existing_case(self, txt_path: str):
+        """
+        Restore a prior case from a saved transcript file.
+
+        Expected structure:
+            {base}\\{YYYY}\\{Mon}\\{CauseNumber}\\{last_first}\\Deepgram\\filename.txt
+        """
+        txt_path = os.path.normpath(txt_path)
+        parts = txt_path.split(os.sep)
+
+        cause_number = ""
+        witness_last = ""
+        witness_first = ""
+        depo_date = ""
+
+        try:
+            if len(parts) >= 6:
+                cause_number = parts[-4]
+                witness_folder = parts[-3]
+                name_parts = witness_folder.split("_")
+                if len(name_parts) >= 2:
+                    witness_last = name_parts[0].capitalize()
+                    witness_first = name_parts[1].capitalize()
+        except (IndexError, ValueError):
+            pass
+
+        deepgram_dir = os.path.dirname(txt_path)
+        ufm_fields_data = {}
+        ufm_files = [
+            f for f in os.listdir(deepgram_dir)
+            if f.endswith("_ufm_fields.json")
+        ] if os.path.isdir(deepgram_dir) else []
+
+        if ufm_files:
+            newest_ufm = max(ufm_files, key=lambda f: os.path.getmtime(os.path.join(deepgram_dir, f)))
+            try:
+                with open(os.path.join(deepgram_dir, newest_ufm), "r", encoding="utf-8") as fh:
+                    ufm_fields_data = json.load(fh)
+            except Exception:
+                pass
+
+        if ufm_fields_data.get("depo_date"):
+            depo_date = ufm_fields_data["depo_date"]
+
+        self._reset_case_state()
+
+        if cause_number:
+            self._cause_var.set(cause_number)
+            self._cause_badge.configure(text="🟦 From path", text_color="#4488CC")
+        if witness_last:
+            self._lastname_var.set(witness_last)
+            self._witness_badge.configure(text="🟦 From path", text_color="#4488CC")
+        if witness_first:
+            self._firstname_var.set(witness_first)
+        if depo_date:
+            self._date_var.set(depo_date)
+            self._date_badge.configure(text="🟦 UFM", text_color="#4488CC")
+
+        self._correction_mode = True
+        self._loaded_transcript_path = txt_path
+        self._loaded_case_folder = deepgram_dir
+        self._ufm_fields = ufm_fields_data
+
+        witness_display = f"{witness_first} {witness_last}".strip()
+        if ufm_fields_data:
+            self._extracted_case_data = self._build_case_data_from_ufm_fields(
+                ufm_fields_data,
+                witness_fallback=witness_display,
+            )
+            self._review_loaded_btn.configure(state="normal")
+
+        self._load_path_entry.configure(state="normal")
+        self._load_path_entry.delete(0, "end")
+        self._load_path_entry.insert(0, txt_path)
+        self._load_path_entry.configure(state="disabled")
+
+        self._load_meta_cause.configure(text=f"Cause: {cause_number or '—'}")
+        self._load_meta_name.configure(text=f"Witness: {witness_display or '—'}")
+        self._load_meta_date.configure(text=f"Date: {depo_date or '—'}")
+        self._load_meta_ufm.configure(
+            text=f"UFM: {len(ufm_fields_data)} fields" if ufm_fields_data else "UFM: not found"
+        )
+        self._load_meta_frame.pack(fill="x", pady=(0, 4))
+        self._load_action_frame.pack(fill="x", pady=(2, 0))
+        self._clear_load_btn.configure(state="normal")
+
+        self._create_btn.configure(state="disabled", text="CORRECTION MODE — Transcription Disabled")
+
+        self._current_case_path = os.path.dirname(deepgram_dir)
+        self._update_path_preview()
+
+        logger.info(
+            "[CorrectionMode] Loaded transcript: %s | cause=%s witness=%s %s",
+            txt_path, cause_number, witness_first, witness_last,
+        )
+
+    def _open_loaded_transcript(self):
+        """Switch to Transcript tab and load the existing transcript file."""
+        if not self._loaded_transcript_path:
+            return
+        app = self.winfo_toplevel()
+        app.transcript_tab.load_transcript(self._loaded_transcript_path)
+        if self._loaded_case_folder and os.path.isdir(self._loaded_case_folder):
+            app.transcript_tab._current_folder_path = self._loaded_case_folder
+            app.transcript_tab._open_folder_btn.configure(state="normal")
+        app.transcript_tab._open_transcript_btn.configure(state="normal")
+        app.transcript_tab.set_status("Correction mode — editing existing transcript", "#7DD8E8")
+        app.tab_view.set("Transcript")
+
+    def _clear_correction_mode(self):
+        """Exit correction mode and reset the load panel."""
+        self._correction_mode = False
+        self._loaded_transcript_path = None
+        self._loaded_case_folder = None
+
+        self._load_meta_frame.pack_forget()
+        self._load_action_frame.pack_forget()
+
+        self._load_path_entry.configure(state="normal")
+        self._load_path_entry.delete(0, "end")
+        self._load_path_entry.configure(state="disabled")
+
+        self._clear_load_btn.configure(state="disabled")
+        self._review_loaded_btn.configure(state="disabled")
+
+        self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
+
+        self._reset_case_state()
+
+        logger.info("[CorrectionMode] Cleared — returned to new transcription mode.")
 
     def _on_create_transcript(self):
         """
@@ -1412,12 +1651,39 @@ class TranscribeTab(ctk.CTkFrame):
 
         # Date
         date_val, date_src = results.get("date", (None, "failed"))
-        if date_val and self._date_var.get().strip() == datetime.now().strftime("%m/%d/%Y"):
+        if date_val and not self._date_var.get().strip():
             self._date_var.set(date_val)
-        txt, col = _BADGE.get(date_src, _BADGE["failed"])
-        self._date_badge.configure(text=txt, text_color=col)
+            txt, col = _BADGE.get(date_src, _BADGE["failed"])
+            self._date_badge.configure(text=txt, text_color=col)
+        elif date_val and self._date_var.get().strip():
+            txt, col = _BADGE.get(date_src, _BADGE["failed"])
+            self._date_badge.configure(text=txt, text_color=col)
 
         intake_result = results.get("intake_result")
+        if intake_result:
+            self._extracted_case_data = {
+                "deposition_details": {
+                    "cause_number": intake_result.cause_number or "",
+                    "witness": (
+                        f"{self._firstname_var.get().strip()} {self._lastname_var.get().strip()}".strip()
+                    ),
+                    "date": intake_result.deposition_date or "",
+                    "court": intake_result.court or "",
+                    "case_style": intake_result.case_style or "",
+                    "method": intake_result.deposition_method or "",
+                },
+                "ordering_attorney": dict(intake_result.ordering_attorney or {}),
+                "copy_attorneys": list(intake_result.copy_attorneys or []),
+                "all_attorneys": [],
+                "court_reporter": {
+                    "name": intake_result.reporter_name or "",
+                    "csr_number": intake_result.reporter_csr or "",
+                    "agency": intake_result.reporter_firm or "",
+                },
+                "discrepancies": [],
+            }
+            self._review_btn.configure(state="normal")
+
         if intake_result and intake_result.all_proper_nouns:
             from core.keyterm_extractor import merge_from_intake
 
@@ -1520,6 +1786,14 @@ class TranscribeTab(ctk.CTkFrame):
         """Public entry point called by TranscriptTab."""
         from core.file_manager import load_job_vocabulary, save_job_vocabulary
 
+        if self._correction_mode:
+            messagebox.showinfo(
+                "Correction Mode Active",
+                "A transcript is loaded for correction.\n"
+                "Click '✕ Clear' in the Load panel to start a new transcription.",
+            )
+            return
+
         # Validate file
         if not self._selected_file or not os.path.isfile(self._selected_file):
             messagebox.showerror("No file selected", "Please select an audio or video file first.")
@@ -1583,9 +1857,7 @@ class TranscribeTab(ctk.CTkFrame):
         transcript_tab = self.winfo_toplevel().transcript_tab
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
-        self._create_transcript_btn.configure(state="disabled", text="Transcribing...")
-        self._bottom_open_folder_btn.configure(state="disabled")
-        self._bottom_open_transcript_btn.configure(state="disabled")
+        self._create_btn.configure(state="disabled", text="Transcribing...")
         transcript_tab._open_folder_btn.configure(state="disabled")
         transcript_tab._open_transcript_btn.configure(state="disabled")
         transcript_tab.set_transcription_running()
@@ -1644,9 +1916,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._last_output_dir = result.get("output_dir", "")
             self._open_folder_btn.configure(state="normal")
             self._open_transcript_btn.configure(state="normal")
-            self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
-            self._bottom_open_folder_btn.configure(state="normal")
-            self._bottom_open_transcript_btn.configure(state="normal")
+            self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
 
             # Show speaker labels section
             self._show_speaker_section()
@@ -1665,9 +1935,7 @@ class TranscribeTab(ctk.CTkFrame):
                 self._review_btn.configure(state="normal")
         else:
             error_msg = result.get("error", "Unknown error")
-            self._create_transcript_btn.configure(state="normal", text=" CREATE TRANSCRIPT")
-            self._bottom_open_folder_btn.configure(state="disabled")
-            self._bottom_open_transcript_btn.configure(state="disabled")
+            self._create_btn.configure(state="normal", text="CREATE TRANSCRIPT")
             transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
 

@@ -53,12 +53,11 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
 
 def extract_from_filename(filename: str) -> dict:
     """
-    Parse audio filename for date and witness name.
+    Parse audio filename for witness name.
     Expected pattern: MM-DD-YY FirstName LastName ChunkNumber.ext
     e.g. '03-24-26 Matthew Coger 01_1.wav'
     """
     import os
-    from dateutil import parser as dateparser
 
     name = os.path.splitext(os.path.basename(filename))[0]
 
@@ -79,15 +78,9 @@ def extract_from_filename(filename: str) -> dict:
 
     if match:
         raw_date, first_name, last_name = match.groups()
-
-        # Parse date — 03-24-26 -> 03/24/2026
-        try:
-            parsed_date = dateparser.parse(raw_date)
-            if parsed_date:
-                results["date"] = (parsed_date.strftime("%m/%d/%Y"), "filename")
-        except (ValueError, OverflowError):
-            pass
-
+        # NOTE: raw_date is intentionally not parsed into results["date"].
+        # Deposition date must come from the uploaded NOD/PDF, never from
+        # the audio filename.
         results["witness_first"] = (first_name, "filename")
         results["witness_last"] = (last_name, "filename")
 
