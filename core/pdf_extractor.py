@@ -265,67 +265,57 @@ def extract_case_info_from_pdf(
     progress_callback=None,
 ) -> dict[str, Any]:
     """
-    Run the full hybrid extraction pipeline on a PDF.
-
-    Returns:
-        {
-            "cause_number": (value_or_None, "regex"|"ai"|"failed"),
-            "witness_last": (value_or_None, "regex"|"ai"|"failed"),
-            "date":         (value_or_None, "regex"|"ai"|"failed"),
-            "keyterms":     [str],
-            "scanned":      False,
-        }
+    Hybrid extraction pipeline.
+    Step 1: Regex for cause number, witness name, date.
+    Step 2: parse_intake_document() for full structured extraction.
     """
+    from core.intake_parser import parse_intake_document
 
-    def _log(msg: str):
-        logger.info(msg)
+    def log(msg: str):
         if progress_callback:
             progress_callback(msg)
+        logger.info(msg)
 
-    _log(f"Extracting text from {os.path.basename(filepath)}...")
+    log(f"[PDFExtractor] Processing: {filepath}")
     text = extract_pdf_text(filepath)
-
-    # Check for scanned/unreadable PDF
     if len(text) < 50:
-        _log("PDF appears to be scanned or unreadable (< 50 chars extracted)")
-        return {
-            "cause_number": (None, "failed"),
-            "witness_last": (None, "failed"),
-            "date": (None, "failed"),
-            "keyterms": [],
-            "scanned": True,
-        }
+        log("[PDFExtractor] Scanned PDF  cannot extract.")
+        return {"scanned": True}
 
-    # Step 2: regex extraction
-    _log("Running regex extraction...")
-    results: dict[str, tuple[str | None, str]] = {
-        "cause_number": extract_cause_number(text),
-        "witness_last": extract_witness_name(text),
-        "date": extract_date(text),
+    cause = extract_cause_number(text)
+    witness = extract_witness_name(text)
+    date = extract_date(text)
+    witness_first: tuple[str | None, str] = (None, "failed")
+
+    intake_result = parse_intake_document(filepath, progress_callback)
+    if intake_result:
+        if cause[1] == "failed" and intake_result.cause_number:
+            cause = (intake_result.cause_number, "ai")
+
+        if witness[1] == "failed":
+            for deponent in intake_result.deponents:
+                name_parts = str(deponent.get("name", "")).split()
+                if len(name_parts) >= 2:
+                    witness = (name_parts[-1], "ai")
+                    witness_first = (name_parts[0], "ai")
+                    break
+
+        if date[1] == "failed" and intake_result.deposition_date:
+            try:
+                from dateutil import parser as dp
+
+                parsed_dt = dp.parse(intake_result.deposition_date)
+                date = (parsed_dt.strftime("%m/%d/%Y"), "ai")
+            except Exception:
+                pass
+
+    return {
+        "cause_number": cause,
+        "witness_last": witness,
+        "witness_first": witness_first,
+        "date": date,
+        "keyterms": intake_result.all_proper_nouns if intake_result else [],
+        "confirmed_spellings": intake_result.confirmed_spellings if intake_result else {},
+        "intake_result": intake_result,
+        "scanned": False,
     }
-
-    # Log regex results
-    for field, (val, src) in results.items():
-        _log(f"  {field}: {val!r} ({src})")
-
-    # Check which fields failed
-    missing = [k for k, (v, s) in results.items() if s == "failed"]
-
-    if missing:
-        _log(f"Regex missed {len(missing)} field(s): {missing} — calling Claude API...")
-        ai_results = ai_extract_fields(text, missing)
-
-        for field in missing:
-            ai_val = ai_results.get(field)
-            if ai_val:
-                results[field] = (str(ai_val), "ai")
-                _log(f"  {field}: {ai_val!r} (ai)")
-            else:
-                _log(f"  {field}: not found (ai also failed)")
-    else:
-        _log("All fields extracted via regex.")
-
-    _log("Extracting intake keyterms...")
-    results["keyterms"] = _extract_keyterms_from_pdf_text(text, progress_callback)
-    results["scanned"] = False
-    return results

@@ -3,7 +3,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from core.intake_parser import _strip_markdown_fences, filter_keyterms
+from core.intake_parser import (
+    STANDARD_LEGAL_SPELLINGS,
+    _strip_markdown_fences,
+    filter_keyterms,
+    hard_filter_keyterms,
+)
 
 
 def test_filter_removes_noise_words():
@@ -66,3 +71,47 @@ def test_strip_markdown_fences_removes_json_fence():
 def test_strip_markdown_fences_leaves_plain_text():
     raw = "{\"causeNumber\": null}"
     assert _strip_markdown_fences(raw) == raw
+
+
+def test_filter_removes_single_caps_words():
+    assert "ORAL" not in hard_filter_keyterms(["ORAL", "CAUSE", "Matthew Coger"])
+
+
+def test_filter_keeps_multi_word_all_caps():
+    result = hard_filter_keyterms(["SUBPOENA DUCES TECUM"])
+    assert "SUBPOENA DUCES TECUM" in result
+
+
+def test_filter_caps_at_60():
+    raw = [f"Name Person {i}" for i in range(80)]
+    assert len(hard_filter_keyterms(raw)) <= 60
+
+
+def test_hard_filter_removes_noise_words():
+    noisy = ["court", "texas", "plaintiff", "defendant", "March"]
+    assert hard_filter_keyterms(noisy) == []
+
+
+def test_hard_filter_deduplicates():
+    raw = ["Matthew Coger", "matthew coger", "MATTHEW COGER"]
+    assert len(hard_filter_keyterms(raw)) == 1
+
+
+def test_hard_filter_removes_pure_numbers():
+    assert hard_filter_keyterms(["12345", "78230"]) == []
+
+
+def test_hard_filter_min_length_4():
+    assert hard_filter_keyterms(["SA", "LLC", "TX"]) == []
+
+
+def test_standard_spellings_contains_objection():
+    assert STANDARD_LEGAL_SPELLINGS["Infection"] == "Objection."
+
+
+def test_standard_spellings_contains_pass_witness():
+    assert "Past witness" in STANDARD_LEGAL_SPELLINGS
+
+
+def test_standard_spellings_contains_leading():
+    assert STANDARD_LEGAL_SPELLINGS["Bleeding"] == "Leading."

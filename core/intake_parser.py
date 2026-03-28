@@ -1,5 +1,5 @@
 """
-AI-assisted intake document parsing for case metadata and high-value keyterms.
+AI-assisted intake parsing with typed results and conservative keyterm filtering.
 """
 
 from __future__ import annotations
@@ -7,151 +7,250 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from app_logging import get_logger
 
 logger = get_logger(__name__)
 
-INTAKE_KEYTERM_LIMIT = 60
-
-NOISE_WORDS = {
-    "court", "texas", "plaintiff", "defendant", "notice", "deposition",
-    "attorney", "firm", "march", "july", "february", "january", "april",
-    "this", "your", "with", "please", "take", "pursuant", "telephone",
-    "facsimile", "witness", "produce", "case", "appearance", "delivery",
-    "signature", "parking", "interpreter", "original", "standard",
-    "certificate", "district", "intention", "oral", "cause", "county",
-    "austin", "bexar", "will", "david", "kathie", "love", "wright",
-    "greenhill", "pllc", "william", "ordered", "odered", "deponent",
-    "location", "date", "pages", "exhibit", "format", "rush", "due",
-    "copy", "color", "video", "special", "instructions", "conference",
-    "room", "trans", "hard", "notary", "public", "rules", "civil",
-    "procedure", "respectfully", "submitted", "read", "sign", "start",
-    "end", "time",
+VALID_TERM_TYPES = {
+    "PERSON",
+    "COMPANY",
+    "LOCATION",
+    "LEGAL",
+    "TECHNICAL",
+    "CUSTOM",
 }
 
-_SYSTEM_PROMPT = """
+
+@dataclass
+class VocabularyTerm:
+    term: str
+    term_type: str
+    field_name: str
+    reason: str
+
+
+@dataclass
+class IntakeParsedResult:
+    cause_number: Optional[str]
+    court: Optional[str]
+    case_style: Optional[str]
+    deposition_date: Optional[str]
+    deposition_method: Optional[str]
+    subpoena_duces_tecum: bool
+    read_and_sign: bool
+    signature_waived: bool
+    video_recorded: bool
+    plaintiffs: list[str]
+    defendants: list[str]
+    deponents: list[dict]
+    ordering_attorney: dict
+    copy_attorneys: list[dict]
+    reporter_name: Optional[str]
+    reporter_csr: Optional[str]
+    reporter_firm: Optional[str]
+    reporter_address: Optional[str]
+    vocabulary_terms: list[VocabularyTerm]
+    all_proper_nouns: list[str]
+    confirmed_spellings: dict[str, str]
+    term_count: int
+    parse_method: str
+
+
+STANDARD_LEGAL_SPELLINGS: dict[str, str] = {
+    "Injection form": "Objection.  Form.",
+    "Infection": "Objection.",
+    "Protection": "Objection.",
+    "Perfection": "Objection.",
+    "Detection": "Objection.",
+    "Eviction": "Objection.",
+    "Definition": "Objection.",
+    "Direction form": "Objection.  Form.",
+    "Bleeding": "Leading.",
+    "Leaving": "Leading.",
+    "Warm, leading": "Leading.",
+    "Former leaving": "Form and leading.",
+    "Form and leaving": "Form and leading.",
+    "Form and legal": "Form and leading.",
+    "Past witness": "Pass the witness.",
+    "Pastor witness": "Pass the witness.",
+    "so many sorts": "solemnly swear to",
+    "remotes wearing": "remote swearing of",
+    "mister": "Mr.",
+    "miss ": "Miss ",
+    "Elma": "Elmo",
+    "any exerts": "any exhibits",
+    "cop number": "Cause Number",
+    "cost number": "Cause Number",
+}
+
+INTAKE_PARSER_SYSTEM_PROMPT = """
 You are a legal transcript intake parser for a Texas court reporting firm.
+Your job is to extract structured data and vocabulary keyterms from a
+court reporting intake sheet and/or Notice of Deposition PDF.
 
-Your job is to extract structured case data and a clean vocabulary list
-from a Notice of Deposition or court reporting intake sheet.
+You must be highly selective. The output feeds Deepgram Nova-3 (100-term
+hard cap) and a transcript formatter substitution pipeline. Garbage terms
+waste cap slots and degrade transcription accuracy.
 
-Your output feeds directly into two downstream systems:
-  1. Deepgram Nova-3 keyterms (hard cap: 100 terms total, 60 from intake)
-  2. A transcript formatter substitution map
 
-Low-quality terms waste cap slots and degrade transcription accuracy.
-Be conservative. When in doubt, leave it out.
+WHAT TO INCLUDE  qualify each term against ALL criteria
 
-INCLUDE terms that meet ALL of these criteria:
+Include a term ONLY if ALL of the following are true:
+  1. It is a proper noun, specialized phrase, or technical term
+     that a speech-to-text model is likely to mishear or misspell.
+  2. It has at least two words OR is a single proper noun of 5+
+     characters not in a standard dictionary.
+  3. A court reporter who has not read the case file would benefit
+     from having this term boosted in the transcript.
 
-  1. It is a proper noun or specialized term Deepgram is likely
-     to mishear or misspell.
-  2. It is not a standalone common English word.
-  3. It cannot be reconstructed correctly from general knowledge.
+VALID term_type categories:
+  PERSON     Full names (first + last minimum). Include a short form
+              ONLY if phonetically distinct from the full form.
+  COMPANY    Full legal entity names including suffix
+              (PLLC, P.C., LLC, Inc., LLP, LC).
+  LOCATION   Full addresses as phrases (never fragments).
+              City + state. County + state. Named incident sites.
+  LEGAL      Multi-word legal phrases specific to this case type.
+              e.g. "Subpoena Duces Tecum", "slip and fall",
+              "dangerous condition", "premises liability".
+  TECHNICAL  Product names, equipment, Bates prefixes, exhibit
+              labels, document section headings, case-specific
+              identifiers referenced in testimony.
+  CUSTOM     Cause numbers, incident identifiers, exhibit numbers
+              (e.g. "Exhibit 17", "Murphy 095") that appear verbatim.
 
-Valid categories:
-   Full personal names (first + last minimum)
-   Company and law firm names (full legal name)
-   Full street addresses (as a phrase, never as fragments)
-   City + state combinations
-   Cause numbers and court designations
-   Case style in short form (Plaintiff v. Defendant)
-   Trade names and legal product names
-   Specialized legal or technical phrases (3+ words)
 
-EXCLUDE never include any of the following:
+WHAT TO EXCLUDE  always excluded without exception
 
-   Standalone common words:
+NEVER include:
+  - Single common English words even if capitalized:
     Court, Texas, Plaintiff, Defendant, Notice, Deposition,
-    Attorney, Firm, Witness, Case, Appearance, Delivery,
-    Signature, Parking, Interpreter, Certificate, District,
-    Intention, Oral, Cause, County, Bexar, Austin, March,
-    July, February, This, Your, With, Please, Take, Pursuant,
-    Telephone, Facsimile, Produce, Original, Standard
+    Attorney, Firm, March, July, February, January, This,
+    Your, With, Please, Take, Pursuant, Telephone, Facsimile,
+    Witness, Produce, Case, Appearance, Delivery, Signature,
+    Parking, Interpreter, Original, Standard, Certificate,
+    District, Intention, Oral, Cause, County, Austin, Bexar,
+    Will, David, Kathie, Love, Wright, Greenhill, PLLC, William.
+  - Intake form labels and field headers:
+    "Ordered by", "Read & Sign", "Start Time", "End Time",
+    "Special Instructions", "Conference Room", "Trans Rush Due",
+    "Hard Copy", "E-Trans", "BW", "Color", "Pages",
+    "Exhibit Count", "Deponent", "Location", "Date",
+    "Video/Med/Tech", "Appearance", "CNA", "Odered".
+  - Address or name fragments where a complete form is included:
+    Do not include "Wright" if "Wright and Greenhill P.C." exists.
+    Do not include "George Rd" if the full address is included.
+    Do not include "Allan" if "William N. Allan IV" is included.
+  - OCR typos  correct them first, then evaluate.
+    "Mathew"  correct to "Matthew" then include as full name.
+    "Odered"  discard entirely.
+  - Duplicates of any term already in a more complete form.
+  - Any term you cannot justify with a single confident reason.
 
-   Form field labels:
-    Ordered By, Read & Sign, Start Time, End Time,
-    Special Instructions, Conference Room, Trans Rush Due,
-    Hard Copy, E-Trans, BW, Color, Pages, Exhibit Count,
-    Deponent, Location, Date, Video, Format
 
-   Address fragments without a full address context:
-    "George Rd" alone, "Mueller Blvd" alone,
-    "Cherry Ridge" alone, "Greenhill" alone
+DEDUPLICATION RULES
 
-   Name fragments:
-    "Wright" alone, "David" alone, "Kathie" alone,
-    "Love" alone, "Allan" alone, "William" alone, "PLLC" alone
+  - Prefer the most complete, correctly spelled version.
+  - Include a short name form only if phonetically distinct.
+  - Do not include firm name without legal suffix if full form exists.
+  - Correct spelling silently before including.
+  - all_proper_nouns must be deduplicated  no term appears twice.
+  - all_proper_nouns must not exceed 60 entries.
 
-   OCR artifacts and misspellings; correct them first,
-    then evaluate whether the corrected form qualifies.
-    Example: "Odered" discard. "Mathew" correct to
-    "Matthew Coger" and include as the full name.
 
-DEDUPLICATION RULES:
+CONFIRMED SPELLINGS
 
-   Always prefer the longest, most complete version of a name.
-   If "Will Allan Law Firm PLLC" is included, do not also
-    include "Will Allan Firm", "Will Allan", or "PLLC".
-   If a full address is included, do not also include the
-    street name fragment.
-   Short-form names are only acceptable if they are
-    phonetically distinct from the full form AND are likely
-    to appear spoken that way in the transcript.
-   Always correct spelling before including.
-    "Mathew" to "Matthew". Include corrected form only.
+Generate a confirmed_spellings map of likely Deepgram mishearings
+ correct forms based on the names and entities you extract.
+Standard patterns to cover:
+  - Name variants: "Will Allen"  "Will Allan"
+  - Company garbles: "Murphy USAA"  "Murphy USA"
+  - Product mishearings: case-specific product names
+  - Counsel name garbles based on phonetics of extracted names
 
-OUTPUT FORMAT:
 
-Return ONLY valid JSON. No preamble, no explanation, no markdown fences.
+OUTPUT FORMAT
+
+Return ONLY valid JSON. No preamble, no markdown, no explanation.
 
 {
-  "causeNumber": "string | null",
-  "court": "string | null",
-  "caseStyle": "string | null",
-  "depositionDate": "string | null",
-  "deponents": [
-    { "name": "string", "role": "string" }
-  ],
+  "cause_number": "string or null",
+  "court": "string or null",
+  "case_style": "string or null",
+  "deposition_date": "string or null",
+  "deposition_method": "In Person | Via Zoom | Via Teams | null",
+  "subpoena_duces_tecum": true | false,
+  "read_and_sign": true | false,
+  "signature_waived": true | false,
+  "video_recorded": true | false,
   "plaintiffs": ["string"],
   "defendants": ["string"],
-  "orderingAttorney": {
-    "name": "string",
-    "firm": "string",
-    "address": "string",
-    "phone": "string",
-    "email": "string"
+  "deponents": [{"name": "string", "role": "string"}],
+  "ordering_attorney": {
+    "name": "string or null",
+    "firm": "string or null",
+    "address": "string or null",
+    "phone": "string or null",
+    "email": "string or null"
   },
-  "copyAttorneys": [
+  "copy_attorneys": [{
+    "name": "string or null",
+    "firm": "string or null",
+    "address": "string or null",
+    "email": "string or null"
+  }],
+  "reporter_name": "string or null",
+  "reporter_csr": "string or null",
+  "reporter_firm": "string or null",
+  "reporter_address": "string or null",
+  "vocabulary_terms": [
     {
-      "name": "string",
-      "firm": "string",
-      "address": "string",
-      "email": "string"
+      "term": "exact string to send to Deepgram",
+      "term_type": "PERSON|COMPANY|LOCATION|LEGAL|TECHNICAL|CUSTOM",
+      "field_name": "internal label e.g. plaintiff_counsel[0].name",
+      "reason": "one sentence explaining why Deepgram needs this boosted"
     }
   ],
-  "keyterms": [
-    {
-      "term": "string",
-      "term_type": "PERSON | COMPANY | LOCATION | LEGAL | TECHNICAL | CUSTOM",
-      "reason": "One sentence justifying why this term qualifies."
-    }
-  ],
-  "allProperNouns": ["string"]
+  "all_proper_nouns": ["flat deduplicated array of term strings  max 60"],
+  "confirmed_spellings": {
+    "deepgram_wrong_form": "correct_form"
+  }
 }
 
-FIELD NOTES:
-   "reason" is for internal logging only, never shown to the user.
-    Its purpose is to force self-justification and prevent noise
-    terms from being included without a valid rationale.
-   "allProperNouns" is a flat deduplicated list of term strings only.
-    Maximum 60 entries. The remaining 40 slots under Nova-3's 100-term
-    cap are reserved for firm-level and court-reporter vocabulary.
-   "keyterms" and "allProperNouns" must be consistent; every term
-    in "allProperNouns" must also appear in "keyterms".
+The reason field is internal logging only  never shown to users.
+It forces careful justification of each term included.
 """.strip()
+
+
+def INTAKE_PARSER_USER_PROMPT(text: str) -> str:
+    return (
+        "Parse the following court reporting intake document.\n"
+        "Apply all extraction and exclusion rules strictly.\n"
+        "Be conservative  when in doubt, leave it out.\n\n"
+        f"{text}"
+    )
+
+
+NOISE_WORDS = {
+    "court", "texas", "plaintiff", "defendant", "notice",
+    "deposition", "attorney", "firm", "march", "july",
+    "february", "january", "april", "may", "june", "august",
+    "september", "october", "november", "december", "this",
+    "your", "with", "please", "take", "pursuant", "telephone",
+    "facsimile", "witness", "produce", "case", "appearance",
+    "delivery", "signature", "parking", "interpreter",
+    "original", "standard", "certificate", "district",
+    "intention", "oral", "cause", "county", "austin", "bexar",
+    "will", "david", "kathie", "love", "wright", "greenhill",
+    "pllc", "william", "ordered", "odered", "deponent",
+    "location", "date", "pages", "exhibit", "format", "rush",
+    "due", "copy", "color", "video", "special", "instructions",
+    "conference", "room", "trans", "hard", "notary", "public",
+    "rules", "civil", "procedure", "respectfully", "submitted",
+}
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -162,41 +261,28 @@ def _strip_markdown_fences(text: str) -> str:
     return cleaned.strip()
 
 
-def _empty_result() -> dict[str, Any]:
-    return {
-        "causeNumber": None,
-        "court": None,
-        "caseStyle": None,
-        "depositionDate": None,
-        "deponents": [],
-        "plaintiffs": [],
-        "defendants": [],
-        "orderingAttorney": {
-            "name": "",
-            "firm": "",
-            "address": "",
-            "phone": "",
-            "email": "",
-        },
-        "copyAttorneys": [],
-        "keyterms": [],
-        "allProperNouns": [],
-    }
-
-
-def filter_keyterms(raw: list[str]) -> list[str]:
+def hard_filter_keyterms(raw: list[str]) -> list[str]:
+    """
+    Post-AI safety filter. Runs on all_proper_nouns before storing to job
+    config or sending to Deepgram. Cap: 60 terms.
+    """
     seen: set[str] = set()
     result: list[str] = []
 
     for term in raw:
         t = " ".join((term or "").strip().split())
-        if len(t) <= 3:
+        if len(t) < 4:
+            continue
+        words = t.split()
+        has_alpha = any(ch.isalpha() for ch in t)
+        has_digit = any(ch.isdigit() for ch in t)
+        if len(words) == 1 and not (t[0].isupper() or (has_alpha and has_digit)):
+            continue
+        if t.lower() in NOISE_WORDS:
             continue
         if t.isdigit():
             continue
-        if " " not in t and not (t[0].isupper() or re.search(r"[A-Za-z]", t)):
-            continue
-        if t.lower() in NOISE_WORDS:
+        if t.isupper() and len(words) == 1 and has_alpha and not has_digit:
             continue
         key = t.lower()
         if key in seen:
@@ -204,70 +290,164 @@ def filter_keyterms(raw: list[str]) -> list[str]:
         seen.add(key)
         result.append(t)
 
-    return result[:INTAKE_KEYTERM_LIMIT]
+    return result[:60]
 
 
-def _normalise_ai_result(data: dict[str, Any]) -> dict[str, Any]:
-    result = _empty_result()
-    result.update({k: v for k, v in data.items() if k in result})
+def filter_keyterms(raw: list[str]) -> list[str]:
+    """Backward-compatible alias for older pure-function tests/callers."""
+    return hard_filter_keyterms(raw)
 
-    raw_keyterms = data.get("keyterms", []) or []
-    kept_terms = filter_keyterms(
-        [item.get("term", "") for item in raw_keyterms if isinstance(item, dict)]
-    )[:INTAKE_KEYTERM_LIMIT]
-    kept_lookup = {term.lower() for term in kept_terms}
 
-    result["keyterms"] = [
-        {
-            "term": item.get("term", "").strip(),
-            "term_type": item.get("term_type", "CUSTOM"),
-            "reason": item.get("reason", "").strip(),
-        }
-        for item in raw_keyterms
-        if isinstance(item, dict)
-        and item.get("term", "").strip().lower() in kept_lookup
-    ]
+def _coerce_str(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
-    # Reorder keyterms to match the filtered flat list.
-    by_term = {item["term"].lower(): item for item in result["keyterms"]}
-    result["keyterms"] = [by_term[term.lower()] for term in kept_terms if term.lower() in by_term]
-    result["allProperNouns"] = kept_terms
+
+def _coerce_list_of_str(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _coerce_list_of_dict(value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _coerce_dict(value: Any) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _build_vocabulary_terms(data: dict[str, Any], filtered_terms: list[str]) -> list[VocabularyTerm]:
+    filtered_lookup = {term.lower() for term in filtered_terms}
+    result: list[VocabularyTerm] = []
+
+    for item in data.get("vocabulary_terms", []):
+        if not isinstance(item, dict):
+            continue
+        term = " ".join(str(item.get("term", "")).split()).strip()
+        if not term or term.lower() not in filtered_lookup:
+            continue
+        term_type = str(item.get("term_type", "CUSTOM")).strip() or "CUSTOM"
+        if term_type not in VALID_TERM_TYPES:
+            term_type = "CUSTOM"
+        result.append(
+            VocabularyTerm(
+                term=term,
+                term_type=term_type,
+                field_name=str(item.get("field_name", "")).strip(),
+                reason=str(item.get("reason", "")).strip(),
+            )
+        )
+
     return result
 
 
-def parse_intake_document(text: str) -> dict[str, Any]:
+def parse_intake_document(
+    filepath: str,
+    progress_callback=None,
+) -> IntakeParsedResult | None:
     """
-    Parse intake text with Anthropic and return a filtered structured result.
+    Main entry point. Accepts a PDF filepath and returns a typed parse result.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY is not set.")
 
+    def log(msg: str):
+        if progress_callback:
+            progress_callback(msg)
+        logger.info(msg)
+
+    log(f"[IntakeParser] Reading PDF: {filepath}")
+    try:
+        import pdfplumber
+
+        text = ""
+        with pdfplumber.open(filepath) as pdf:
+            for page in pdf.pages[:5]:
+                text += page.extract_text() or ""
+        text = text.strip()
+    except Exception as exc:
+        logger.error("[IntakeParser] PDF read failed: %s", exc)
+        return None
+
+    if len(text) < 50:
+        log("[IntakeParser] PDF appears to be scanned  AI extraction skipped.")
+        return None
+
+    log("[IntakeParser] Calling Claude API for intelligent extraction...")
     try:
         import anthropic
-    except ImportError as exc:
-        raise ImportError("anthropic is not installed.") from exc
 
-    prompt = (
-        "Parse the following intake document and return the structured JSON "
-        "described above. Be conservative; when in doubt about whether a "
-        "term qualifies, leave it out.\n\n"
-        f"{text[:16000]}"
-    )
+        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=INTAKE_PARSER_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": INTAKE_PARSER_USER_PROMPT(text[:8000]),
+            }],
+        )
+        raw_json = _strip_markdown_fences(message.content[0].text.strip())
+    except Exception as exc:
+        logger.error("[IntakeParser] Claude API call failed: %s", exc)
+        return None
 
-    client = anthropic.Anthropic(api_key=api_key)
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2400,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        logger.error("[IntakeParser] JSON parse failed: %s", exc)
+        logger.debug("[IntakeParser] Raw response: %s", raw_json[:500])
+        return None
+
+    raw_terms = data.get("all_proper_nouns", [])
+    filtered_terms = hard_filter_keyterms(raw_terms if isinstance(raw_terms, list) else [])
+    log(
+        f"[IntakeParser] Terms: {len(raw_terms) if isinstance(raw_terms, list) else 0} raw  "
+        f"{len(filtered_terms)} after filter"
     )
-    response_text = _strip_markdown_fences(message.content[0].text)
-    payload = json.loads(response_text)
-    result = _normalise_ai_result(payload)
-    logger.info(
-        "Intake parse complete cause=%s keyterms=%s",
-        result.get("causeNumber"),
-        len(result.get("allProperNouns", [])),
+    if len(filtered_terms) > 40:
+        logger.warning(
+            "[IntakeParser] %s terms  approaching 60-term intake cap",
+            len(filtered_terms),
+        )
+
+    vocabulary_terms = _build_vocabulary_terms(data, filtered_terms)
+    ai_spellings = _coerce_dict(data.get("confirmed_spellings"))
+    final_spellings = {
+        **STANDARD_LEGAL_SPELLINGS,
+        **{str(k): str(v) for k, v in ai_spellings.items()},
+    }
+
+    result = IntakeParsedResult(
+        cause_number=_coerce_str(data.get("cause_number")),
+        court=_coerce_str(data.get("court")),
+        case_style=_coerce_str(data.get("case_style")),
+        deposition_date=_coerce_str(data.get("deposition_date")),
+        deposition_method=_coerce_str(data.get("deposition_method")),
+        subpoena_duces_tecum=bool(data.get("subpoena_duces_tecum", False)),
+        read_and_sign=bool(data.get("read_and_sign", False)),
+        signature_waived=bool(data.get("signature_waived", False)),
+        video_recorded=bool(data.get("video_recorded", False)),
+        plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
+        defendants=_coerce_list_of_str(data.get("defendants")),
+        deponents=_coerce_list_of_dict(data.get("deponents")),
+        ordering_attorney=_coerce_dict(data.get("ordering_attorney")),
+        copy_attorneys=_coerce_list_of_dict(data.get("copy_attorneys")),
+        reporter_name=_coerce_str(data.get("reporter_name")),
+        reporter_csr=_coerce_str(data.get("reporter_csr")),
+        reporter_firm=_coerce_str(data.get("reporter_firm")),
+        reporter_address=_coerce_str(data.get("reporter_address")),
+        vocabulary_terms=vocabulary_terms,
+        all_proper_nouns=filtered_terms,
+        confirmed_spellings=final_spellings,
+        term_count=len(filtered_terms),
+        parse_method="ai",
+    )
+    log(
+        f"[IntakeParser] Complete  {len(filtered_terms)} keyterms, "
+        f"{len(final_spellings)} spelling corrections"
     )
     return result

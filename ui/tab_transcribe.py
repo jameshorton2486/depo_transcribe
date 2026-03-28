@@ -1,14 +1,12 @@
 """
 ui/tab_transcribe.py
 
-Main transcription UI — file picker, settings, keyterms, progress, buttons, preview.
+Main transcription UI — file picker, settings, case info, and keyterms.
 Includes IntakeReviewDialog for reviewing/editing AI-extracted case data.
 """
 
 import os
 import re
-import subprocess
-import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -350,22 +348,24 @@ class IntakeReviewDialog(ctk.CTkToplevel):
             try:
                 with open(ufm_path, "w", encoding="utf-8") as f:
                     _json.dump(ufm, f, indent=2, ensure_ascii=False)
-                self._parent._append_log(f"Saved UFM fields: {ufm_path.name}")
+                self._parent.winfo_toplevel().transcript_tab.append_log(
+                    f"Saved UFM fields: {ufm_path.name}"
+                )
             except Exception as exc:
-                self._parent._append_log(f"Warning: could not save UFM fields: {exc}")
+                self._parent.winfo_toplevel().transcript_tab.append_log(
+                    f"Warning: could not save UFM fields: {exc}"
+                )
 
         self.destroy()
 
         # Brief green status
-        self._parent._status_label.configure(
+        self._parent.winfo_toplevel().transcript_tab.set_status(
             text="UFM fields saved \u2014 ready for transcript generation",
-            text_color="#44FF44",
+            color="#44FF44",
         )
         self._parent.after(
             3000,
-            lambda: self._parent._status_label.configure(
-                text="Ready", text_color="gray"
-            ),
+            lambda: self._parent.winfo_toplevel().transcript_tab.set_status("Ready", "gray"),
         )
 
     # ── Helper: gather flat rows for export ──────────────────────────────────
@@ -697,6 +697,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._ufm_fields: dict = {}
         self._reporter_notes_text: str = ""
         self._current_keyterms: list[str] | None = None
+        self._confirmed_spellings: dict = {}
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
 
@@ -970,77 +971,28 @@ class TranscribeTab(ctk.CTkFrame):
         self._keyterms_box.insert("1.0", "")
         self._keyterms_box.configure(state="disabled")
 
-        # ── SECTION 3: Progress Area ─────────────────────────────────────────
-        progress_card = ctk.CTkFrame(container)
-        progress_card.pack(fill="x", pady=(0, 10))
-
-        self._progress_bar = ctk.CTkProgressBar(progress_card)
-        self._progress_bar.pack(fill="x", padx=12, pady=(10, 4))
-        self._progress_bar.set(0)
-
-        self._status_label = ctk.CTkLabel(
-            progress_card,
-            text="Ready",
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
-        )
-        self._status_label.pack(anchor="w", padx=12)
-
-        self._log_box = ctk.CTkTextbox(
-            progress_card, height=120, state="disabled", fg_color="#1a1a2e"
-        )
-        self._log_box.pack(fill="x", padx=12, pady=(4, 10))
-
-        # ── SECTION 4: Buttons ───────────────────────────────────────────────
-        button_card = ctk.CTkFrame(container, fg_color="transparent")
-        button_card.pack(fill="x", pady=(0, 10))
-
-        self._start_btn = ctk.CTkButton(
-            button_card,
-            text="\u25b6  CREATE TRANSCRIPT",
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color="#B8860B",
-            hover_color="#9A7209",
-            height=44,
-            command=self._on_start,
-        )
-        self._start_btn.pack(fill="x", padx=12, pady=(0, 6))
-
-        secondary_row = ctk.CTkFrame(button_card, fg_color="transparent")
-        secondary_row.pack(fill="x", padx=12)
+        output_row = ctk.CTkFrame(keyterms_card, fg_color="transparent")
+        output_row.pack(fill="x", padx=12, pady=(0, 8))
 
         self._open_folder_btn = ctk.CTkButton(
-            secondary_row,
+            output_row,
             text="Open Output Folder",
+            width=160,
             state="disabled",
             command=self._open_output_folder,
         )
-        self._open_folder_btn.pack(side="left", padx=(0, 8))
+        self._open_folder_btn.pack(side="left", padx=(0, 4))
 
-        self._open_file_btn = ctk.CTkButton(
-            secondary_row,
+        self._open_transcript_btn = ctk.CTkButton(
+            output_row,
             text="Open Transcript",
+            width=150,
             state="disabled",
             command=self._open_transcript,
         )
-        self._open_file_btn.pack(side="left")
+        self._open_transcript_btn.pack(side="left")
 
-        # ── SECTION 5: Transcript Preview ────────────────────────────────────
-        preview_card = ctk.CTkFrame(container)
-        preview_card.pack(fill="x", pady=(0, 10))
-
-        ctk.CTkLabel(
-            preview_card,
-            text="TRANSCRIPT PREVIEW",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).pack(anchor="w", padx=12, pady=(10, 4))
-
-        self._preview_box = ctk.CTkTextbox(
-            preview_card, height=200, state="disabled"
-        )
-        self._preview_box.pack(fill="x", padx=12, pady=(0, 10))
-
-        # ── SECTION 6: Speaker Labels (hidden until transcript completes) ────
+        # ── SECTION 3: Speaker Labels (hidden until transcript completes) ────
         self._speaker_card = ctk.CTkFrame(container)
         # Not packed yet — shown by _show_speaker_section() after transcription
 
@@ -1083,11 +1035,11 @@ class TranscribeTab(ctk.CTkFrame):
         entry.insert(0, text)
         entry.configure(state="disabled")
 
-    def _append_log(self, msg: str):
-        self._log_box.configure(state="normal")
-        self._log_box.insert("end", msg + "\n")
-        self._log_box.see("end")
-        self._log_box.configure(state="disabled")
+    def _append_transcript_log(self, msg: str):
+        self.winfo_toplevel().transcript_tab.append_log(msg)
+
+    def _set_transcript_status(self, text: str, color: str = "gray"):
+        self.winfo_toplevel().transcript_tab.set_status(text, color)
 
     def _update_path_preview(self):
         """Update the live path preview label based on case info fields."""
@@ -1127,14 +1079,18 @@ class TranscribeTab(ctk.CTkFrame):
         self._pdf_already_loaded = False
         self._reporter_notes_text = ""
         self._current_keyterms = None
+        self._confirmed_spellings = {}
         self._extracted_case_data = {}
         self._current_case_path = None
+        self._last_transcript_path = None
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="+ Upload PDF",
             fg_color=_DEFAULT_BUTTON_COLOR,
             state="normal",
         )
+        self._open_folder_btn.configure(state="disabled")
+        self._open_transcript_btn.configure(state="disabled")
         self._upload_reporter_notes_btn.configure(
             text="+ Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
@@ -1296,14 +1252,13 @@ class TranscribeTab(ctk.CTkFrame):
             logger.info("Folders created: %s", status["created"])
 
     def _open_output_folder(self):
-        folder = self._last_output_dir
-        if folder and os.path.isdir(folder):
-            if sys.platform == "win32":
-                os.startfile(folder)
-            else:
-                subprocess.Popen(["xdg-open", folder])
+        if self._current_case_path and os.path.isdir(self._current_case_path):
+            import subprocess
+
+            subprocess.Popen(f'explorer "{self._current_case_path}"')
 
     def _open_transcript(self):
+        """Load transcript into Transcript tab and switch to it."""
         if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
             app = self.winfo_toplevel()
             app.transcript_tab.load_transcript(self._last_transcript_path)
@@ -1328,7 +1283,7 @@ class TranscribeTab(ctk.CTkFrame):
 
             results = extract_case_info_from_pdf(
                 filepath,
-                progress_callback=lambda msg: self.after(0, self._append_log, msg),
+                progress_callback=lambda msg: self.after(0, self._append_transcript_log, msg),
             )
             self.after(0, self._apply_pdf_results, results, auto_detected)
 
@@ -1381,42 +1336,42 @@ class TranscribeTab(ctk.CTkFrame):
         txt, col = _BADGE.get(date_src, _BADGE["failed"])
         self._date_badge.configure(text=txt, text_color=col)
 
-        raw_keyterms = results.get("keyterms", [])
-        reporter_terms: list[str] = []
-        if self._reporter_notes_text:
-            reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
+        intake_result = results.get("intake_result")
+        if intake_result and intake_result.all_proper_nouns:
+            from core.keyterm_extractor import merge_from_intake
 
-        final_keyterms, _, reporter_fill = merge_keyterms(
-            pdf_terms=raw_keyterms,
-            reporter_terms=reporter_terms,
-            limit=MAX_KEYTERMS,
-        )
-        self._current_keyterms = final_keyterms or None
-        self._keyterms_box.configure(state="normal")
-        self._keyterms_box.delete("1.0", "end")
-        if final_keyterms:
+            reporter_terms: list[str] = []
+            if self._reporter_notes_text:
+                reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
+
+            final_keyterms, intake_count, reporter_count = merge_from_intake(
+                intake=intake_result,
+                reporter_terms=reporter_terms,
+                limit=MAX_KEYTERMS,
+            )
+            self._current_keyterms = final_keyterms or None
+            self._confirmed_spellings = dict(intake_result.confirmed_spellings)
+            self._keyterms_box.configure(state="normal")
+            self._keyterms_box.delete("1.0", "end")
             self._keyterms_box.insert("1.0", "\n".join(final_keyterms))
-        self._keyterms_box.configure(state="disabled")
-        self._update_keyterms_count()
-
-        if final_keyterms:
+            self._keyterms_box.configure(state="disabled")
+            self._update_keyterms_count()
             self._extract_status_label.configure(
                 text=(
-                    f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
-                    f"({min(len(raw_keyterms), MAX_KEYTERMS)} from PDF"
-                    + (f", {len(reporter_fill)} from reporter notes" if reporter_fill else "")
-                    + ")"
+                    f"Keyterms ready: {len(final_keyterms)}/100  "
+                    f"{intake_count} from PDF"
+                    + (f", {reporter_count} from reporter notes" if reporter_count else "")
                 ),
                 text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
             )
-            self._append_log(
+            self._append_transcript_log(
                 f"Prepared {len(final_keyterms)} keyterms from PDF"
-                + (f" + {len(reporter_fill)} reporter-note terms" if reporter_fill else "")
+                + (f" + {reporter_count} reporter-note terms" if reporter_count else "")
             )
 
         sources = [cause_src, witness_src, date_src]
         filled = sum(1 for s in sources if s != "failed")
-        if not final_keyterms:
+        if not (intake_result and intake_result.all_proper_nouns):
             self._extract_status_label.configure(
                 text=f"Extracted {filled}/3 fields from PDF.",
                 text_color="#44FF44" if filled == 3 else "#CCAA44",
@@ -1444,7 +1399,7 @@ class TranscribeTab(ctk.CTkFrame):
             ),
             text_color="#44FF44",
         )
-        self._append_log(
+        self._append_transcript_log(
             f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {filepath}"
         )
 
@@ -1470,7 +1425,8 @@ class TranscribeTab(ctk.CTkFrame):
 
     # ── Transcription Flow ───────────────────────────────────────────────────
 
-    def _on_start(self):
+    def start_transcription(self):
+        """Public entry point called by TranscriptTab."""
         # Validate file
         if not self._selected_file or not os.path.isfile(self._selected_file):
             messagebox.showerror("No file selected", "Please select an audio or video file first.")
@@ -1495,7 +1451,7 @@ class TranscribeTab(ctk.CTkFrame):
         raw_reporter_keyterms: list[str] = []
         if self._reporter_notes_text.strip():
             raw_reporter_keyterms = extract_keyterms_from_text(self._reporter_notes_text)
-            self._append_log(
+            self._append_transcript_log(
                 f"Extracted {len(raw_reporter_keyterms)} raw reporter-note keyterms"
             )
 
@@ -1506,7 +1462,7 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._current_keyterms = final_keyterms or None
 
-        self._append_log(
+        self._append_transcript_log(
             f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
             f"({min(len(clean_primary), MAX_KEYTERMS)} primary, {len(reporter_fill)} reporter)"
         )
@@ -1521,21 +1477,14 @@ class TranscribeTab(ctk.CTkFrame):
 
         # Disable button
         self._running = True
-        self._start_btn.configure(
-            text="\u23f3 Transcribing\u2026", state="disabled"
-        )
+        transcript_tab = self.winfo_toplevel().transcript_tab
         self._open_folder_btn.configure(state="disabled")
-        self._open_file_btn.configure(state="disabled")
+        self._open_transcript_btn.configure(state="disabled")
+        transcript_tab._open_folder_btn.configure(state="disabled")
+        transcript_tab._open_transcript_btn.configure(state="disabled")
+        transcript_tab.set_transcription_running()
 
-        # Clear log and preview
-        self._log_box.configure(state="normal")
-        self._log_box.delete("1.0", "end")
-        self._log_box.configure(state="disabled")
-        self._preview_box.configure(state="normal")
-        self._preview_box.delete("1.0", "end")
-        self._preview_box.configure(state="disabled")
-        self._progress_bar.set(0)
-        self._status_label.configure(text="Starting\u2026", text_color="white")
+        self.winfo_toplevel().tab_view.set("Transcript")
 
         # Launch background thread
         thread = threading.Thread(target=self._run_job, daemon=True)
@@ -1557,6 +1506,7 @@ class TranscribeTab(ctk.CTkFrame):
             first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
             keyterms=self._current_keyterms,
+            confirmed_spellings=self._confirmed_spellings,
             ufm_fields=self._ufm_fields or None,
             progress_callback=self._on_progress,
             log_callback=self._on_log,
@@ -1569,52 +1519,44 @@ class TranscribeTab(ctk.CTkFrame):
         self.after(0, self._update_progress, percent, message)
 
     def _on_log(self, message: str):
-        self.after(0, self._append_log, message)
+        self.after(0, self._append_transcript_log, message)
 
     def _on_done(self, result: dict):
         self.after(0, self._finish, result)
 
     def _update_progress(self, percent: float, message: str):
-        self._progress_bar.set(percent / 100.0)
-        self._status_label.configure(text=message, text_color="white")
+        self._set_transcript_status(message, "white")
 
     def _finish(self, result: dict):
         self._running = False
-        self._start_btn.configure(
-            text="\u25b6  CREATE TRANSCRIPT", state="normal"
-        )
+        transcript_tab = self.winfo_toplevel().transcript_tab
 
         if result.get("success"):
-            self._status_label.configure(
-                text="Complete \u2713", text_color="#44FF44"
-            )
             self._last_transcript_path = result.get("transcript_path")
             self._current_txt_path = result.get("transcript_path")
             self._transcript_text = result.get("transcript_text", "")
             self._last_output_dir = result.get("output_dir", "")
             self._open_folder_btn.configure(state="normal")
-            self._open_file_btn.configure(state="normal")
-
-            # Show preview (first 3000 chars)
-            self._preview_box.configure(state="normal")
-            self._preview_box.delete("1.0", "end")
-            self._preview_box.insert("1.0", self._transcript_text[:3000])
-            self._preview_box.configure(state="disabled")
+            self._open_transcript_btn.configure(state="normal")
 
             # Show speaker labels section
             self._show_speaker_section()
 
             if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
-                app = self.winfo_toplevel()
-                app.transcript_tab.load_transcript(self._last_transcript_path)
-                app.tab_view.set("Transcript")
+                transcript_tab.set_transcription_complete(
+                    transcript_path=self._last_transcript_path,
+                    folder_path=self._current_case_path or self._last_output_dir,
+                )
+                transcript_tab._open_folder_btn.configure(state="normal")
+                transcript_tab._open_transcript_btn.configure(state="normal")
+                self.winfo_toplevel().tab_view.set("Transcript")
 
             # Enable review button if case data has been extracted
             if self._extracted_case_data:
                 self._review_btn.configure(state="normal")
         else:
             error_msg = result.get("error", "Unknown error")
-            self._status_label.configure(text="Failed", text_color="#FF4444")
+            transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
 
     # ── Speaker Label Methods ────────────────────────────────────────────────
@@ -1664,17 +1606,14 @@ class TranscribeTab(ctk.CTkFrame):
             messagebox.showerror("Save Failed", str(exc))
             return
 
-        # Update stored text and preview
+        # Update stored text and transcript tab preview
         self._transcript_text = text
-        self._preview_box.configure(state="normal")
-        self._preview_box.delete("1.0", "end")
-        self._preview_box.insert("1.0", text[:3000])
-        self._preview_box.configure(state="disabled")
-
-        self._status_label.configure(
-            text="Saved \u2014 labels applied", text_color="#44FF44"
+        transcript_tab = self.winfo_toplevel().transcript_tab
+        transcript_tab.load_transcript(self._current_txt_path)
+        transcript_tab.set_status(
+            "Saved \u2014 labels applied", "#44FF44"
         )
-        self._append_log(
+        transcript_tab.append_log(
             f"Saved renamed transcript: {os.path.basename(self._current_txt_path)}"
         )
 

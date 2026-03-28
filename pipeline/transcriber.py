@@ -49,6 +49,11 @@ def _transcribe_direct(
         raise ValueError("DEEPGRAM_API_KEY is not set.")
 
     keyterms = list(keyterms or [])[:MAX_KEYTERMS]
+    logger.info(
+        "[Transcriber] Keyterm breakdown  total=%d sending=%d",
+        len(keyterms or []),
+        min(len(keyterms or []), 100),
+    )
 
     params = {
         "model": model,

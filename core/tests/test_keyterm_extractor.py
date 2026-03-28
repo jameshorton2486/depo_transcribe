@@ -3,7 +3,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from core.keyterm_extractor import split_compound_terms, _is_full_name
+from core.intake_parser import IntakeParsedResult
+from core.keyterm_extractor import _is_full_name, merge_from_intake, split_compound_terms
 
 
 def test_full_name_two_words():
@@ -78,3 +79,62 @@ def test_split_empty_input():
 def test_split_drops_skip_words_after_split():
     result = split_compound_terms(["Suite 200, TX 78230"])
     assert result == []
+
+
+def _make_intake(terms: list[str]) -> IntakeParsedResult:
+    return IntakeParsedResult(
+        cause_number=None,
+        court=None,
+        case_style=None,
+        deposition_date=None,
+        deposition_method=None,
+        subpoena_duces_tecum=False,
+        read_and_sign=False,
+        signature_waived=False,
+        video_recorded=False,
+        plaintiffs=[],
+        defendants=[],
+        deponents=[],
+        ordering_attorney={},
+        copy_attorneys=[],
+        reporter_name=None,
+        reporter_csr=None,
+        reporter_firm=None,
+        reporter_address=None,
+        vocabulary_terms=[],
+        all_proper_nouns=terms,
+        confirmed_spellings={},
+        term_count=len(terms),
+        parse_method="ai",
+    )
+
+
+def test_merge_from_intake_pdf_fills_first():
+    intake = _make_intake(["Matthew Coger", "Murphy Oil USA"])
+    result, intake_count, reporter_count = merge_from_intake(intake, ["Smith System", "Spill-Eater"])
+    assert "Matthew Coger" in result
+
+
+def test_merge_from_intake_tracks_intake_count():
+    intake = _make_intake(["Matthew Coger", "Murphy Oil USA"])
+    _, intake_count, _ = merge_from_intake(intake, ["Smith System", "Spill-Eater"])
+    assert intake_count >= 1
+
+
+def test_merge_from_intake_caps_at_100():
+    intake = _make_intake([f"Name Person {i}" for i in range(60)])
+    reporter = [f"Reporter Term {i}" for i in range(60)]
+    result, _, _ = merge_from_intake(intake, reporter, limit=100)
+    assert len(result) <= 100
+
+
+def test_merge_from_intake_no_duplicates():
+    intake = _make_intake(["Matthew Coger"])
+    result, _, _ = merge_from_intake(intake, ["Matthew Coger"])
+    assert result.count("Matthew Coger") <= 1
+
+
+def test_merge_from_intake_empty_reporter():
+    intake = _make_intake(["Matthew Coger"])
+    _, _, reporter_count = merge_from_intake(intake, [])
+    assert reporter_count == 0

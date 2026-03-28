@@ -27,6 +27,7 @@ def run_transcription_job(
     first_name: str = "",
     date_str: str = "",
     keyterms: list = None,
+    confirmed_spellings: dict | None = None,
     ufm_fields: dict = None,
     progress_callback=None,
     log_callback=None,
@@ -57,6 +58,7 @@ def run_transcription_job(
         from pipeline.chunker import chunk_audio, cleanup_chunks
         from pipeline.transcriber import transcribe_chunk
         from pipeline.assembler import reassemble_chunks
+        from core.keyterm_extractor import save_confirmed_spellings
 
         # -- 1. Check FFmpeg -------------------------------------------------------
         _progress(2, "Checking FFmpeg\u2026")
@@ -91,6 +93,10 @@ def run_transcription_job(
             raise RuntimeError(f"Failed to create required case folders: {folder_status['errors']}")
         if folder_status["created"]:
             _log(f"Created folders: {folder_status['created']}")
+
+        if confirmed_spellings:
+            save_confirmed_spellings(case_path, confirmed_spellings)
+            _log(f"Saved {len(confirmed_spellings)} confirmed spellings")
 
         # -- 3. Normalize audio ----------------------------------------------------
         _progress(10, "Normalizing audio\u2026")

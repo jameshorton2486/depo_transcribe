@@ -4,7 +4,17 @@ Helpers for cleaning, prioritizing, and merging Deepgram keyterms.
 
 from __future__ import annotations
 
+import json
+import os
 import re
+from typing import TYPE_CHECKING
+
+from app_logging import get_logger
+
+logger = get_logger(__name__)
+
+if TYPE_CHECKING:
+    from core.intake_parser import IntakeParsedResult
 
 MAX_KEYTERMS = 100
 
@@ -228,3 +238,50 @@ def merge_keyterms(
 
     final_terms = primary_capped + reporter_fill
     return final_terms, clean_primary, reporter_fill
+
+
+def merge_from_intake(
+    intake: "IntakeParsedResult",
+    reporter_terms: list[str] | None = None,
+    limit: int = MAX_KEYTERMS,
+) -> tuple[list[str], int, int]:
+    """
+    Build final Deepgram keyterm list from a parsed intake result.
+    """
+    pdf_terms = list(getattr(intake, "all_proper_nouns", []) or [])
+
+    clean_pdf = clean_keyterms(pdf_terms)
+    clean_reporter = clean_keyterms(reporter_terms or [])
+
+    clean_pdf = split_compound_terms(clean_pdf)
+    clean_reporter = split_compound_terms(clean_reporter)
+
+    clean_pdf = clean_keyterms(clean_pdf)
+    clean_reporter = clean_keyterms(clean_reporter)
+
+    pdf_capped = clean_pdf[:limit]
+    remaining = max(0, limit - len(pdf_capped))
+    pdf_lower = {term.lower() for term in pdf_capped}
+    reporter_fill = [
+        term for term in clean_reporter
+        if term.lower() not in pdf_lower
+    ][:remaining]
+
+    final = pdf_capped + reporter_fill
+    return final, len(pdf_capped), len(reporter_fill)
+
+
+def save_confirmed_spellings(
+    case_folder: str,
+    spellings: dict[str, str],
+) -> None:
+    """
+    Save confirmed spellings to the case folder for downstream formatter use.
+    """
+    path = os.path.join(case_folder, "confirmed_spellings.json")
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(spellings, handle, indent=2, ensure_ascii=False)
+        logger.info("[Keyterms] Saved %s spelling corrections: %s", len(spellings), path)
+    except Exception as exc:
+        logger.error("[Keyterms] Failed to save spellings: %s", exc)
