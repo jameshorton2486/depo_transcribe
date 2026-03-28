@@ -709,6 +709,22 @@ class TranscribeTab(ctk.CTkFrame):
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
+        # ── Fixed amber footer — packed FIRST so side="bottom" works ──────────
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
+        footer.pack(fill="x", side="bottom", padx=10, pady=(4, 8))
+        footer.pack_propagate(False)
+
+        self._create_btn = ctk.CTkButton(
+            footer,
+            text="CREATE TRANSCRIPT",
+            height=40,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            fg_color="#B8860B",
+            hover_color="#9A7209",
+            command=self.start_transcription,
+        )
+        self._create_btn.pack(fill="x")
+
         container = ctk.CTkFrame(self, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=10, pady=(6, 0))
 
@@ -978,12 +994,6 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="From NOD PDF").pack(fill="x", pady=(2, 0))
         self._date_var.trace_add("write", lambda *_: self._update_path_preview())
 
-        self._extract_status_label = ctk.CTkLabel(
-            case_card, text="", font=ctk.CTkFont(size=11),
-            text_color="gray", wraplength=860, anchor="w", justify="left",
-        )
-        self._extract_status_label.pack(anchor="w", padx=8, pady=(0, 0))
-
         self._path_preview_label = ctk.CTkLabel(
             case_card, text="", font=ctk.CTkFont(size=10),
             text_color="gray", wraplength=860, anchor="w",
@@ -991,96 +1001,118 @@ class TranscribeTab(ctk.CTkFrame):
         self._path_preview_label.pack(anchor="w", padx=8, pady=(2, 6))
         self._update_path_preview()
 
-        # ── SECTION 2c: Keyterms ─────────────────────────────────────────────
+        # ── 5. Keyterms ───────────────────────────────────────────────────────
         keyterms_card = ctk.CTkFrame(container)
         keyterms_card.pack(fill="x", pady=(0, 6))
 
         kt_inner = ctk.CTkFrame(keyterms_card, fg_color="transparent")
-        kt_inner.pack(fill="x", padx=8, pady=(6, 4))
+        kt_inner.pack(fill="x", padx=8, pady=(6, 6))
 
+        # ── 5a. Source documents sub-section ─────────────────────────────────
+        src_lbl = ctk.CTkLabel(
+            kt_inner,
+            text="Source Documents",
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        src_lbl.pack(anchor="w", pady=(0, 4))
+
+        src_btn_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        src_btn_row.pack(fill="x", pady=(0, 2))
+
+        self._upload_pdf_btn = ctk.CTkButton(
+            src_btn_row,
+            text="\U0001f4c4  Upload NOD / PDF",
+            width=160,
+            command=self._handle_pdf_upload,
+        )
+        self._upload_pdf_btn.pack(side="left", padx=(0, 8))
+
+        self._upload_reporter_notes_btn = ctk.CTkButton(
+            src_btn_row,
+            text="\U0001f4dd  Reporter Notes",
+            width=150,
+            command=self._upload_reporter_notes,
+        )
+        self._upload_reporter_notes_btn.pack(side="left")
+
+        self._keyterms_count_label = ctk.CTkLabel(
+            src_btn_row,
+            text=f"0/{MAX_KEYTERMS} keyterms",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        )
+        self._keyterms_count_label.pack(side="left", padx=(14, 0))
+
+        self._rescan_btn = ctk.CTkButton(
+            src_btn_row,
+            text="\U0001f504 Re-Scan",
+            width=80,
+            command=self._force_rescan,
+        )
+        self._rescan_btn.pack(side="right")
+
+        # Extraction status label (shown after PDF upload or scan)
+        self._extract_status_label = ctk.CTkLabel(
+            kt_inner,
+            text="No documents loaded \u2014 upload an NOD PDF or reporter notes to extract keyterms.",
+            font=ctk.CTkFont(size=10),
+            text_color="gray",
+            wraplength=820,
+            anchor="w",
+            justify="left",
+        )
+        self._extract_status_label.pack(anchor="w", pady=(2, 0))
+
+        # Divider between source docs and keyterms list
+        ctk.CTkFrame(kt_inner, height=1, fg_color="#252535").pack(
+            fill="x", pady=(8, 6)
+        )
+
+        # ── 5b. Extracted keyterms sub-section ───────────────────────────────
         kt_hdr = ctk.CTkFrame(kt_inner, fg_color="transparent")
         kt_hdr.pack(fill="x", pady=(0, 4))
 
         ctk.CTkLabel(
-            kt_hdr, text="Keyterms",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            kt_hdr,
+            text="Extracted Keyterms",
+            font=ctk.CTkFont(size=11, weight="bold"),
         ).pack(side="left")
 
-        self._keyterms_count_label = ctk.CTkLabel(
-            kt_hdr, text=f"0/{MAX_KEYTERMS}",
-            font=ctk.CTkFont(size=11), text_color="gray",
-        )
-        self._keyterms_count_label.pack(side="left", padx=(8, 0))
-
         self._review_btn = ctk.CTkButton(
-            kt_hdr, text="📋 Review & Edit", width=130, state="disabled",
+            kt_hdr,
+            text="\U0001f4cb Review & Edit",
+            width=135,
+            state="disabled",
             command=self._open_review_dialog,
         )
-        self._review_btn.pack(side="right", padx=(4, 0))
-
-        self._rescan_btn = ctk.CTkButton(
-            kt_hdr, text="🔄 Re-Scan", width=80, command=self._force_rescan,
-        )
-        self._rescan_btn.pack(side="right", padx=(4, 0))
-
-        self._upload_reporter_notes_btn = ctk.CTkButton(
-            kt_hdr, text="+ Reporter Notes", width=120,
-            command=self._upload_reporter_notes,
-        )
-        self._upload_reporter_notes_btn.pack(side="right", padx=(4, 0))
-
-        self._upload_pdf_btn = ctk.CTkButton(
-            kt_hdr, text="+ Upload PDF", width=100, command=self._handle_pdf_upload,
-        )
-        self._upload_pdf_btn.pack(side="right", padx=(4, 0))
+        self._review_btn.pack(side="right")
 
         self._keyterms_box = ctk.CTkTextbox(kt_inner, height=52)
         self._keyterms_box.pack(fill="x", pady=(0, 4))
         self._keyterms_box.insert("1.0", "")
         self._keyterms_box.configure(state="disabled")
 
+        # ── 5c. Output action buttons ─────────────────────────────────────────
         output_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
         output_row.pack(fill="x")
 
         self._open_folder_btn = ctk.CTkButton(
-            output_row, text="Open Output Folder", width=150, state="disabled",
+            output_row,
+            text="Open Output Folder",
+            width=150,
+            state="disabled",
             command=self._open_output_folder,
         )
         self._open_folder_btn.pack(side="left", padx=(0, 4))
 
         self._open_transcript_btn = ctk.CTkButton(
-            output_row, text="Open Transcript", width=130, state="disabled",
+            output_row,
+            text="Open Transcript",
+            width=130,
+            state="disabled",
             command=self._open_transcript,
         )
         self._open_transcript_btn.pack(side="left")
-
-        self._create_inline_btn = ctk.CTkButton(
-            kt_inner,
-            text="CREATE TRANSCRIPT",
-            height=38,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#B8860B",
-            hover_color="#9A7209",
-            command=self.start_transcription,
-        )
-        self._create_inline_btn.pack(fill="x", pady=(8, 0))
-
-        # ── Fixed footer: CREATE TRANSCRIPT button ──────────────────────────
-        footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
-        footer.pack(fill="x", side="bottom", padx=10, pady=(4, 8))
-        footer.pack_propagate(False)
-
-        self._create_btn = ctk.CTkButton(
-            footer,
-            text="CREATE TRANSCRIPT",
-            height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#B8860B",
-            hover_color="#9A7209",
-            command=self.start_transcription,
-        )
-        self._create_btn.pack(fill="x")
-
         # ── Speaker Labels (hidden until transcript completes) ──────────────
         self._speaker_card = ctk.CTkFrame(container)
         # Not packed yet — shown by _show_speaker_section() after transcription
@@ -1180,7 +1212,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_transcript_path = None
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
-            text="+ Upload PDF",
+            text="\U0001f4c4  Upload NOD / PDF",
             fg_color=_DEFAULT_BUTTON_COLOR,
             state="normal",
         )
@@ -1188,13 +1220,16 @@ class TranscribeTab(ctk.CTkFrame):
         self._open_transcript_btn.configure(state="disabled")
         self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
-            text="+ Reporter Notes",
+            text="\U0001f4dd  Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
         )
         self._review_loaded_btn.configure(state="disabled")
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
-        self._extract_status_label.configure(text="")
+        self._extract_status_label.configure(
+            text="No documents loaded — upload an NOD PDF or reporter notes to extract keyterms.",
+            text_color="gray",
+        )
         self._update_keyterms_count()
         if hasattr(self, "_load_meta_frame"):
             self._load_meta_frame.pack_forget()
@@ -1214,9 +1249,18 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text = ""
         self._extracted_case_data = {}
         self._review_btn.configure(state="disabled")
-        self._upload_pdf_btn.configure(text="+ Upload PDF", fg_color=_DEFAULT_BUTTON_COLOR)
-        self._upload_reporter_notes_btn.configure(text="+ Reporter Notes", fg_color=_DEFAULT_BUTTON_COLOR)
-        self._extract_status_label.configure(text="")
+        self._upload_pdf_btn.configure(
+            text="\U0001f4c4  Upload NOD / PDF",
+            fg_color=_DEFAULT_BUTTON_COLOR,
+        )
+        self._upload_reporter_notes_btn.configure(
+            text="\U0001f4dd  Reporter Notes",
+            fg_color=_DEFAULT_BUTTON_COLOR,
+        )
+        self._extract_status_label.configure(
+            text="Rescanning for source documents\u2026",
+            text_color="gray",
+        )
         self._update_keyterms_count()
         self._auto_detect_source_docs()
 
@@ -1629,7 +1673,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._upload_pdf_btn.configure(
             state="normal",
-            text="PDF Auto-Detected" if auto_detected else "+ Upload PDF",
+            text="PDF Auto-Detected" if auto_detected else "\U0001f4c4  Upload NOD / PDF",
             fg_color="#2A6F3A" if auto_detected else _DEFAULT_BUTTON_COLOR,
         )
 

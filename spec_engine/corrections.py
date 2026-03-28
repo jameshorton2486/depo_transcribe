@@ -5,16 +5,24 @@ All text correction rules from DepoPro Spec Section 2.
 Applied in exact priority order from Spec Section 9.4.
 
 PRIORITY ORDER (MUST NOT CHANGE):
-  1. Multi-word name phrases
-  2. Case-specific proper noun corrections (from confirmed_spellings)
-  3. Universal proper noun corrections (Doctor. → Dr., subpoena variants, etc.)
+  1.  Multi-word name phrases and objection garbles
+  2.  Case-specific proper noun corrections (from confirmed_spellings)
+  3.  Universal corrections (Doctor., K., Mm-hmm, Alright, % → percent, etc.)
   4a. Number-to-word in count context (1-10)
   4b. Date mashup flagging
   4c. Numbers at sentence start spelled out (Morson's English Guide)
-  5. Deepgram artifact removal (doubled words — 4+ chars only)
-  6. Normalize spaces
-  7. Capitalize first character
-  8. NEVER remove uh/um — verbatim rule is absolute
+  5.  Deepgram artifact removal (doubled words — 4+ chars only)
+  6.  Spaced dashes (word--word → word -- word)           ← NEW
+  7.  Uh-huh / Uh-uh hyphenation normalization            ← NEW
+  8.  Even dollar amount cleanup ($450.00 → $450)         ← NEW
+  9.  Conversational titles (miss → Ms., mister → Mr.)    ← NEW
+  10. Normalize spaces  ← MUST precede two-space rule
+  11. Capitalize first character
+  12. Direct address comma (Yes, sir. / All right, Counsel.)
+  13. Terminal punctuation enforcement
+  14. Two-space rule after sentence-ending punctuation  ← RUNS LAST
+  --  Yeah/Yep/Yup/Nope/Nah: NEVER normalized — added to VERBATIM_PROTECTED
+  --  uh/um: NEVER touched — verbatim rule is absolute
 
 VERBATIM RULE: "uh" and "um" are NEVER removed. This is enforced by unit tests.
 MORSON'S RULE: Numbers 1-10 at sentence start must be spelled out as words.
@@ -63,7 +71,15 @@ SENTENCE_START_NUM_RE = re.compile(
 
 
 # ── Verbatim-protected words (Spec Section 2.1) ───────────────────────────────
-VERBATIM_PROTECTED = {'okay', 'well'}
+VERBATIM_PROTECTED = {
+    # Acknowledgement words — Morson's Rule 4
+    'okay', 'well',
+    # Informal affirmations — must never be normalized to "Yes"
+    # Morson's verbatim mandate + Depo-Pro Rule 23
+    'yeah', 'yep', 'yup',
+    # Informal negations — must never be normalized to "No"
+    'nope', 'nah',
+}
 
 # Affirmation words preserved per Spec 9.6 unit test
 # "correct correct" must remain — common witness affirmation pattern
@@ -93,6 +109,38 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bWill\s*[Tt]ower\b',                            'William Tower'),
     (r'\bPLC\s+account\b',                              'PLLC account'),
     (r'\bfiftyfifty\b',                                  'fifty-fifty'),
+
+    # ASR garble → verbatim objection form
+    # ── Objection garble — single word variants → "Objection." ──────────────
+    # These are universal: apply to every deposition regardless of case.
+    # Source: DeproPro Reference Rev 2, Table 5 (Q/A Classification)
+    (r'\bInjection\b(?!\s+form)[.]?',   'Objection.'),
+    (r'\bInfection\b[.]?',              'Objection.'),
+    (r'\bDetection\b[.]?',              'Objection.'),
+    (r'\bProtection\b(?!\s+order)[.]?', 'Objection.'),
+    (r'\bPerfection\b[.]?',             'Objection.'),
+    (r'\bEviction\b[.]?',               'Objection.'),
+    (r'\bDefinition\b[.]?',             'Objection.'),
+
+    # ── Objection + Form two-word variants → "Objection.  Form." ────────────
+    (r'\bInjection\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
+    (r'\bDirection\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
+
+    # ── Form and leading variants → "Form and leading." ──────────────────────
+    (r'\bFormer\s+[Ll]eaving\b[.]?',    'Form and leading.'),
+    (r'\bForm\s+and\s+[Ll]eaving\b[.]?','Form and leading.'),
+    (r'\bForm\s+and\s+[Ll]egal\b[.]?',  'Form and leading.'),
+
+    # ── Leading variants → "Leading." ────────────────────────────────────────
+    (r'\bBleeding\b[.]?',               'Leading.'),
+    (r'\bLeaving\b[.]?',                'Leading.'),
+    (r'\bWarming\b[.]?',                'Leading.'),
+    (r'\bWarm\s+[Ll]eading\b[.]?',      'Leading.'),
+
+    # ── Pass the witness variants → "Pass the witness." ──────────────────────
+    # WARNING: "pass away" is intentionally excluded — it means to die.
+    (r'\bPast\s+[Ww]itness\b[.]?',      'Pass the witness.'),
+    (r'\bPastor\s+[Ww]itness\b[.]?',    'Pass the witness.'),
 ]
 
 
@@ -178,6 +226,22 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Cross-examination hyphen (Spec Section 4.1)
     (r'\b([Cc])ross\s+[Ee]xamination\b', r'\1ross-Examination'),
     (r'\b([Cc])ross\s+-\s+[Ee]xamination\b', r'\1ross-Examination'),
+
+    # ── "Alright" → "All right" (UFM + Morson's English Guide) ──────────────
+    # UFM and Morson's both require two words. Deepgram outputs "alright".
+    (r'\balright\b', 'all right'),
+
+    # ── Date ordinal suffixes removed in testimony context ────────────────────
+    # UFM: "April 17" not "April 17th" in Q/A body text.
+    (r'\b((?:January|February|March|April|May|June|July|August'
+     r'|September|October|November|December)\s+\d{1,2})(st|nd|rd|th)\b',
+     r'\1'),
+
+    # ── "%" → "percent" in testimony context ─────────────────────────────────
+    # UFM: spell out "percent" in Q/A body text.
+    # Negative lookbehind prevents firing inside Bates numbers like "EXH-100%"
+    # (those will not appear in testimony text, but guard anyway).
+    (r'(?<![A-Z\-])(\d+\.?\d*)\s*%', r'\1 percent'),
 ]
 
 
@@ -454,6 +518,163 @@ def apply_artifact_removal(
 
 # ── Steps 6-7: Cleanup ────────────────────────────────────────────────────────
 
+def fix_spaced_dashes(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Ensure exactly one space before and after every double-hyphen dash.
+
+    Morson's English Guide requires: word -- word
+    (not word-- or --word or word--word)
+
+    This runs AFTER normalize_time_and_dashes() which converts em/en dashes.
+    This function handles any remaining closed -- that still lack spaces.
+
+    Examples:
+      he--stopped         → he -- stopped
+      I went--I drove     → I went -- I drove
+      he -- stopped       → unchanged (already correct)
+      9:15 a.m.--9:30     → 9:15 a.m. -- 9:30
+    """
+    original = text
+    text = re.sub(r'(?<! )--(?! )', ' -- ', text)
+    text = re.sub(r' {2,}--', ' --', text)
+    text = re.sub(r'-- {2,}', '-- ', text)
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='fix_spaced_dashes',
+            block_index=block_index,
+        ))
+    return text
+
+
+def fix_uh_huh_hyphenation(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Normalize un-hyphenated affirmation/negation forms to hyphenated.
+
+    Morson's Rule 4 requires: Uh-huh (affirmation), Uh-uh (negation)
+    — strictly hyphenated.
+
+    Deepgram frequently outputs these without the hyphen:
+      uh huh  → Uh-huh
+      uh uh   → Uh-uh
+      mm hmm  → Mm-hmm  (also handled for completeness)
+
+    VERBATIM RULE: These are preserved — the hyphenation fix is purely
+    typographic, not a word change. The spoken sound is the same.
+
+    Examples:
+      uh huh. Yes.  → Uh-huh.  Yes.
+      uh uh. No.    → Uh-uh.  No.
+      Uh-huh.       → unchanged (already correct)
+    """
+    original = text
+    text = re.sub(r'\buh\s+huh\b', 'Uh-huh', text, flags=re.IGNORECASE)
+    text = re.sub(r'\buh\s+uh\b', 'Uh-uh', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bmm\s+hmm\b', 'Mm-hmm', text, flags=re.IGNORECASE)
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='fix_uh_huh_hyphenation',
+            block_index=block_index,
+        ))
+    return text
+
+
+def fix_even_dollar_amounts(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Remove trailing .00 from even dollar amounts.
+
+    Morson's / Depo-Pro rule: $450.00 → $450
+    Rationale: trailing zeros are visually noisy and risk being misread as
+    additional digits in low-resolution printouts.
+
+    Only fires on amounts ending in exactly .00 — not .50, .25, etc.
+
+    Examples:
+      $450.00   → $450
+      $1,200.00 → $1,200
+      $4.50     → $4.50     (unchanged — non-zero cents preserved)
+      $350      → $350      (unchanged — already no decimals)
+    """
+    original = text
+    text = re.sub(r'\$(\d[\d,]*?)\.00\b', r'$\1', text)
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='fix_even_dollar_amounts',
+            block_index=block_index,
+        ))
+    return text
+
+
+def fix_conversational_titles(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Correct informal spoken title references to proper abbreviated form.
+
+    Morson's Rule 208 / Depo-Pro Rule 20:
+      miss [Name]    → Ms. [Name]
+      missus [Name]  → Mrs. [Name]
+      mister [Name]  → Mr. [Name]
+
+    Applies only when the informal title immediately precedes a capitalized name
+    or a known title word. Does NOT change already-correct forms (Ms., Mrs., Mr.)
+    Does NOT change lowercase 'the miss' or 'a mister' (descriptive, not title).
+
+    Examples:
+      miss Ozuna         → Ms. Ozuna
+      mister Garcia      → Mr. Garcia
+      missus Rodriguez   → Mrs. Rodriguez
+      Ms. Ozuna          → unchanged (already correct)
+      the miss           → unchanged (not a title before a name)
+    """
+    original = text
+    text = re.sub(
+        r'\bmiss\s+(?=\b[A-Z])',
+        'Ms. ',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'\bmissus\s+(?=\b[A-Z])',
+        'Mrs. ',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'\bmister\s+(?=\b[A-Z])',
+        'Mr. ',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='fix_conversational_titles',
+            block_index=block_index,
+        ))
+    return text
+
+
 def normalize_spaces(text: str) -> str:
     return re.sub(r' {2,}', ' ', text).strip()
 
@@ -462,6 +683,104 @@ def capitalize_first(text: str) -> str:
     if not text:
         return text
     return text[0].upper() + text[1:]
+
+
+def enforce_terminal_punctuation(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Ensure every Q or A block ends with sentence-ending punctuation.
+
+    Rules applied:
+      1. "Okay," at end of block → "Okay." (transition comma → period)
+      2. Bare "Okay" at end of block with no punctuation → "Okay."
+      3. Any block ending without .?! → append period
+         (Does NOT fire on blocks ending with "--" — interrupted speech)
+
+    Verbatim rule: uh/um are never touched here or anywhere.
+    """
+    original = text
+    stripped = text.rstrip()
+
+    # Rule 1: "Okay," → "Okay." at end of block
+    if stripped.endswith('Okay,'):
+        text = stripped[:-len('Okay,')] + 'Okay.'
+        stripped = text.rstrip()
+
+    # Rule 2: Bare "Okay" with no punctuation at end
+    if re.search(r'\bOkay\s*$', stripped):
+        text = re.sub(r'\bOkay\s*$', 'Okay.', stripped)
+        stripped = text.rstrip()
+
+    # Rule 3: No terminal punctuation — append period
+    # Exceptions:
+    #   - interrupted speech ending with "--"
+    #   - interrupted/stuttered starts like "I--I don't know"
+    if (
+        stripped
+        and stripped[-1] not in '.?!'
+        and not stripped.endswith('--')
+        and not re.search(r'\b\w+--\w+', stripped)
+    ):
+        text = stripped + '.'
+
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='terminal_punctuation',
+            block_index=block_index,
+        ))
+    return text
+
+
+def enforce_direct_address_comma(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Insert a comma after direct address openers when one is missing.
+
+    Covered patterns (UFM §2.8 and Morson's English Guide):
+      "Yes sir"      → "Yes, sir."
+      "No sir"       → "No, sir."
+      "Yes ma'am"    → "Yes, ma'am."
+      "No ma'am"     → "No, ma'am."
+      "Yes Counsel"  → "Yes, Counsel."
+      "All right Counsel" → "All right, Counsel."
+
+    Does NOT fire when a comma is already present.
+    Does NOT fire on "All right" when followed by a lowercase word
+    (that is a conjunction, not a direct address).
+    """
+    original = text
+
+    # Yes/No + title — requires no existing comma
+    text = re.sub(
+        r'\b(Yes|No)\s+(sir|ma\'am|counsel|Counsel)\b(?!,)',
+        r'\1, \2',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # "All right" + capitalized title — no existing comma
+    text = re.sub(
+        r'\bAll right\s+([A-Z][a-z]+)\b',
+        r'All right, \1',
+        text,
+    )
+
+    if text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=text,
+            pattern='direct_address_comma',
+            block_index=block_index,
+        ))
+    return text
 
 
 def normalize_sentence_spacing(
@@ -473,7 +792,7 @@ def normalize_sentence_spacing(
     Enforce the two-space rule after sentence-ending punctuation inside a block.
     """
     if re.fullmatch(r"Objection\.\s+Form\.\.?", text, flags=re.IGNORECASE):
-        return "Objection. Form."
+        return "Objection.  Form."
 
     _ELLIPSIS_TOK = "\x00ELLIPSIS\x00"
     working = text.replace(". . .", _ELLIPSIS_TOK)
@@ -551,19 +870,26 @@ def clean_block(
     flag_counter: Optional[List[int]] = None,  # mutable [int] box shared across calls
 ) -> Tuple[str, List[CorrectionRecord], List[ScopistFlag]]:
     """
-    Master correction function. Apply all corrections in Spec 9.4 order.
+    Master correction function. Apply all corrections in reference doc order.
 
     CORRECTION ORDER (MUST NOT CHANGE):
-      1. Multi-word name phrases
-      2. Case-specific proper noun corrections
-      3. Universal proper noun corrections
+      1.  Multi-word phrase standardization
+      2.  Case-specific proper noun corrections (confirmed_spellings)
+      3.  Universal single-word corrections
       4a. Number-to-word (mid-sentence count context)
       4b. Date mashup flagging
-      4c. Numbers at sentence start spelled out (Morson's English Guide)
-      5. Deepgram artifact removal (4+ char duplicates only)
-      6. Normalize spaces
-      7. Capitalize first character
-      8. uh/um — NEVER touched
+      4c. Sentence-start number spelled out (Morson's English Guide)
+      5.  Deepgram duplicate artifact removal (4+ char words only)
+      6.  Spaced dashes (word--word → word -- word)
+      7.  Uh-huh / Uh-uh hyphenation normalization
+      8.  Even dollar amount cleanup ($450.00 → $450)
+      9.  Conversational titles (miss → Ms., mister → Mr.)
+      10. Space normalization (MUST run before two-space rule)
+      11. Capitalize first character
+      12. Direct address comma insertion
+      13. Terminal punctuation enforcement
+      14. Two-space rule after sentence-ending punctuation (RUNS LAST)
+      -- uh/um: NEVER touched — verbatim rule is absolute
     """
     if flags is None:
         flags = []
@@ -581,8 +907,14 @@ def clean_block(
     text = apply_san_name_flag(text, records, flags, block_index, flag_counter)
     text = apply_sentence_start_number(text, records, block_index)
     text = apply_artifact_removal(text, records, block_index)
+    text = fix_spaced_dashes(text, records, block_index)
+    text = fix_uh_huh_hyphenation(text, records, block_index)
+    text = fix_even_dollar_amounts(text, records, block_index)
+    text = fix_conversational_titles(text, records, block_index)
     text = normalize_spaces(text)
     text = capitalize_first(text)
+    text = enforce_direct_address_comma(text, records, block_index)
+    text = enforce_terminal_punctuation(text, records, block_index)
     text = normalize_sentence_spacing(text, records, block_index)
     # Step 8: uh/um — NEVER touched. No code here intentionally.
 

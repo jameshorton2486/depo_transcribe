@@ -1,7 +1,10 @@
 """
 Depo-Pro Transcribe — launcher
 Run: python app.py
+.\.venv\Scripts\python.exe app.p
+
 """
+
 import os, sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))

@@ -9,6 +9,7 @@ import customtkinter as ctk
 from config import DEEPGRAM_API_KEY
 from ui.tab_transcript import TranscriptTab
 from ui.tab_transcribe import TranscribeTab
+from ui.tab_corrections import CorrectionsTab
 
 
 class DepoTranscribeApp(ctk.CTk):
@@ -17,10 +18,13 @@ class DepoTranscribeApp(ctk.CTk):
 
         # -- Window setup ----------------------------------------------------------
         self.title("Depo-Pro Transcribe")
-        self.geometry("1000x700")
-        self.minsize(800, 600)
+        self.geometry("1000x900")
+        self.minsize(900, 800)
+        self.state("zoomed")
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        ctk.set_widget_scaling(0.4)
+        ctk.set_window_scaling(0.4)
 
         # -- Dark navy header bar --------------------------------------------------
         header = ctk.CTkFrame(self, height=50, fg_color="#1E3A5F", corner_radius=0)
@@ -50,9 +54,13 @@ class DepoTranscribeApp(ctk.CTk):
 
         self.tab_view.add("Transcribe")
         self.tab_view.add("Transcript")
+        self.tab_view.add("Corrections")
 
         self.transcribe_tab = TranscribeTab(self.tab_view.tab("Transcribe"))
         self.transcribe_tab.pack(fill="both", expand=True)
 
         self.transcript_tab = TranscriptTab(self.tab_view.tab("Transcript"))
         self.transcript_tab.pack(fill="both", expand=True)
+
+        self.corrections_tab = CorrectionsTab(self.tab_view.tab("Corrections"))
+        self.corrections_tab.pack(fill="both", expand=True)

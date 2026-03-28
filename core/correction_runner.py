@@ -1,0 +1,319 @@
+"""
+core/correction_runner.py
+
+Orchestrates the full deterministic correction pass on a completed transcript.
+
+Workflow:
+  1. Locate the Deepgram JSON file that was saved alongside the .txt transcript
+  2. Build a minimal JobConfig from the ufm_fields.json in the same folder
+  3. Run: build_blocks_from_deepgram → process_blocks (corrections + QA + validation)
+  4. Format the corrected blocks into plain text
+  5. Write {stem}_corrected.txt and {stem}_corrections.json to the same folder
+  6. Return a result dict the UI can consume
+
+Called from ui/tab_transcript.py via a background thread.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable
+
+from app_logging import get_logger
+
+logger = get_logger(__name__)
+
+
+# ── Output text formatter ─────────────────────────────────────────────────────
+
+def format_blocks_to_text(blocks: list) -> str:
+    """
+    Convert a processed Block list to plain corrected transcript text.
+
+    Speaker format:
+      Q/A blocks     → Q.  {text} / A.  {text}
+      COLLOQUY/SP    → \t\t\t{SPEAKER_LABEL}:  {text}
+      PARENTHETICAL  → ({text})
+
+    Falls back to raw block text if block_type is UNKNOWN.
+    """
+    from spec_engine.models import BlockType
+
+    lines: list[str] = []
+
+    for block in blocks:
+        bt = getattr(block, "block_type", None)
+        bv = getattr(bt, "value", str(bt)) if bt else "UNKNOWN"
+        text = (block.text or "").strip()
+        role = (getattr(block, "speaker_role", "") or "").strip()
+        name = (getattr(block, "speaker_name", "") or "").strip()
+
+        if not text:
+            continue
+
+        if bv == "Q":
+            lines.append(f"\tQ.\t\t{text}")
+        elif bv == "A":
+            lines.append(f"\tA.\t\t{text}")
+        elif bv in ("COLLOQUY", "SPEAKER", "SP"):
+            label = (name or role or "SPEAKER").upper()
+            lines.append(f"\t\t\t{label}:  {text}")
+        elif bv in ("PAREN", "PARENTHETICAL", "PN"):
+            lines.append(f"({text})")
+        elif bv == "FLAG":
+            lines.append(text)
+        else:
+            if name or role:
+                label = (name or role).upper()
+                lines.append(f"\t\t\t{label}:  {text}")
+            else:
+                lines.append(text)
+
+    return "\n\n".join(lines)
+
+
+# ── JobConfig builder from UFM fields ────────────────────────────────────────
+
+def _build_job_config_from_ufm(ufm_fields: dict) -> Any:
+    """
+    Build a minimal JobConfig from the UFM fields JSON that was saved
+    during intake. Falls back to defaults for missing fields.
+    """
+    from spec_engine.models import JobConfig, CounselInfo
+
+    cfg = JobConfig()
+
+    cfg.cause_number = ufm_fields.get("cause_number", "")
+    cfg.case_style = ufm_fields.get("case_style", "")
+    cfg.plaintiff_name = ufm_fields.get("plaintiff_name", "")
+    cfg.court = ufm_fields.get("court_type", "")
+    cfg.county = ufm_fields.get("county", "")
+    cfg.depo_date = ufm_fields.get("depo_date", "")
+    cfg.witness_name = ufm_fields.get("witness_name", "")
+    cfg.method = ufm_fields.get("depo_method", "In Person")
+    cfg.reporter_name = ufm_fields.get("reporter_name", "Miah Bardot")
+    cfg.reporter_csr = ufm_fields.get("csr_number", "CSR No. 12129")
+    cfg.reporter_firm = ufm_fields.get("reporter_agency", "SA Legal Solutions")
+
+    spellings = ufm_fields.get("confirmed_spellings", {})
+    if isinstance(spellings, dict):
+        cfg.confirmed_spellings = spellings
+
+    speaker_map = ufm_fields.get("speaker_map", {})
+    if isinstance(speaker_map, dict):
+        cfg.speaker_map = {int(k): v for k, v in speaker_map.items()}
+
+    return cfg
+
+
+# ── Deepgram JSON locator ─────────────────────────────────────────────────────
+
+def _find_deepgram_json(transcript_path: str) -> str | None:
+    """
+    Given a .txt transcript path in a Deepgram/ folder, find the matching
+    Deepgram structured JSON file (the one without _raw or _corrections suffix).
+
+    Matching strategy (in order):
+      1. Same stem, .json extension (exact stem match)
+      2. Most recently modified .json in the same folder that doesn't end
+         in _raw.json, _corrections.json, or _ufm_fields.json
+    """
+    folder = Path(transcript_path).parent
+    stem = Path(transcript_path).stem
+
+    exact = folder / f"{stem}.json"
+    if exact.exists():
+        return str(exact)
+
+    base_stem = stem
+    for suffix in ("_corrected", "_renamed"):
+        if base_stem.endswith(suffix):
+            base_stem = base_stem[: -len(suffix)]
+
+    exact_base = folder / f"{base_stem}.json"
+    if exact_base.exists():
+        return str(exact_base)
+
+    excluded_endings = ("_raw.json", "_corrections.json", "_ufm_fields.json")
+    candidates = [
+        f for f in folder.glob("*.json")
+        if not any(str(f).endswith(e) for e in excluded_endings)
+    ]
+    if not candidates:
+        return None
+
+    return str(max(candidates, key=lambda f: f.stat().st_mtime))
+
+
+def _find_ufm_fields(transcript_path: str) -> dict:
+    """Find and load the most recent _ufm_fields.json in the same folder."""
+    folder = Path(transcript_path).parent
+    ufm_files = sorted(
+        folder.glob("*_ufm_fields.json"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True,
+    )
+    if not ufm_files:
+        return {}
+    try:
+        with open(ufm_files[0], "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as exc:
+        logger.warning("[CorrectionRunner] Could not load UFM fields: %s", exc)
+        return {}
+
+
+# ── Correction records serializer ────────────────────────────────────────────
+
+def _serialize_corrections(blocks: list) -> list[dict]:
+    """Extract all CorrectionRecord objects from processed blocks."""
+    from spec_engine.models import CorrectionRecord
+
+    result = []
+    for i, block in enumerate(blocks):
+        for record in (block.meta.get("corrections") or []):
+            if isinstance(record, CorrectionRecord):
+                result.append({
+                    "block_index": record.block_index,
+                    "pattern": record.pattern,
+                    "original": record.original,
+                    "corrected": record.corrected,
+                })
+            elif isinstance(record, dict):
+                result.append(record)
+    return result
+
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+
+def run_correction_job(
+    transcript_path: str,
+    progress_callback: Callable[[str], None] | None = None,
+    done_callback: Callable[[dict], None] | None = None,
+) -> None:
+    """
+    Run the full deterministic correction pass on a transcript file.
+
+    Must be called in a background thread — calls done_callback when complete.
+
+    Args:
+        transcript_path:    Absolute path to the .txt transcript file.
+        progress_callback:  Called with status strings during processing.
+        done_callback:      Called with result dict when complete.
+
+    Result dict keys:
+        success (bool)
+        corrected_path (str | None)    — path to _corrected.txt
+        corrections_path (str | None)  — path to _corrections.json
+        correction_count (int)
+        flag_count (int)
+        error (str | None)
+    """
+
+    def _log(msg: str):
+        logger.info("[CorrectionRunner] %s", msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    def _done(result: dict):
+        if done_callback:
+            done_callback(result)
+
+    try:
+        from pipeline.block_builder import build_blocks_from_deepgram, build_blocks_from_text
+        from spec_engine.processor import process_blocks
+
+        _log("Locating Deepgram JSON...")
+        json_path = _find_deepgram_json(transcript_path)
+
+        if json_path:
+            _log(f"Loading Deepgram JSON: {Path(json_path).name}")
+            with open(json_path, "r", encoding="utf-8") as fh:
+                deepgram_data = json.load(fh)
+            if "utterances" in deepgram_data:
+                blocks = build_blocks_from_deepgram(deepgram_data)
+            else:
+                _log("JSON has no utterances key — falling back to text parsing")
+                raw_text = Path(transcript_path).read_text(encoding="utf-8")
+                blocks = build_blocks_from_text(raw_text)
+        else:
+            _log("No Deepgram JSON found — parsing transcript text directly")
+            raw_text = Path(transcript_path).read_text(encoding="utf-8")
+            blocks = build_blocks_from_text(raw_text)
+
+        _log(f"Loaded {len(blocks)} blocks")
+
+        _log("Loading case configuration...")
+        ufm_fields = _find_ufm_fields(transcript_path)
+        if ufm_fields:
+            _log(f"UFM fields loaded: {len(ufm_fields)} entries")
+            job_config = _build_job_config_from_ufm(ufm_fields)
+        else:
+            _log("No UFM fields found — using default job config")
+            from spec_engine.models import JobConfig
+            job_config = JobConfig()
+
+        _log("Running corrections pipeline...")
+        corrected_blocks = process_blocks(blocks, job_config)
+        _log(f"Pipeline complete: {len(corrected_blocks)} blocks processed")
+
+        all_corrections = _serialize_corrections(corrected_blocks)
+        correction_count = len(all_corrections)
+        flag_count = sum(
+            1 for b in corrected_blocks
+            if getattr(b.block_type, "value", "") == "FLAG"
+        )
+        _log(f"Corrections applied: {correction_count}  |  Scopist flags: {flag_count}")
+
+        _log("Formatting corrected transcript...")
+        corrected_text = format_blocks_to_text(corrected_blocks)
+
+        folder = Path(transcript_path).parent
+        stem = Path(transcript_path).stem
+        if stem.endswith("_corrected"):
+            stem = stem[: -len("_corrected")]
+
+        corrected_path = folder / f"{stem}_corrected.txt"
+        corrections_path = folder / f"{stem}_corrections.json"
+
+        _log(f"Writing: {corrected_path.name}")
+        corrected_path.write_text(corrected_text, encoding="utf-8")
+
+        _log(f"Writing: {corrections_path.name}")
+        corrections_data = {
+            "source_transcript": transcript_path,
+            "corrected_at": datetime.now().isoformat(),
+            "correction_count": correction_count,
+            "flag_count": flag_count,
+            "corrections": all_corrections,
+        }
+        with open(corrections_path, "w", encoding="utf-8") as fh:
+            json.dump(corrections_data, fh, indent=2, ensure_ascii=False)
+
+        _log(f"✓ Correction complete — {correction_count} corrections, {flag_count} flags")
+
+        _done({
+            "success": True,
+            "corrected_path": str(corrected_path),
+            "corrections_path": str(corrections_path),
+            "corrected_text": corrected_text,
+            "correction_count": correction_count,
+            "flag_count": flag_count,
+            "error": None,
+        })
+
+    except Exception as exc:
+        logger.exception("[CorrectionRunner] Failed: %s", exc)
+        _log(f"ERROR: {exc}")
+        _done({
+            "success": False,
+            "corrected_path": None,
+            "corrections_path": None,
+            "corrected_text": "",
+            "correction_count": 0,
+            "flag_count": 0,
+            "error": str(exc),
+        })

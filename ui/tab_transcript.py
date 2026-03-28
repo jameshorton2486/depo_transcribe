@@ -157,6 +157,11 @@ class TranscriptTab(ctk.CTkFrame):
         self._open_folder_btn.configure(state="normal")
         self._open_transcript_btn.configure(state="normal")
         self.load_transcript(transcript_path)
+        # Auto-set Corrections tab source when a new transcription completes
+        try:
+            self.winfo_toplevel().corrections_tab.set_source(transcript_path)
+        except AttributeError:
+            pass
 
     def set_transcription_failed(self, error_msg: str):
         """Called when transcription fails."""
@@ -178,6 +183,11 @@ class TranscriptTab(ctk.CTkFrame):
             self._path_label.configure(text=f"Loaded: {filepath}", text_color="gray")
             self._copy_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
+            # Notify Corrections tab that a source is available
+            try:
+                self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
+            except AttributeError:
+                pass  # corrections_tab may not exist yet during startup
         except Exception as exc:
             self._path_label.configure(
                 text=f"Failed to load: {exc}", text_color="#CC4444"
