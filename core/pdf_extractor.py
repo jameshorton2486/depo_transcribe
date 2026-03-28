@@ -1,0 +1,331 @@
+"""
+core/pdf_extractor.py
+
+Hybrid regex + Claude API extraction pipeline for case information PDFs.
+Regex runs first for speed; Claude API is called only for fields that
+regex could not extract.
+"""
+
+import json
+import os
+import re
+import glob
+from typing import Any
+
+from app_logging import get_logger
+
+logger = get_logger(__name__)
+
+
+def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[str]:
+    """Extract intake keyterms from PDF text with AI-first and local fallback behavior."""
+    def _log(msg: str):
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    try:
+        from core.intake_parser import parse_intake_document
+
+        intake = parse_intake_document(text)
+        keyterms = list(intake.get("allProperNouns", []))
+        reasons = intake.get("keyterms", [])
+        if reasons:
+            preview = "; ".join(
+                f"{item.get('term')}: {item.get('reason')}"
+                for item in reasons[:5]
+            )
+            _log(f"AI intake keyterms: {preview}")
+        return keyterms
+    except Exception as exc:
+        _log(f"AI intake parse unavailable, falling back to regex extraction: {exc}")
+        from core.keyterm_extractor import clean_keyterms, extract_keyterms_from_text
+
+        raw_candidates = re.findall(
+            r"\b[A-Z][a-zA-Z]{1,}\b(?:\s+[A-Z][a-zA-Z]{1,}\b)*",
+            text,
+        )
+        raw_candidates.extend(extract_keyterms_from_text(text))
+        return clean_keyterms(raw_candidates)
+
+
+# ── Step 0: Filename extraction ──────────────────────────────────────────────
+
+def extract_from_filename(filename: str) -> dict:
+    """
+    Parse audio filename for date and witness name.
+    Expected pattern: MM-DD-YY FirstName LastName ChunkNumber.ext
+    e.g. '03-24-26 Matthew Coger 01_1.wav'
+    """
+    import os
+    from dateutil import parser as dateparser
+
+    name = os.path.splitext(os.path.basename(filename))[0]
+
+    # Remove leading normalized_ prefix if present
+    name = re.sub(r'^normalized_', '', name).strip()
+
+    results = {
+        "cause_number": (None, "failed"),
+        "witness_last": (None, "failed"),
+        "witness_first": (None, "failed"),
+        "date": (None, "failed"),
+        "scanned": False,
+    }
+
+    # Match: MM-DD-YY FirstName LastName ChunkInfo
+    pattern = r'^(\d{2}-\d{2}-\d{2})\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)'
+    match = re.match(pattern, name)
+
+    if match:
+        raw_date, first_name, last_name = match.groups()
+
+        # Parse date — 03-24-26 -> 03/24/2026
+        try:
+            parsed_date = dateparser.parse(raw_date)
+            if parsed_date:
+                results["date"] = (parsed_date.strftime("%m/%d/%Y"), "filename")
+        except (ValueError, OverflowError):
+            pass
+
+        results["witness_first"] = (first_name, "filename")
+        results["witness_last"] = (last_name, "filename")
+
+    logger.info("Filename extraction: %s -> %s",
+                os.path.basename(filename),
+                {k: v for k, v in results.items() if k != "scanned"})
+    return results
+
+
+# ── Step 1: PDF text extraction ──────────────────────────────────────────────
+
+def extract_pdf_text(filepath: str) -> str:
+    """Extract text from pages 1-3 of a PDF using pdfplumber."""
+    import pdfplumber
+
+    text = ""
+    with pdfplumber.open(filepath) as pdf:
+        for page in pdf.pages[:3]:
+            page_text = page.extract_text()
+            if page_text:
+                text += page_text + "\n"
+    return text.strip()
+
+
+def find_case_pdf(case_folder: str) -> str | None:
+    """
+    Look for the newest PDF in case_folder/source_docs/.
+    """
+    source_docs = os.path.join(case_folder, "source_docs")
+    if not os.path.isdir(source_docs):
+        return None
+
+    pdfs = glob.glob(os.path.join(source_docs, "*.pdf"))
+    return max(pdfs, key=os.path.getmtime) if pdfs else None
+
+
+def find_reporter_notes(case_folder: str) -> str | None:
+    """
+    Look for a non-transcript .txt file in case_folder/source_docs/.
+    """
+    excluded = {
+        "transcript.txt",
+        "transcript_corrected.txt",
+        "deepgram_raw_transcript.txt",
+    }
+    source_docs = os.path.join(case_folder, "source_docs")
+    if not os.path.isdir(source_docs):
+        return None
+
+    txt_files = glob.glob(os.path.join(source_docs, "*.txt"))
+    for filepath in sorted(txt_files, key=os.path.getmtime, reverse=True):
+        if os.path.basename(filepath).lower() not in excluded:
+            return filepath
+    return None
+
+
+# ── Step 2: Regex extraction ────────────────────────────────────────────────
+
+def extract_cause_number(text: str) -> tuple[str | None, str]:
+    """Extract cause/case number via regex. Returns (value, source)."""
+    patterns = [
+        r'Cause\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
+        r'Case\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
+        r'Docket\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
+        r'No\.\s*([A-Z0-9]{2,}\-[A-Z0-9\-]+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1).strip(), "regex"
+    return None, "failed"
+
+
+def extract_witness_name(text: str) -> tuple[str | None, str]:
+    """Extract witness last name via regex. Returns (value, source)."""
+    patterns = [
+        r'(?:Deposition|Testimony)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+        r'Witness[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+        r'My\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+        r'THE\s+WITNESS[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+        r'[Dd]eposition\s+of\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            full_name = match.group(1).strip()
+            last_name = full_name.split()[-1]
+            return last_name, "regex"
+    return None, "failed"
+
+
+def extract_date(text: str) -> tuple[str | None, str]:
+    """Extract deposition date via regex. Returns (value, source)."""
+    from dateutil import parser as dateparser
+
+    patterns = [
+        r'taken\s+on\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})',
+        r'this\s+\d{1,2}(?:st|nd|rd|th)?\s+day\s+of\s+([A-Z][a-z]+,?\s+\d{4})',
+        r'Date[:\s]+(\d{1,2}/\d{1,2}/\d{4})',
+        r'(\d{1,2}/\d{1,2}/\d{4})',
+        r'([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            try:
+                parsed = dateparser.parse(match.group(1))
+                if parsed:
+                    return parsed.strftime("%m/%d/%Y"), "regex"
+            except (ValueError, OverflowError):
+                continue
+    return None, "failed"
+
+
+# ── Step 3: Claude API fallback ─────────────────────────────────────────────
+
+def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
+    """Call Claude API to extract fields that regex missed."""
+    import anthropic
+
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY not set — cannot run AI extraction")
+        return {}
+
+    field_instructions = {
+        "cause_number": "The case or cause number (e.g. 2024-CI-12345)",
+        "witness_last": "The witness or deponent's last name only",
+        "date": "The deposition date formatted as MM/DD/YYYY",
+    }
+
+    fields_needed = "\n".join(
+        f'- "{k}": {field_instructions[k]}'
+        for k in missing_fields
+        if k in field_instructions
+    )
+
+    if not fields_needed:
+        return {}
+
+    prompt = (
+        "You are a legal document parser. Extract the following fields "
+        "from this deposition transcript text.\n\n"
+        "Return ONLY a valid JSON object with these keys. "
+        "If a field cannot be found, return null for that key. "
+        "No explanation, no markdown.\n\n"
+        f"Fields to extract:\n{fields_needed}\n\n"
+        f"Document text:\n{text[:4000]}"
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = message.content[0].text.strip()
+        # Strip markdown fences if present
+        if response_text.startswith("```"):
+            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
+            response_text = re.sub(r'\s*```$', '', response_text)
+        result = json.loads(response_text)
+        logger.info("AI extraction returned: %s", result)
+        return result
+    except Exception as exc:
+        logger.error("AI extraction failed: %s", exc)
+        return {}
+
+
+# ── Full pipeline ───────────────────────────────────────────────────────────
+
+def extract_case_info_from_pdf(
+    filepath: str,
+    progress_callback=None,
+) -> dict[str, Any]:
+    """
+    Run the full hybrid extraction pipeline on a PDF.
+
+    Returns:
+        {
+            "cause_number": (value_or_None, "regex"|"ai"|"failed"),
+            "witness_last": (value_or_None, "regex"|"ai"|"failed"),
+            "date":         (value_or_None, "regex"|"ai"|"failed"),
+            "keyterms":     [str],
+            "scanned":      False,
+        }
+    """
+
+    def _log(msg: str):
+        logger.info(msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    _log(f"Extracting text from {os.path.basename(filepath)}...")
+    text = extract_pdf_text(filepath)
+
+    # Check for scanned/unreadable PDF
+    if len(text) < 50:
+        _log("PDF appears to be scanned or unreadable (< 50 chars extracted)")
+        return {
+            "cause_number": (None, "failed"),
+            "witness_last": (None, "failed"),
+            "date": (None, "failed"),
+            "keyterms": [],
+            "scanned": True,
+        }
+
+    # Step 2: regex extraction
+    _log("Running regex extraction...")
+    results: dict[str, tuple[str | None, str]] = {
+        "cause_number": extract_cause_number(text),
+        "witness_last": extract_witness_name(text),
+        "date": extract_date(text),
+    }
+
+    # Log regex results
+    for field, (val, src) in results.items():
+        _log(f"  {field}: {val!r} ({src})")
+
+    # Check which fields failed
+    missing = [k for k, (v, s) in results.items() if s == "failed"]
+
+    if missing:
+        _log(f"Regex missed {len(missing)} field(s): {missing} — calling Claude API...")
+        ai_results = ai_extract_fields(text, missing)
+
+        for field in missing:
+            ai_val = ai_results.get(field)
+            if ai_val:
+                results[field] = (str(ai_val), "ai")
+                _log(f"  {field}: {ai_val!r} (ai)")
+            else:
+                _log(f"  {field}: not found (ai also failed)")
+    else:
+        _log("All fields extracted via regex.")
+
+    _log("Extracting intake keyterms...")
+    results["keyterms"] = _extract_keyterms_from_pdf_text(text, progress_callback)
+    results["scanned"] = False
+    return results

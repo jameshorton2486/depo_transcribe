@@ -6,6 +6,9 @@ __pycache__/
 temp/
 logs/
 output/
+jobs/*.json
+jobs/*.pkl
+work_files/*.json
 work_files/transcripts/
 *.log
 .pytest_cache/

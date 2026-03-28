@@ -80,6 +80,15 @@ def normalize_audio(input_path: str, config: dict = None, progress_callback=None
     output_filename = f"normalized_{input_path.stem}.wav"
     output_path = os.path.join(TEMP_DIR, output_filename)
 
+    # Skip re-normalization if output already exists and is newer than input
+    if os.path.exists(output_path) and os.path.getmtime(output_path) >= os.path.getmtime(str(input_path)):
+        size_mb = os.path.getsize(output_path) / (1024 * 1024)
+        logger.info("Normalized file already exists, skipping: %s (%.1f MB)", output_path, size_mb)
+        print(f"[AUDIO] Already normalized: {output_filename} ({size_mb:.1f} MB)")
+        if progress_callback:
+            progress_callback(f"Using existing normalized audio ({size_mb:.1f} MB)")
+        return output_path
+
     filters = []
     filters.append(f"highpass=f={config['highpass_freq']}")
 
@@ -136,6 +145,7 @@ def normalize_audio(input_path: str, config: dict = None, progress_callback=None
         audio_stream.get("codec_name", "unknown"),
     )
 
+    logger.info("Preprocessor complete chunk=%s, moving to next.", output_filename)
     return output_path
 
 

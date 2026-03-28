@@ -13,45 +13,18 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-
-def build_output_path(
-    base_dir: str,
-    cause_number: str = "",
-    last_name: str = "",
-    date_str: str = "",
-) -> Path:
-    """
-    Build filing path: base_dir / YYYY / Mon / CauseNumber_LastName
-
-    Example: C:\\Users\\james\\Depositions\\2026\\Mar\\2025CI19595_Coger
-    """
-    # Parse date
-    dt = None
-    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y"):
-        try:
-            dt = datetime.strptime(date_str.strip(), fmt)
-            break
-        except ValueError:
-            continue
-    if dt is None:
-        dt = datetime.now()
-
-    # Sanitize cause number and last name for use in folder name
-    safe_cause = "".join(c for c in cause_number if c.isalnum() or c in "-_") or "UnknownCause"
-    safe_name  = "".join(c for c in last_name   if c.isalnum() or c in "-_") or "UnknownWitness"
-
-    folder_name = f"{safe_cause}_{safe_name}"
-
-    return Path(base_dir) / dt.strftime("%Y") / dt.strftime("%b") / folder_name
+from core.file_manager import resolve_or_create_case
 
 
 def run_transcription_job(
     audio_path: str,
     model: str,
     quality: str,
+    utt_split: float,
     base_dir: str,
     cause_number: str = "",
     last_name: str = "",
+    first_name: str = "",
     date_str: str = "",
     keyterms: list = None,
     ufm_fields: dict = None,
@@ -102,7 +75,22 @@ def run_transcription_job(
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
         # Log keyterms
-        _log(f"Keyterms: {len(keyterms or [])}")
+        kt_count = len(keyterms) if keyterms else 0
+        _log(f"Keyterms: {kt_count}")
+        if keyterms:
+            _log(f"Keyterm list: {keyterms[:10]}{'...' if len(keyterms) > 10 else ''}")
+
+        case_path, folder_status = resolve_or_create_case(
+            base_dir,
+            cause_number,
+            last_name,
+            first_name,
+            date_str,
+        )
+        if folder_status["errors"]:
+            raise RuntimeError(f"Failed to create required case folders: {folder_status['errors']}")
+        if folder_status["created"]:
+            _log(f"Created folders: {folder_status['created']}")
 
         # -- 3. Normalize audio ----------------------------------------------------
         _progress(10, "Normalizing audio\u2026")
@@ -136,7 +124,7 @@ def run_transcription_job(
             result = transcribe_chunk(
                 chunk.file_path,
                 model=model,
-                utt_split=0.85,
+                utt_split=utt_split,
                 keyterms=keyterms,
                 progress_callback=_log,
             )
@@ -167,8 +155,9 @@ def run_transcription_job(
 
         # -- 8. Save files ---------------------------------------------------------
         _progress(95, "Saving files\u2026")
-        out_dir = build_output_path(base_dir, cause_number, last_name, date_str)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = Path(case_path)
+        deepgram_dir = out_dir / "Deepgram"
+        deepgram_dir.mkdir(parents=True, exist_ok=True)
 
         # Name files by timestamp
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -176,8 +165,8 @@ def run_transcription_job(
         txt_name  = f"{base_name}_{stamp}.txt"
         json_name = f"{base_name}_{stamp}.json"
 
-        txt_path  = out_dir / txt_name
-        json_path = out_dir / json_name
+        txt_path  = deepgram_dir / txt_name
+        json_path = deepgram_dir / json_name
 
         # Write transcript text
         txt_path.write_text(transcript_text, encoding="utf-8")
@@ -198,7 +187,7 @@ def run_transcription_job(
         _log(f"Saved: {json_path.name}")
 
         # Write raw Deepgram responses
-        raw_json_path = out_dir / f"{base_name}_{stamp}_raw.json"
+        raw_json_path = deepgram_dir / f"{base_name}_{stamp}_raw.json"
         raw_data = {
             "audio_file": audio_path,
             "model":      model,
@@ -212,7 +201,7 @@ def run_transcription_job(
         # Write UFM fields if provided
         ufm_path = None
         if ufm_fields:
-            ufm_path = out_dir / f"{base_name}_{stamp}_ufm_fields.json"
+            ufm_path = deepgram_dir / f"{base_name}_{stamp}_ufm_fields.json"
             with open(ufm_path, "w", encoding="utf-8") as f:
                 json.dump(ufm_fields, f, indent=2, ensure_ascii=False)
             _log(f"Saved UFM fields: {ufm_path.name}")

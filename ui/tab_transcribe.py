@@ -16,6 +16,16 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
+from app_logging import get_logger
+from core.keyterm_extractor import (
+    MAX_KEYTERMS,
+    extract_keyterms_from_text,
+    merge_keyterms,
+)
+
+logger = get_logger(__name__)
+_DEFAULT_BUTTON_COLOR = ["#3B8ED0", "#1F6AA5"]
+
 
 # Default output directory
 _DEFAULT_BASE_DIR = r"C:\Users\james\Depositions"
@@ -685,6 +695,10 @@ class TranscribeTab(ctk.CTkFrame):
         self._speaker_entries: dict[str, ctk.CTkEntry] = {}
         self._extracted_case_data: dict = {}
         self._ufm_fields: dict = {}
+        self._reporter_notes_text: str = ""
+        self._current_keyterms: list[str] | None = None
+        self._pdf_already_loaded = False
+        self._current_case_path: str | None = None
 
         self._build_ui()
 
@@ -748,6 +762,29 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._model_combo.pack(fill="x", pady=(4, 0))
 
+        ctk.CTkLabel(
+            model_frame,
+            text="Utterance Split (utt_split)",
+            font=ctk.CTkFont(weight="bold"),
+        ).pack(anchor="w", pady=(10, 0))
+        self._utt_split_var = ctk.DoubleVar(value=1.2)
+        self._utt_split_label = ctk.CTkLabel(
+            model_frame,
+            text="1.20",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        )
+        utt_slider = ctk.CTkSlider(
+            model_frame,
+            from_=0.3,
+            to=2.0,
+            number_of_steps=17,
+            variable=self._utt_split_var,
+            command=lambda v: self._utt_split_label.configure(text=f"{float(v):.2f}"),
+        )
+        utt_slider.pack(fill="x", pady=(4, 0))
+        self._utt_split_label.pack(anchor="e")
+
         # RIGHT — Audio Quality
         quality_frame = ctk.CTkFrame(settings_row, fg_color="transparent")
         quality_frame.grid(row=0, column=1, sticky="ew", padx=(8, 0))
@@ -781,15 +818,6 @@ class TranscribeTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=14, weight="bold"),
         ).pack(side="left")
 
-        self._review_btn = ctk.CTkButton(
-            case_header_row,
-            text="\U0001f4cb Review & Edit",
-            width=150,
-            state="disabled",
-            command=self._open_review_dialog,
-        )
-        self._review_btn.pack(side="right")
-
         case_grid = ctk.CTkFrame(case_card, fg_color="transparent")
         case_grid.pack(fill="x", padx=12, pady=(0, 4))
         case_grid.columnconfigure((0, 1), weight=1)
@@ -815,27 +843,57 @@ class TranscribeTab(ctk.CTkFrame):
         cause_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
         cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=2)
 
-        ctk.CTkLabel(cause_frame, text="Cause Number", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        cause_label_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
+        cause_label_row.pack(fill="x")
+        ctk.CTkLabel(cause_label_row, text="Cause Number", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self._cause_badge = ctk.CTkLabel(cause_label_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._cause_badge.pack(side="left", padx=(6, 0))
+
         self._cause_var = ctk.StringVar()
         ctk.CTkEntry(cause_frame, textvariable=self._cause_var, placeholder_text="e.g. 2025CI19595").pack(fill="x", pady=(2, 0))
-        self._cause_var.trace_add("write", lambda *_: self._update_path_preview())
+        self._cause_var.trace_add("write", self._on_cause_changed)
 
         name_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
         name_frame.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=2)
 
-        ctk.CTkLabel(name_frame, text="Witness Last Name", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        name_label_row = ctk.CTkFrame(name_frame, fg_color="transparent")
+        name_label_row.pack(fill="x")
+        ctk.CTkLabel(name_label_row, text="Witness Last Name", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self._witness_badge = ctk.CTkLabel(name_label_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._witness_badge.pack(side="left", padx=(6, 0))
+
         self._lastname_var = ctk.StringVar()
         ctk.CTkEntry(name_frame, textvariable=self._lastname_var, placeholder_text="e.g. Coger").pack(fill="x", pady=(2, 0))
-        self._lastname_var.trace_add("write", lambda *_: self._update_path_preview())
+        self._lastname_var.trace_add("write", self._on_lastname_changed)
 
-        # Row 2 — Deposition Date
+        # Row 2 — Witness First Name + Deposition Date
+        first_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
+        first_frame.grid(row=2, column=0, sticky="ew", padx=(0, 8), pady=2)
+
+        ctk.CTkLabel(first_frame, text="Witness First Name", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        self._firstname_var = ctk.StringVar()
+        ctk.CTkEntry(first_frame, textvariable=self._firstname_var, placeholder_text="e.g. Matthew").pack(fill="x", pady=(2, 0))
+        self._firstname_var.trace_add("write", lambda *_: self._update_path_preview())
+
         date_frame = ctk.CTkFrame(case_grid, fg_color="transparent")
-        date_frame.grid(row=2, column=0, sticky="ew", padx=(0, 8), pady=2)
+        date_frame.grid(row=2, column=1, sticky="ew", padx=(8, 0), pady=2)
 
-        ctk.CTkLabel(date_frame, text="Deposition Date", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
+        date_label_row = ctk.CTkFrame(date_frame, fg_color="transparent")
+        date_label_row.pack(fill="x")
+        ctk.CTkLabel(date_label_row, text="Deposition Date", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        self._date_badge = ctk.CTkLabel(date_label_row, text="", font=ctk.CTkFont(size=10), width=0)
+        self._date_badge.pack(side="left", padx=(6, 0))
+
         self._date_var = ctk.StringVar(value=datetime.now().strftime("%m/%d/%Y"))
         ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="MM/DD/YYYY").pack(fill="x", pady=(2, 0))
         self._date_var.trace_add("write", lambda *_: self._update_path_preview())
+
+        # Extraction status label (shown during PDF extraction)
+        self._extract_status_label = ctk.CTkLabel(
+            case_card, text="", font=ctk.CTkFont(size=11),
+            text_color="gray", wraplength=900, anchor="w", justify="left",
+        )
+        self._extract_status_label.pack(anchor="w", padx=12, pady=(0, 0))
 
         # Path preview
         self._path_preview_label = ctk.CTkLabel(
@@ -858,9 +916,8 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkLabel(
             keyterms_card,
             text=(
-                "Upload a PDF to extract proper nouns, or type names directly.\n"
-                "Deepgram uses these to improve spelling accuracy during transcription.\n"
-                "Separate multiple terms with a new line."
+                "Upload a PDF or Reporter Notes to extract keyterms.\n"
+                "Deepgram uses these to improve spelling accuracy during transcription."
             ),
             font=ctk.CTkFont(size=11),
             text_color="gray",
@@ -870,13 +927,40 @@ class TranscribeTab(ctk.CTkFrame):
         kt_btn_row = ctk.CTkFrame(keyterms_card, fg_color="transparent")
         kt_btn_row.pack(fill="x", padx=12)
 
-        ctk.CTkButton(
+        self._upload_pdf_btn = ctk.CTkButton(
             kt_btn_row, text="+ Upload PDF", width=120,
-            command=self._upload_keyterms_pdf,
-        ).pack(side="left")
+            command=self._handle_pdf_upload,
+        )
+        self._upload_pdf_btn.pack(side="left")
+
+        self._upload_reporter_notes_btn = ctk.CTkButton(
+            kt_btn_row,
+            text="+ Reporter Notes",
+            width=140,
+            command=self._upload_reporter_notes,
+        )
+        self._upload_reporter_notes_btn.pack(side="left", padx=(8, 0))
+
+        self._review_btn = ctk.CTkButton(
+            kt_btn_row,
+            text="\U0001f4cb Review & Edit",
+            width=150,
+            state="disabled",
+            command=self._open_review_dialog,
+        )
+
+        self._rescan_btn = ctk.CTkButton(
+            kt_btn_row,
+            text="\U0001f504 Re-Scan",
+            width=90,
+            command=self._force_rescan,
+        )
+
+        self._review_btn.pack(side="right", padx=(4, 0))
+        self._rescan_btn.pack(side="right", padx=(4, 0))
 
         self._keyterms_count_label = ctk.CTkLabel(
-            kt_btn_row, text="0 keyterms", font=ctk.CTkFont(size=11),
+            kt_btn_row, text=f"0/{MAX_KEYTERMS} keyterms", font=ctk.CTkFont(size=11),
             text_color="gray",
         )
         self._keyterms_count_label.pack(side="left", padx=(12, 0))
@@ -884,7 +968,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._keyterms_box = ctk.CTkTextbox(keyterms_card, height=100)
         self._keyterms_box.pack(fill="x", padx=12, pady=(6, 10))
         self._keyterms_box.insert("1.0", "")
-        self._keyterms_box.bind("<KeyRelease>", lambda _: self._update_keyterms_count())
+        self._keyterms_box.configure(state="disabled")
 
         # ── SECTION 3: Progress Area ─────────────────────────────────────────
         progress_card = ctk.CTkFrame(container)
@@ -1007,23 +1091,121 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _update_path_preview(self):
         """Update the live path preview label based on case info fields."""
-        from core.job_runner import build_output_path
+        from core.file_manager import build_case_path
 
-        try:
-            preview = build_output_path(
-                self._base_dir_var.get(),
-                self._cause_var.get(),
-                self._lastname_var.get(),
-                self._date_var.get(),
+        cause = self._cause_var.get().strip()
+        last = self._lastname_var.get().strip()
+        first = self._firstname_var.get().strip()
+        date = self._date_var.get().strip()
+        base = self._base_dir_var.get().strip()
+
+        if cause and last:
+            path = build_case_path(base, cause, last, first, date)
+            self._path_preview_label.configure(text=f"Will save to: {path}")
+            self._current_case_path = path
+        else:
+            self._path_preview_label.configure(
+                text="Will save to: (fill in Cause Number and Witness Name)"
             )
-            self._path_preview_label.configure(text=f"Will save to: {preview}")
-        except Exception:
-            self._path_preview_label.configure(text="Will save to: ...")
+            self._current_case_path = None
+
+    def _get_current_save_path(self):
+        return self._current_case_path or ""
+
+    def _on_cause_changed(self, *_):
+        self._update_path_preview()
+        if not self._cause_var.get().strip():
+            self._reset_case_state()
+
+    def _on_lastname_changed(self, *_):
+        self._update_path_preview()
+        if not self._lastname_var.get().strip():
+            self._reset_case_state()
+
+    def _reset_case_state(self):
+        """Reset auto-detected case data when switching to a new case."""
+        self._pdf_already_loaded = False
+        self._reporter_notes_text = ""
+        self._current_keyterms = None
+        self._extracted_case_data = {}
+        self._current_case_path = None
+        self._review_btn.configure(state="disabled")
+        self._upload_pdf_btn.configure(
+            text="+ Upload PDF",
+            fg_color=_DEFAULT_BUTTON_COLOR,
+            state="normal",
+        )
+        self._upload_reporter_notes_btn.configure(
+            text="+ Reporter Notes",
+            fg_color=_DEFAULT_BUTTON_COLOR,
+        )
+        for badge in (self._cause_badge, self._witness_badge, self._date_badge):
+            badge.configure(text="")
+        self._extract_status_label.configure(text="")
+        self._update_keyterms_count()
+        logger.info("Case state reset.")
+
+    def _force_rescan(self):
+        """Force re-detection of PDF and reporter notes from source_docs."""
+        self._pdf_already_loaded = False
+        self._reporter_notes_text = ""
+        self._extracted_case_data = {}
+        self._review_btn.configure(state="disabled")
+        self._upload_pdf_btn.configure(text="+ Upload PDF", fg_color=_DEFAULT_BUTTON_COLOR)
+        self._upload_reporter_notes_btn.configure(text="+ Reporter Notes", fg_color=_DEFAULT_BUTTON_COLOR)
+        self._extract_status_label.configure(text="")
+        self._update_keyterms_count()
+        self._auto_detect_source_docs()
+
+    def _auto_detect_source_docs(self):
+        """
+        Detect PDF and reporter notes from the resolved case folder.
+        Only runs when the case folder exists on disk.
+        """
+        from core.pdf_extractor import find_case_pdf, find_reporter_notes
+
+        base_path = self._get_current_save_path()
+        if not base_path or not os.path.isdir(base_path):
+            return
+
+        if not self._pdf_already_loaded:
+            pdf_path = find_case_pdf(str(base_path))
+            if pdf_path:
+                logger.info("[Auto-Detect] PDF found: %s", pdf_path)
+                self._upload_pdf_btn.configure(
+                    text="PDF Auto-Detected",
+                    fg_color="#2A6F3A",
+                )
+                self._pdf_already_loaded = True
+                self._handle_pdf_upload(pdf_path=pdf_path, auto_detected=True)
+            else:
+                logger.info("[Auto-Detect] No PDF found in source_docs.")
+
+        if not self._reporter_notes_text:
+            notes_path = find_reporter_notes(str(base_path))
+            if notes_path:
+                try:
+                    self._load_reporter_notes(notes_path, auto_detected=True)
+                    logger.info("[Auto-Detect] Reporter notes found: %s", notes_path)
+                except Exception as exc:
+                    logger.warning("[Auto-Detect] Could not read reporter notes: %s", exc)
+            else:
+                logger.info("[Auto-Detect] No reporter notes found in source_docs.")
 
     def _update_keyterms_count(self):
         raw = self._keyterms_box.get("1.0", "end").strip()
         count = len([line for line in raw.splitlines() if line.strip()])
-        self._keyterms_count_label.configure(text=f"{count} keyterms")
+        suffix = " + notes" if self._reporter_notes_text.strip() else ""
+        self._keyterms_count_label.configure(text=f"{count}/{MAX_KEYTERMS} keyterms{suffix}")
+
+    def _append_keyterms(self, terms: list[str]):
+        self._keyterms_box.configure(state="normal")
+        existing = self._keyterms_box.get("1.0", "end").strip()
+        if existing:
+            self._keyterms_box.insert("end", "\n")
+        self._keyterms_box.insert("end", "\n".join(terms))
+        self._keyterms_box.configure(state="disabled")
+        self._update_keyterms_count()
 
     def _populate_case_fields(self, data: dict):
         """Refresh main UI fields from extracted case data."""
@@ -1034,6 +1216,7 @@ class TranscribeTab(ctk.CTkFrame):
         if witness:
             parts = witness.strip().split()
             if parts:
+                self._firstname_var.set(parts[0])
                 self._lastname_var.set(parts[-1])
         if depo.get("date"):
             self._date_var.set(depo["date"])
@@ -1043,13 +1226,74 @@ class TranscribeTab(ctk.CTkFrame):
     def _browse_file(self):
         path = filedialog.askopenfilename(filetypes=_AUDIO_VIDEO_EXTENSIONS)
         if path:
+            self._reset_case_state()
             self._selected_file = path
             self._set_entry_text(self._file_entry, path)
+            self._apply_filename_extraction(path)
+            self.after(300, self._auto_detect_source_docs)
+
+    def _apply_filename_extraction(self, filepath: str):
+        """Parse the audio filename for date and witness name."""
+        from core.pdf_extractor import extract_from_filename
+
+        results = extract_from_filename(filepath)
+
+        _BADGE = {
+            "filename": ("\U0001f7e9 Filename", "#44AA66"),
+            "failed":   ("\u26a0\ufe0f Manual", "#888888"),
+        }
+
+        # Date
+        date_val, date_src = results.get("date", (None, "failed"))
+        if date_val:
+            self._date_var.set(date_val)
+            txt, col = _BADGE.get(date_src, _BADGE["failed"])
+            self._date_badge.configure(text=txt, text_color=col)
+
+        # Witness Last Name
+        witness_val, witness_src = results.get("witness_last", (None, "failed"))
+        if witness_val:
+            self._lastname_var.set(witness_val)
+            txt, col = _BADGE.get(witness_src, _BADGE["failed"])
+            self._witness_badge.configure(text=txt, text_color=col)
+
+        witness_first, _ = results.get("witness_first", (None, "failed"))
+        if witness_first:
+            self._firstname_var.set(witness_first)
+
+        # Cause number is never in filename — prompt PDF upload if empty
+        if not self._cause_var.get().strip():
+            self._extract_status_label.configure(
+                text="Cause number not in filename \u2014 upload a PDF notice or enter manually.",
+                text_color="#CCAA44",
+            )
+            self._cause_badge.configure(text="\u26a0\ufe0f Manual", text_color="#888888")
+        else:
+            self._extract_status_label.configure(text="")
 
     def _browse_base_dir(self):
         path = filedialog.askdirectory(initialdir=self._base_dir_var.get())
         if path:
             self._base_dir_var.set(path)
+
+    def _create_case_folders_now(self):
+        """Ensure the current case folder structure exists before writing outputs."""
+        from core.file_manager import resolve_or_create_case
+
+        if not self._current_case_path:
+            return
+
+        _, status = resolve_or_create_case(
+            self._base_dir_var.get().strip(),
+            self._cause_var.get().strip(),
+            self._lastname_var.get().strip(),
+            self._firstname_var.get().strip(),
+            self._date_var.get().strip(),
+        )
+        if status["errors"]:
+            logger.error("Folder creation errors: %s", status["errors"])
+        if status["created"]:
+            logger.info("Folders created: %s", status["created"])
 
     def _open_output_folder(self):
         folder = self._last_output_dir
@@ -1061,68 +1305,168 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _open_transcript(self):
         if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
-            if sys.platform == "win32":
-                os.startfile(self._last_transcript_path)
-            else:
-                subprocess.Popen(["xdg-open", self._last_transcript_path])
+            app = self.winfo_toplevel()
+            app.transcript_tab.load_transcript(self._last_transcript_path)
+            app.tab_view.set("Transcript")
+
+    def _handle_pdf_upload(self, pdf_path: str | None = None, auto_detected: bool = False):
+        """Load one PDF and extract both case fields and keyterms."""
+        filepath = pdf_path or filedialog.askopenfilename(
+            title="Select Deposition PDF",
+            filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")],
+        )
+        if not filepath:
+            return
+
+        self._last_pdf_path = filepath
+        self._pdf_already_loaded = True
+        self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
+        self._extract_status_label.configure(text="Extracting case info and keyterms\u2026", text_color="white")
+
+        def _run():
+            from core.pdf_extractor import extract_case_info_from_pdf
+
+            results = extract_case_info_from_pdf(
+                filepath,
+                progress_callback=lambda msg: self.after(0, self._append_log, msg),
+            )
+            self.after(0, self._apply_pdf_results, results, auto_detected)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _apply_pdf_results(self, results: dict, auto_detected: bool = False):
+        """Populate fields and keyterms from one PDF extraction result."""
+        self._upload_pdf_btn.configure(
+            state="normal",
+            text="PDF Auto-Detected" if auto_detected else "+ Upload PDF",
+            fg_color="#2A6F3A" if auto_detected else _DEFAULT_BUTTON_COLOR,
+        )
+
+        _BADGE = {
+            "filename": ("\U0001f7e9 Filename", "#44AA66"),
+            "regex":    ("\U0001f7e6 Regex", "#4488CC"),
+            "ai":       ("\U0001f7e3 AI", "#9966CC"),
+            "failed":   ("\u26a0\ufe0f Manual", "#888888"),
+        }
+
+        scanned = results.get("scanned", False)
+        if scanned:
+            self._extract_status_label.configure(
+                text="This appears to be a scanned PDF. Please enter fields manually.",
+                text_color="#CCAA44",
+            )
+            for badge in (self._cause_badge, self._witness_badge, self._date_badge):
+                txt, col = _BADGE["failed"]
+                badge.configure(text=txt, text_color=col)
+            return
+
+        # Cause Number
+        cause_val, cause_src = results.get("cause_number", (None, "failed"))
+        if cause_val and not self._cause_var.get().strip():
+            self._cause_var.set(cause_val)
+        txt, col = _BADGE.get(cause_src, _BADGE["failed"])
+        self._cause_badge.configure(text=txt, text_color=col)
+
+        # Witness Last Name
+        witness_val, witness_src = results.get("witness_last", (None, "failed"))
+        if witness_val and not self._lastname_var.get().strip():
+            self._lastname_var.set(witness_val)
+        txt, col = _BADGE.get(witness_src, _BADGE["failed"])
+        self._witness_badge.configure(text=txt, text_color=col)
+
+        # Date
+        date_val, date_src = results.get("date", (None, "failed"))
+        if date_val and self._date_var.get().strip() == datetime.now().strftime("%m/%d/%Y"):
+            self._date_var.set(date_val)
+        txt, col = _BADGE.get(date_src, _BADGE["failed"])
+        self._date_badge.configure(text=txt, text_color=col)
+
+        raw_keyterms = results.get("keyterms", [])
+        reporter_terms: list[str] = []
+        if self._reporter_notes_text:
+            reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
+
+        final_keyterms, _, reporter_fill = merge_keyterms(
+            pdf_terms=raw_keyterms,
+            reporter_terms=reporter_terms,
+            limit=MAX_KEYTERMS,
+        )
+        self._current_keyterms = final_keyterms or None
+        self._keyterms_box.configure(state="normal")
+        self._keyterms_box.delete("1.0", "end")
+        if final_keyterms:
+            self._keyterms_box.insert("1.0", "\n".join(final_keyterms))
+        self._keyterms_box.configure(state="disabled")
+        self._update_keyterms_count()
+
+        if final_keyterms:
+            self._extract_status_label.configure(
+                text=(
+                    f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
+                    f"({min(len(raw_keyterms), MAX_KEYTERMS)} from PDF"
+                    + (f", {len(reporter_fill)} from reporter notes" if reporter_fill else "")
+                    + ")"
+                ),
+                text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
+            )
+            self._append_log(
+                f"Prepared {len(final_keyterms)} keyterms from PDF"
+                + (f" + {len(reporter_fill)} reporter-note terms" if reporter_fill else "")
+            )
+
+        sources = [cause_src, witness_src, date_src]
+        filled = sum(1 for s in sources if s != "failed")
+        if not final_keyterms:
+            self._extract_status_label.configure(
+                text=f"Extracted {filled}/3 fields from PDF.",
+                text_color="#44FF44" if filled == 3 else "#CCAA44",
+            )
 
     def _open_review_dialog(self):
+        self._auto_detect_source_docs()
         IntakeReviewDialog(self, self._extracted_case_data)
 
-    def _upload_keyterms_pdf(self):
-        """Open a PDF, extract capitalized words/phrases as keyterm candidates."""
-        path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf")])
-        if not path:
+    def _load_reporter_notes(self, filepath: str, auto_detected: bool = False):
+        with open(filepath, "r", encoding="utf-8") as handle:
+            self._reporter_notes_text = handle.read()
+
+        btn_text = "Notes Auto-Detected" if auto_detected else "Notes Loaded"
+        self._upload_reporter_notes_btn.configure(
+            text=btn_text,
+            fg_color="#2A6F3A",
+        )
+        self._update_keyterms_count()
+        self._extract_status_label.configure(
+            text=(
+                f"Reporter notes auto-detected: {os.path.basename(filepath)}"
+                if auto_detected else
+                f"Reporter notes loaded: {os.path.basename(filepath)}"
+            ),
+            text_color="#44FF44",
+        )
+        self._append_log(
+            f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {filepath}"
+        )
+
+    def _upload_reporter_notes(self):
+        """Open file dialog to select court reporter notes text file."""
+        filepath = filedialog.askopenfilename(
+            title="Select Court Reporter Notes",
+            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
+        )
+        if not filepath:
             return
 
         try:
-            import pdfplumber
-        except ImportError:
-            messagebox.showerror(
-                "Missing Package",
-                "pdfplumber is not installed.\nRun: pip install pdfplumber",
-            )
-            return
-
-        try:
-            text = ""
-            with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text += page_text + "\n"
-
-            # Extract capitalized words/phrases (2+ chars, starts with capital)
-            candidates = set()
-            for match in re.findall(r"\b[A-Z][a-zA-Z]{1,}\b(?:\s+[A-Z][a-zA-Z]{1,}\b)*", text):
-                cleaned = match.strip()
-                if len(cleaned) >= 2:
-                    candidates.add(cleaned)
-
-            # Remove very common English words that happen to start sentences
-            stopwords = {
-                "The", "This", "That", "These", "Those", "There", "Their",
-                "They", "When", "Where", "Which", "What", "With", "Were",
-                "Will", "Would", "Should", "Could", "Have", "Has", "Had",
-                "Does", "Did", "Not", "Are", "Was", "Been", "Being",
-                "From", "Into", "Each", "Every", "Also", "Very", "Such",
-                "Any", "All", "But", "And", "For", "About", "After",
-                "Before", "Between", "Under", "Over", "Other", "Some",
-            }
-            candidates -= stopwords
-
-            sorted_terms = sorted(candidates)
-
-            # Append to textbox
-            existing = self._keyterms_box.get("1.0", "end").strip()
-            if existing:
-                self._keyterms_box.insert("end", "\n")
-            self._keyterms_box.insert("end", "\n".join(sorted_terms))
-            self._update_keyterms_count()
-            self._append_log(f"Extracted {len(sorted_terms)} keyterms from {os.path.basename(path)}")
-
+            self._load_reporter_notes(filepath, auto_detected=False)
         except Exception as exc:
-            messagebox.showerror("PDF Error", str(exc))
+            self._reporter_notes_text = ""
+            self._upload_reporter_notes_btn.configure(
+                text="Load Failed",
+                fg_color="#8B0000",
+            )
+            self._update_keyterms_count()
+            messagebox.showerror("Reporter Notes Error", str(exc))
 
     # ── Transcription Flow ───────────────────────────────────────────────────
 
@@ -1131,6 +1475,8 @@ class TranscribeTab(ctk.CTkFrame):
         if not self._selected_file or not os.path.isfile(self._selected_file):
             messagebox.showerror("No file selected", "Please select an audio or video file first.")
             return
+
+        self._auto_detect_source_docs()
 
         # Validate API key
         from config import DEEPGRAM_API_KEY
@@ -1142,9 +1488,36 @@ class TranscribeTab(ctk.CTkFrame):
             )
             return
 
-        # Read keyterms
+        # Build final keyterms from primary textbox terms plus optional reporter notes.
         raw_kt = self._keyterms_box.get("1.0", "end").strip()
-        self._current_keyterms = [line.strip() for line in raw_kt.splitlines() if line.strip()] or None
+        raw_pdf_keyterms = [line.strip() for line in raw_kt.splitlines() if line.strip()]
+
+        raw_reporter_keyterms: list[str] = []
+        if self._reporter_notes_text.strip():
+            raw_reporter_keyterms = extract_keyterms_from_text(self._reporter_notes_text)
+            self._append_log(
+                f"Extracted {len(raw_reporter_keyterms)} raw reporter-note keyterms"
+            )
+
+        final_keyterms, clean_primary, reporter_fill = merge_keyterms(
+            pdf_terms=raw_pdf_keyterms,
+            reporter_terms=raw_reporter_keyterms,
+            limit=MAX_KEYTERMS,
+        )
+        self._current_keyterms = final_keyterms or None
+
+        self._append_log(
+            f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
+            f"({min(len(clean_primary), MAX_KEYTERMS)} primary, {len(reporter_fill)} reporter)"
+        )
+        self._extract_status_label.configure(
+            text=(
+                f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
+                f"{min(len(clean_primary), MAX_KEYTERMS)} from PDF/manual"
+                + (f", {len(reporter_fill)} from reporter notes" if raw_reporter_keyterms else "")
+            ),
+            text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
+        )
 
         # Disable button
         self._running = True
@@ -1171,13 +1544,17 @@ class TranscribeTab(ctk.CTkFrame):
     def _run_job(self):
         from core.job_runner import run_transcription_job
 
+        self._create_case_folders_now()
+
         run_transcription_job(
             audio_path=self._selected_file,
             model=self._model_var.get(),
             quality=self._quality_var.get(),
+            utt_split=float(self._utt_split_var.get()),
             base_dir=self._base_dir_var.get(),
             cause_number=self._cause_var.get(),
             last_name=self._lastname_var.get(),
+            first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
             keyterms=self._current_keyterms,
             ufm_fields=self._ufm_fields or None,
@@ -1226,6 +1603,11 @@ class TranscribeTab(ctk.CTkFrame):
 
             # Show speaker labels section
             self._show_speaker_section()
+
+            if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
+                app = self.winfo_toplevel()
+                app.transcript_tab.load_transcript(self._last_transcript_path)
+                app.tab_view.set("Transcript")
 
             # Enable review button if case data has been extracted
             if self._extracted_case_data:
