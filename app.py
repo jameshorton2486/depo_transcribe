@@ -1,7 +1,7 @@
-"""
+r"""
 Depo-Pro Transcribe — launcher
 Run: python app.py
-.\.venv\Scripts\python.exe app.p
+.\.venv\Scripts\python.exe app.py
 
 """
 

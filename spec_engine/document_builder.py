@@ -34,7 +34,9 @@ from .pages.caption import write_caption
 from .pages.cert_exhibits import write_cert_exhibits
 from .pages.certificate import write_certificate
 from .pages.changes_signature import write_changes_signature
-from .pages.corrections_log import write_corrections_log
+# corrections_log is intentionally excluded from DOCX output (Miah preference)
+# Corrections summary is printed to the run logger only — not included in cert output
+# from .pages.corrections_log import write_corrections_log
 from .pages.exhibit_index import write_exhibit_index
 from .pages.post_record import apply_retroactive_corrections, write_post_record_section
 from .pages.title_page import write_title_page
@@ -263,15 +265,24 @@ def process_transcript(
             job_config.confirmed_spellings[prs.name] = prs.correct_spelling
     job_config.spec_flags = list(state.flags)
 
-    # Page 1: Style/Title Page (UFM Fig03)
+    # Log corrections summary to console (not written to DOCX)
+    log(f"  Corrections applied: {len(all_corrections)}")
+    log(f"  Scopist flags:       {len(state.flags)}")
+    if all_corrections:
+        from collections import Counter
+        pattern_counts = Counter(r.pattern for r in all_corrections if hasattr(r, 'pattern'))
+        for pattern, count in pattern_counts.most_common(5):
+            log(f"    {pattern}: {count}×")
+
+    # Page 1: Title Page (UFM Fig03)
     write_title_page(doc, job_config)
     add_page_break(doc)
 
-    # Page 2: Corrections Log (Spec Section 3.1)
-    write_corrections_log(doc, job_config, all_corrections, state.flags)
-    add_page_break(doc)
+    # Corrections Log: intentionally excluded from DOCX (Miah preference).
+    # Corrections summary is available in the run logger and _corrections.json.
+    # Transcript body begins immediately after the title page.
 
-    # Page 3: Caption / Appearances (UFM Fig04)
+    # Caption / Appearances (UFM Fig04)
     write_caption(doc, job_config)
     add_page_break(doc)
 

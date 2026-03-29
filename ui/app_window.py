@@ -23,8 +23,8 @@ class DepoTranscribeApp(ctk.CTk):
         self.state("zoomed")
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
-        ctk.set_widget_scaling(0.4)
-        ctk.set_window_scaling(0.4)
+        ctk.set_widget_scaling(1.0)
+        ctk.set_window_scaling(1.0)
 
         # -- Dark navy header bar --------------------------------------------------
         header = ctk.CTkFrame(self, height=50, fg_color="#1E3A5F", corner_radius=0)

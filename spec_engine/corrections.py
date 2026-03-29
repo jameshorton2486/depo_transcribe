@@ -141,6 +141,53 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     # WARNING: "pass away" is intentionally excluded — it means to die.
     (r'\bPast\s+[Ww]itness\b[.]?',      'Pass the witness.'),
     (r'\bPastor\s+[Ww]itness\b[.]?',    'Pass the witness.'),
+    # ── Additional objection garbles (confirmed across multiple depositions) ──
+    (r'\bDissection\b[.]?',              'Objection.'),
+    (r'\bPerception\b[.]?',              'Objection.'),
+    (r'\bAddiction\b[.]?',               'Objection.'),
+    (r'\bDeflection\b[.]?',              'Objection.'),
+    # Combined forms of the new variants
+    (r'\bDissection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    (r'\bPerception\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    (r'\bAddiction\s+[Ff]orm\b[.]?',     'Objection.  Form.'),
+    (r'\bDeflection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    # "Counsel, state the basis" — garbled version of attorney's request
+    (r'\bcan\s+cancel\s+state\s+the\s+basis\b',  'Counsel, state the basis'),
+    (r'\bcancel\s+state\s+the\s+basis\b',         'Counsel, state the basis'),
+    (r'\bcounsel\s+say\s+the\s+basis\b',          'Counsel, state the basis'),
+    # ── Universal trucking / CDL vocabulary garbles ───────────────────────────
+    # These appear across all trucking depositions regardless of case.
+    # "belly dump" — type of dump truck. Deepgram hears "Betty" or "belly"
+    (r'\b[Bb]etty\s+[Dd]ump\b',     'belly dump'),
+    # "super dump" — type of dump truck. Deepgram hears "dumb"
+    (r'\bsuper\s+dumb\b',            'super dump'),
+    # "pre-trip inspection" — mandatory CDL inspection. Deepgram hears "free"
+    (r'\bfree\s+trip\b',             'pre-trip'),
+    (r'\bfree-trip\b',               'pre-trip'),
+    (r'\bfree\s+trip\s+inspection\b','pre-trip inspection'),
+    # "scale house" — DOT weigh station. Deepgram hears "scaler"
+    (r'\bscaler\s+house\b',          'scale house'),
+    (r'\bscaler\s+houses?\b',        'scale house'),
+    # "CDL handbook" / "CDL manual" — Deepgram hears "CDO" or "CEO"
+    (r'\bCDO\s+handbook\b',          'CDL handbook'),
+    (r'\bCDO\s+manual\b',            'CDL manual'),
+    (r'\bCEO\s+handbook\b',          'CDL handbook'),
+    (r'\bCEO\s+manual\b',            'CDL manual'),
+    (r'\bCVL\s+handbook\b',          'CDL handbook'),
+    (r'\bCVL\s+manual\b',            'CDL manual'),
+    # "tractor trailer" spacing variant
+    (r'\btrailer\s+trailer\b',       'tractor trailer'),
+    (r'\btrucker\s+trailer\b',       'tractor trailer'),
+    # "bill of lading" — Deepgram garbles
+    (r'\bbill\s+of\s+[Ll]ayding\b',  'bill of lading'),
+    (r'\bbill\s+of\s+[Ll]aden\b',    'bill of lading'),
+    # "hours of service" — HOS regulations
+    (r'\bours\s+of\s+service\b',     'hours of service'),
+    # "out of service" — DOT violation type
+    (r'\bout\s+of\s+server\b',       'out of service'),
+    # "non-CDL" split forms
+    (r'\bnon\s+CDL\b',               'non-CDL'),
+    (r'\bnon-CDO\b',                 'non-CDL'),
 ]
 
 
@@ -189,6 +236,23 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bsub-poena\b', 'subpoena'),
     (r'\bsupboena\b', 'subpoena'),
     (r'\bsub poena\b', 'subpoena'),
+    # ── Reporter name normalization — Miah Bardot, CSR No. 12129 ─────────────
+    # Deepgram mishears "Miah Bardot" in the reporter's opening statement.
+    # These garbles appear at the start of every deposition she reports.
+    # NOTE: Only correct the NAME — the CSR number is corrected separately
+    #       by the cause-number normalization in apply_date_normalization().
+    (r'\bMia\s+[Bb]ardell?\b',        'Miah Bardot'),
+    (r'\bMia\s+[Bb]ordeau\b',         'Miah Bardot'),
+    (r'\bMia\s+[Bb]ardeau\b',         'Miah Bardot'),
+    (r'\bNeobardeau\b',               'Miah Bardot'),
+    (r'\bMiyamardeau\b',              'Miah Bardot'),
+    (r'\bLea\s+[Bb]ardot?\b',         'Miah Bardot'),
+    (r'\bLea\s+[Bb]ardeau\b',         'Miah Bardot'),
+    (r'\b[Mm]ia\s+[Bb]ardot\b',       'Miah Bardot'),
+    # CSR number garbles in the reporter's opening statement
+    (r'\bLicense\s+Number\s+12129\b',  'CSR No. 12129'),
+    (r'\bnumber\s+12129\b',            'No. 12129'),
+    (r'\b12129\.\s*9\b',               '12129'),
 
     # Deepgram zip code / number artifacts
     (r'\b[Rr]oad morning\b', 'Good morning'),
@@ -222,6 +286,13 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
 
     # Cause number formatting (Texas)
     (r'\b(\d{4})\s+CI\s+(\d+)\b', r'\1-CI-\2'),
+    # Cause number: "242,754" → "24-2754"
+    # Deepgram renders the hyphen between year and number as a comma.
+    # Pattern: 2-digit year + comma + 3-to-5 digit number = cause number
+    # Uses negative lookahead to avoid matching dollar amounts like $24,754
+    (r'(?<!\$)\b(\d{2}),(\d{3,5})\b(?!\d)', r'\1-\2'),
+    # 4-digit year variant: "2025,12281" → "2025-CI-12281" (won't catch all)
+    # This just ensures the simpler 2-digit year format is covered
 
     # Cross-examination hyphen (Spec Section 4.1)
     (r'\b([Cc])ross\s+[Ee]xamination\b', r'\1ross-Examination'),
@@ -924,11 +995,16 @@ def clean_block(
 def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List[Block]:
     """
     Apply deterministic corrections to structured blocks in-place.
+
+    Also deduplicates consecutive verbatim duplicate blocks, which Deepgram
+    occasionally produces from overlapping audio chunks or echo artifacts.
     """
     corrected_blocks: List[Block] = []
     flags: List[ScopistFlag] = []
     flag_counter = [0]
     change_count = 0
+    prev_cleaned: str = ""
+    prev_speaker: Optional[int] = None
 
     for index, block in enumerate(blocks):
         result = clean_block(
@@ -940,6 +1016,26 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
         )
         cleaned_text = result[0]
         records = result[1]
+
+        # ── Consecutive duplicate block detection ─────────────────────────────
+        # Skip this block if its cleaned text is identical to the previous
+        # block AND they share the same speaker. Only applies to blocks of
+        # 15+ characters to avoid false positives on short responses like "Yes."
+        if (
+            len(cleaned_text.strip()) >= 15
+            and cleaned_text.strip() == prev_cleaned.strip()
+            and block.speaker_id == prev_speaker
+        ):
+            logging.getLogger(__name__).debug(
+                "apply_corrections: skipping duplicate block %d: %r",
+                index, cleaned_text[:60],
+            )
+            continue
+
+        if cleaned_text.strip():
+            prev_cleaned = cleaned_text.strip()
+            prev_speaker = block.speaker_id
+
         if cleaned_text != block.text:
             change_count += 1
         corrected_blocks.append(
@@ -957,8 +1053,9 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
         )
 
     logging.getLogger(__name__).info(
-        "apply_corrections: %d/%d blocks modified",
+        "apply_corrections: %d/%d blocks modified  |  %d duplicates skipped",
         change_count,
         len(corrected_blocks),
+        len(blocks) - len(corrected_blocks),
     )
     return corrected_blocks

@@ -709,7 +709,7 @@ class TranscribeTab(ctk.CTkFrame):
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Fixed amber footer — packed FIRST so side="bottom" works ──────────
+        # ── Fixed amber footer — CREATE TRANSCRIPT (full width) ───────────────
         footer = ctk.CTkFrame(self, fg_color="transparent", height=52)
         footer.pack(fill="x", side="bottom", padx=10, pady=(4, 8))
         footer.pack_propagate(False)
@@ -738,7 +738,8 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkLabel(
             file_row,
             text="Audio / Video File",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="white",
             width=130,
             anchor="w",
         ).pack(side="left")
@@ -751,7 +752,13 @@ class TranscribeTab(ctk.CTkFrame):
         self._file_entry.pack(side="left", fill="x", expand=True, padx=(6, 8))
 
         ctk.CTkButton(
-            file_row, text="Browse…", width=80, command=self._browse_file
+            file_row,
+            text="Browse…",
+            width=80,
+            fg_color="#1558C0",
+            hover_color="#0F3E8A",
+            text_color="white",
+            command=self._browse_file,
         ).pack(side="right")
 
         # ── "or" separator ─────────────────────────────────────────────────
@@ -778,7 +785,7 @@ class TranscribeTab(ctk.CTkFrame):
             load_hdr,
             text="Load Existing Transcript",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="#7DD8E8",
+            text_color="white",
         ).pack(side="left")
 
         ctk.CTkLabel(
@@ -816,8 +823,9 @@ class TranscribeTab(ctk.CTkFrame):
             load_file_row,
             text="Browse…",
             width=80,
-            fg_color="#0F5A6A",
-            hover_color="#0A3A4A",
+            fg_color="#1558C0",
+            hover_color="#0F3E8A",
+            text_color="white",
             command=self._browse_existing_transcript,
         )
         self._load_browse_btn.pack(side="right")
@@ -1138,13 +1146,15 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._apply_save_btn = ctk.CTkButton(
             self._speaker_card,
-            text="Apply & Save Renamed Transcript",
-            fg_color="#B8860B",
-            hover_color="#9A7209",
-            font=ctk.CTkFont(weight="bold"),
+            text="\u2713  Apply Speaker Labels",
+            height=32,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#1558C0",
+            hover_color="#0F3E8A",
+            text_color="white",
             command=self._apply_and_save_labels,
         )
-        self._apply_save_btn.pack(fill="x", padx=12, pady=(8, 10))
+        self._apply_save_btn.pack(anchor="e", padx=12, pady=(8, 10))
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -1492,17 +1502,125 @@ class TranscribeTab(ctk.CTkFrame):
             app.transcript_tab.load_transcript(self._last_transcript_path)
             app.tab_view.set("Transcript")
 
+    def _update_keyterms_display(self, terms: list[str]):
+        """Render a restored keyterm list into the textbox."""
+        self._keyterms_box.configure(state="normal")
+        self._keyterms_box.delete("1.0", "end")
+        if terms:
+            self._keyterms_box.insert("1.0", "\n".join(terms))
+        self._keyterms_box.configure(state="disabled")
+
     # ── Load Existing Transcript ─────────────────────────────────────────────────
 
     def _browse_existing_transcript(self):
-        """Open file dialog to select an existing transcript .txt file."""
-        filepath = filedialog.askopenfilename(
-            title="Select Existing Transcript",
-            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
+        """
+        Open a FOLDER picker to select a project case folder.
+
+        Expected structure (selected folder = the case/witness folder):
+          {base}\\{YYYY}\\{Mon}\\{CauseNumber}\\{last_first}\\   ← SELECT THIS
+              Deepgram\\       ← transcripts (.txt) live here
+              source_docs\\    ← NOD PDFs live here
+              keyterms.json
+
+        After selecting the folder, automatically finds the most recently
+        modified .txt transcript in the Deepgram\\ subfolder and loads it
+        along with all other project files.
+        """
+        folder = filedialog.askdirectory(
+            title="Select Case Folder  (e.g. coger_matthew)",
             initialdir=self._base_dir_var.get(),
+            mustexist=True,
         )
-        if filepath:
-            self._load_existing_case(filepath)
+        if not folder:
+            return
+
+        self._load_project_folder(folder)
+
+    def _load_project_folder(self, folder: str):
+        """
+        Given a project folder (e.g. ...\\coger_matthew), find all files
+        and load the case automatically.
+
+        Discovery order:
+          1. Find the most recent .txt in Deepgram\\  → pass to _load_existing_case()
+          2. Find any PDFs in source_docs\\           → trigger PDF intake
+          3. Load keyterms.json if present           → restore keyterms
+
+        Shows an error dialog if no Deepgram\\ subfolder or no .txt exists.
+        """
+        folder = os.path.normpath(folder)
+
+        # ── 1. Find the most recent transcript .txt ───────────────────────────
+        deepgram_dir = os.path.join(folder, "Deepgram")
+        txt_path = None
+
+        if os.path.isdir(deepgram_dir):
+            txt_files = [
+                f for f in os.listdir(deepgram_dir)
+                if f.endswith(".txt")
+                and not f.endswith("_corrected.txt")
+                and not f.endswith("_renamed.txt")
+            ]
+            if txt_files:
+                txt_files.sort(
+                    key=lambda f: os.path.getmtime(os.path.join(deepgram_dir, f)),
+                    reverse=True,
+                )
+                txt_path = os.path.join(deepgram_dir, txt_files[0])
+
+        if not txt_path:
+            from tkinter import messagebox
+            messagebox.showerror(
+                "No Transcript Found",
+                f"No .txt transcript was found in:\n{deepgram_dir}\n\n"
+                "Please select the case folder that contains a Deepgram\\ subfolder.",
+            )
+            return
+
+        # ── 2. Load the transcript and case metadata ──────────────────────────
+        self._load_existing_case(txt_path)
+
+        # ── 3. Auto-load NOD / PDF from source_docs\ if present ──────────────
+        source_docs_dir = os.path.join(folder, "source_docs")
+        if os.path.isdir(source_docs_dir):
+            pdf_files = [
+                f for f in os.listdir(source_docs_dir)
+                if f.lower().endswith(".pdf")
+            ]
+            if pdf_files:
+                pdf_files.sort(
+                    key=lambda f: os.path.getmtime(os.path.join(source_docs_dir, f)),
+                    reverse=True,
+                )
+                pdf_path = os.path.join(source_docs_dir, pdf_files[0])
+                logger.info("[LoadProject] Auto-loading PDF: %s", pdf_path)
+                try:
+                    self._handle_pdf_upload(pdf_path=pdf_path, auto_detected=True)
+                except Exception as exc:
+                    logger.warning("[LoadProject] PDF load failed: %s", exc)
+
+        # ── 4. Restore keyterms.json ──────────────────────────────────────────
+        keyterms_file = os.path.join(folder, "keyterms.json")
+        if os.path.isfile(keyterms_file):
+            try:
+                with open(keyterms_file, "r", encoding="utf-8") as fh:
+                    kt_data = json.load(fh)
+                terms = kt_data.get("keyterms") or kt_data.get("terms") or []
+                if terms:
+                    self._current_keyterms = terms
+                    self._update_keyterms_display(terms)
+                    self._update_keyterms_count()
+                    logger.info("[LoadProject] Restored %d keyterms", len(terms))
+            except Exception as exc:
+                logger.warning("[LoadProject] keyterms.json load failed: %s", exc)
+
+        # ── 5. Update path entry to show folder (not just the .txt file) ──────
+        self._load_path_entry.configure(state="normal")
+        self._load_path_entry.delete(0, "end")
+        self._load_path_entry.insert(0, folder)
+        self._load_path_entry.configure(state="disabled")
+
+        logger.info("[LoadProject] Project loaded from: %s", folder)
 
     def _load_existing_case(self, txt_path: str):
         """
@@ -1986,6 +2104,8 @@ class TranscribeTab(ctk.CTkFrame):
                     transcript_path=self._last_transcript_path,
                     folder_path=self._current_case_path or self._last_output_dir,
                 )
+                if self._selected_file and os.path.isfile(self._selected_file):
+                    transcript_tab.set_audio_file(self._selected_file)
                 transcript_tab._open_folder_btn.configure(state="normal")
                 transcript_tab._open_transcript_btn.configure(state="normal")
                 self.winfo_toplevel().tab_view.set("Transcript")
@@ -2024,38 +2144,107 @@ class TranscribeTab(ctk.CTkFrame):
             entry.pack(side="left", fill="x", expand=True)
             self._speaker_entries[f"Speaker {sid}"] = entry
 
-        self._speaker_card.pack(fill="x", pady=(0, 10))
+        self._speaker_card.pack(fill="both", expand=True, pady=(0, 10))
 
     def _apply_and_save_labels(self):
-        """Replace speaker labels in transcript, save to file, update preview."""
+        """
+        Apply speaker label assignments in two ways:
+
+        1. Text replacement in the .txt transcript file
+           (Speaker 0: → MR. GARCIA:, etc.)
+
+        2. Persist the speaker_map to self._ufm_fields and write it to
+           the ufm_fields.json file on disk so the corrections pipeline
+           and AI corrector automatically use the correct speaker names.
+        """
         if not self._current_txt_path:
             messagebox.showerror("No file", "No transcript file path available.")
             return
 
-        text = self._transcript_text
-
+        # ── Build the speaker map from UI entries ────────────────────────────
+        # speaker_map format expected by JobConfig: {int_id: "DISPLAY NAME"}
+        # e.g. {0: "THE VIDEOGRAPHER", 1: "THE WITNESS", 2: "MR. GARCIA"}
+        speaker_map: dict[int, str] = {}
         for original_label, entry in self._speaker_entries.items():
             replacement = entry.get().strip()
             if replacement:
-                text = text.replace(f"{original_label}:", f"{replacement}:")
+                try:
+                    sid = int(original_label.replace("Speaker ", "").strip())
+                    speaker_map[sid] = replacement.upper()
+                except ValueError:
+                    pass
 
-        # Write renamed transcript to file
+        # ── 1. Text replacement in the .txt file ─────────────────────────────
+        text = self._transcript_text
+        for original_label, entry in self._speaker_entries.items():
+            replacement = entry.get().strip()
+            if replacement:
+                text = text.replace(
+                    f"{original_label}:", f"{replacement.upper()}:"
+                )
+
         try:
             Path(self._current_txt_path).write_text(text, encoding="utf-8")
         except Exception as exc:
             messagebox.showerror("Save Failed", str(exc))
             return
 
-        # Update stored text and transcript tab preview
         self._transcript_text = text
+
+        # ── 2. Persist speaker_map to ufm_fields ─────────────────────────────
+        if speaker_map:
+            self._ufm_fields["speaker_map"] = speaker_map
+            self._ufm_fields["speaker_map_verified"] = True
+
+            deepgram_dir = os.path.dirname(self._current_txt_path)
+            if os.path.isdir(deepgram_dir):
+                ufm_files = sorted(
+                    [f for f in os.listdir(deepgram_dir)
+                     if f.endswith("_ufm_fields.json")],
+                    key=lambda f: os.path.getmtime(
+                        os.path.join(deepgram_dir, f)),
+                    reverse=True,
+                )
+                ufm_path = os.path.join(
+                    deepgram_dir,
+                    ufm_files[0] if ufm_files else "speaker_labels_ufm_fields.json",
+                )
+                try:
+                    existing = {}
+                    if ufm_files:
+                        with open(ufm_path, "r", encoding="utf-8") as fh:
+                            existing = json.load(fh)
+                    existing["speaker_map"] = {
+                        str(k): v for k, v in speaker_map.items()
+                    }
+                    existing["speaker_map_verified"] = True
+                    with open(ufm_path, "w", encoding="utf-8") as fh:
+                        json.dump(existing, fh, indent=2, ensure_ascii=False)
+                    logger.info(
+                        "[SpeakerLabels] Wrote speaker_map to %s",
+                        os.path.basename(ufm_path),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "[SpeakerLabels] Could not update ufm_fields.json: %s", exc
+                    )
+
+        # ── 3. Update UI ──────────────────────────────────────────────────────
         transcript_tab = self.winfo_toplevel().transcript_tab
         transcript_tab.load_transcript(self._current_txt_path)
-        transcript_tab.set_status(
-            "Saved \u2014 labels applied", "#44FF44"
-        )
+        transcript_tab.set_status("Speaker labels applied", "#44FF44")
         transcript_tab.append_log(
-            f"Saved renamed transcript: {os.path.basename(self._current_txt_path)}"
+            f"Speaker labels applied: "
+            + ", ".join(f"Speaker {k} → {v}" for k, v in speaker_map.items())
         )
+        self._apply_save_btn.configure(
+            text="\u2713  Labels Saved",
+            fg_color="#1A5C1A",
+        )
+        self.after(2500, lambda: self._apply_save_btn.configure(
+            text="\u2713  Apply Speaker Labels",
+            fg_color="#1558C0",
+        ))
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
 

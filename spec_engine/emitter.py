@@ -405,4 +405,4 @@ def emit_line_numbered(
             if not run.font.size:
                 run.font.size = FONT_SIZE
 
-    _apply_standard_tabs(para)
+        _apply_standard_tabs(para)

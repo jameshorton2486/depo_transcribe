@@ -31,6 +31,17 @@ OBJECTION_START_RE = re.compile(r'^[Oo]bject(?:ion)?', re.IGNORECASE)
 # ── Record status patterns (Spec Section 4.4) ─────────────────────────────────
 OFF_RECORD_RE  = re.compile(r'off\s+the\s+record',       re.IGNORECASE)
 ON_RECORD_RE   = re.compile(r'back\s+on\s+the\s+record', re.IGNORECASE)
+# ── First on-record markers — start of legal deposition record ────────────────
+# These patterns identify the moment the videographer or reporter opens
+# the formal record. Everything BEFORE the first match is pre-record chatter
+# and must be excluded from the certified transcript.
+FIRST_ON_RECORD_PATTERNS = [
+    re.compile(r'\bwe\s+are\s+on\s+the\s+record\b',                    re.IGNORECASE),
+    re.compile(r'\brecording\s+in\s+progress\b',                        re.IGNORECASE),
+    re.compile(r'\bthis\s+is\s+the\s+beginning\s+of\s+the\s+deposition\b', re.IGNORECASE),
+    re.compile(r"\btoday'?s\s+date\s+is\s+\d{1,2}/\d{1,2}/\d{4}\b",  re.IGNORECASE),
+    re.compile(r'\bthe\s+time\s+is\s+\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?|AM|PM)\b', re.IGNORECASE),
+]
 CONCLUDED_RE   = re.compile(r'deposition\s+(?:is\s+)?concluded', re.IGNORECASE)
 TIME_RE        = re.compile(r'(\d{1,2}:\d{2})\s*(a\.?m\.?|p\.?m\.?|AM|PM)', re.IGNORECASE)
 
@@ -142,6 +153,7 @@ def flag_post_record_spelling(n: int, name: str, letters: str) -> str:
 
 @dataclass
 class ClassifierState:
+    in_pre_record: bool = True
     current_examiner_id: Optional[int] = None
     in_post_record: bool = False
     examination_type: str = "EXAMINATION"
@@ -368,6 +380,20 @@ def classify_block(
     results: List[Tuple[LineType, str]] = []
     text = block.text
     sid  = block.speaker_id
+
+    # ── Pre-record filter — discard everything before the legal record opens ──
+    # All content before the videographer's "we are on the record" statement
+    # is off-record Zoom/Teams setup chatter and must be excluded.
+    if state.in_pre_record:
+        for pattern in FIRST_ON_RECORD_PATTERNS:
+            if pattern.search(text):
+                state.in_pre_record = False
+                # Allow this block to continue processing normally —
+                # the videographer's opening statement IS part of the record
+                break
+        else:
+            # No on-record marker found — still in pre-record, discard block
+            return []
 
     # Guard: a verified speaker map must still explicitly cover the speaker ID.
     # Never silently fall through to generic speaker labeling for an unmapped ID.

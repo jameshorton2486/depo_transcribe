@@ -38,6 +38,7 @@ import re
 from typing import Any
 
 from app_logging import get_logger
+from config import ANTHROPIC_API_KEY as _CONFIG_API_KEY
 
 logger = get_logger(__name__)
 
@@ -306,9 +307,12 @@ def run_ai_correction(
     """
     import anthropic
 
-    api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    api_key = (_CONFIG_API_KEY or os.environ.get('ANTHROPIC_API_KEY', '')).strip()
     if not api_key:
-        raise RuntimeError('ANTHROPIC_API_KEY is not set.')
+        raise RuntimeError(
+            'ANTHROPIC_API_KEY is not set. '
+            'Add it to your .env file or set it as an environment variable.'
+        )
 
     def _log(msg: str):
         logger.info('[AICorrector] %s', msg)

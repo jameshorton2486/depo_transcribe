@@ -12,16 +12,9 @@ from collections import defaultdict
 from typing import Any, Dict, List
 
 from config import CHUNK_OVERLAP_SECONDS
+from app_logging import get_logger
 
-
-ROLE_SEQUENCE = [
-    "THE WITNESS",
-    "EXAMINING ATTORNEY",
-    "OPPOSING COUNSEL",
-    "THE REPORTER",
-    "THE VIDEOGRAPHER",
-    "THE INTERPRETER",
-]
+_logger = get_logger(__name__)
 
 
 def _count_utterance_words(utterance: Dict) -> int:
@@ -89,7 +82,7 @@ def reassemble_chunks(
     Returns:
         { "words", "utterances", "transcript", "raw_chunks" }
     """
-    print(f"[ASSEMBLE] Joining {len(chunk_results)} chunks...")
+    _logger.info("[ASSEMBLE] Joining %d chunks...", len(chunk_results))
     if not chunk_results:
         return {"words": [], "utterances": [], "transcript": "", "raw_chunks": []}
 
@@ -158,7 +151,7 @@ def reassemble_chunks(
         "transcript": full_transcript,
         "raw_chunks": raw_chunks,
     }
-    print(f"[ASSEMBLE] Total words: {len(merged.get('words', []))}")
+    _logger.info("[ASSEMBLE] Total words: %d", len(merged.get("words", [])))
 
     return merged
 
