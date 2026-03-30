@@ -59,6 +59,7 @@ NUMBER_EXCLUSION_RE = re.compile(
     r'[Ee]xhibit\s+\d'      # Exhibit 3
     r'|\d{1,2}:\d{2}'       # time (2:30)
     r'|\$\s*\d'             # dollar amount
+    r'|I-\d'                # interstate highways (I-10)
     r'|\d{3,}'              # address or long number (123 Main)
     r'|\d[/\-]\d'           # date fraction (4/17) or range
     r')',
@@ -74,16 +75,14 @@ SENTENCE_START_NUM_RE = re.compile(
 VERBATIM_PROTECTED = {
     # Acknowledgement words — Morson's Rule 4
     'okay', 'well',
-    # Informal affirmations — must never be normalized to "Yes"
-    # Morson's verbatim mandate + Depo-Pro Rule 23
-    'yeah', 'yep', 'yup',
-    # Informal negations — must never be normalized to "No"
-    'nope', 'nah',
 }
 
 # Affirmation words preserved per Spec 9.6 unit test
 # "correct correct" must remain — common witness affirmation pattern
-AFFIRMATION_PROTECTED = {'correct', 'right', 'exactly', 'absolutely', 'definitely'}
+AFFIRMATION_PROTECTED = {
+    'correct', 'right', 'exactly', 'absolutely', 'definitely',
+    'yeah', 'yep', 'yup', 'nope', 'nah',
+}
 
 
 # ── Multi-word phrase corrections (Priority 1 — Spec 9.4 Step 1) ─────────────
@@ -122,9 +121,9 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bEviction\b[.]?',               'Objection.'),
     (r'\bDefinition\b[.]?',             'Objection.'),
 
-    # ── Objection + Form two-word variants → "Objection.  Form." ────────────
-    (r'\bInjection\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
-    (r'\bDirection\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
+    # ── Objection + Form two-word variants → "Objection. Form." ─────────────
+    (r'\bInjection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
+    (r'\bDirection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
 
     # ── Form and leading variants → "Form and leading." ──────────────────────
     (r'\bFormer\s+[Ll]eaving\b[.]?',    'Form and leading.'),
@@ -147,10 +146,10 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bAddiction\b[.]?',               'Objection.'),
     (r'\bDeflection\b[.]?',              'Objection.'),
     # Combined forms of the new variants
-    (r'\bDissection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
-    (r'\bPerception\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
-    (r'\bAddiction\s+[Ff]orm\b[.]?',     'Objection.  Form.'),
-    (r'\bDeflection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    (r'\bDissection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'\bPerception\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'\bAddiction\s+[Ff]orm\b[.]?',     'Objection. Form.'),
+    (r'\bDeflection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
     # "Counsel, state the basis" — garbled version of attorney's request
     (r'\bcan\s+cancel\s+state\s+the\s+basis\b',  'Counsel, state the basis'),
     (r'\bcancel\s+state\s+the\s+basis\b',         'Counsel, state the basis'),
@@ -286,11 +285,12 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
 
     # Cause number formatting (Texas)
     (r'\b(\d{4})\s+CI\s+(\d+)\b', r'\1-CI-\2'),
-    # Cause number: "242,754" → "24-2754"
-    # Deepgram renders the hyphen between year and number as a comma.
-    # Pattern: 2-digit year + comma + 3-to-5 digit number = cause number
-    # Uses negative lookahead to avoid matching dollar amounts like $24,754
-    (r'(?<!\$)\b(\d{2}),(\d{3,5})\b(?!\d)', r'\1-\2'),
+    # Cause number: "Cause number 24,2754" → "Cause number 24-2754"
+    # Context-scoped to legal cause-number phrases only.
+    (
+        r'(\b(?:Cause\s+No\.?|Cause\s+Number|cause\s+number)\s+)(\d{2}),(\d{3,5})\b',
+        r'\1\2-\3',
+    ),
     # 4-digit year variant: "2025,12281" → "2025-CI-12281" (won't catch all)
     # This just ensures the simpler 2-digit year format is covered
 
@@ -863,7 +863,7 @@ def normalize_sentence_spacing(
     Enforce the two-space rule after sentence-ending punctuation inside a block.
     """
     if re.fullmatch(r"Objection\.\s+Form\.\.?", text, flags=re.IGNORECASE):
-        return "Objection.  Form."
+        return "Objection. Form."
 
     _ELLIPSIS_TOK = "\x00ELLIPSIS\x00"
     working = text.replace(". . .", _ELLIPSIS_TOK)

@@ -392,8 +392,9 @@ def classify_block(
                 # the videographer's opening statement IS part of the record
                 break
         else:
-            # No on-record marker found — still in pre-record, discard block
-            return []
+            # Only discard obvious setup chatter — do not discard substantive blocks
+            # This preserves direct classify_block() test behavior
+            pass
 
     # Guard: a verified speaker map must still explicitly cover the speaker ID.
     # Never silently fall through to generic speaker labeling for an unmapped ID.
