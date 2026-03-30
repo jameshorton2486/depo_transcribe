@@ -15,7 +15,8 @@ from core.file_manager import (
 
 def test_build_case_path_uses_required_structure():
     path = build_case_path("C:\\Depositions", "2025CI19595", "Coger", "Matthew", "03/24/2026")
-    assert path.endswith("2026\\Mar\\2025CI19595\\coger_matthew")
+    expected = os.path.join("2026", "Mar", "2025CI19595", "coger_matthew")
+    assert path.endswith(expected)
 
 
 def test_create_case_folders_creates_required_subfolders(tmp_path):

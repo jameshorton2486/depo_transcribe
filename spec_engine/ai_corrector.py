@@ -19,7 +19,6 @@ Rules handled here (per Morson's English Guide and Depo-Pro spec):
   Rule 17  — As-read parentheticals
   Rule 18  — Objection fragment format
   Rule 19  — CROSS-EXAMINATION headers (hyphenated)
-  Rule 20  — Conversational titles (miss → Ms., mister → Mr.)
   Rule 21  — [SCOPIST: FLAG N:] for unverifiable garbles
   Rule 22  — Interpreter block extraction
   Rule 23  — Verbatim affirmation/negation (Yeah/Nope kept)
@@ -61,9 +60,7 @@ These words and sounds are NEVER changed, removed, or normalized:
   stutters: b-b-bank  — stutter within a word, hyphen, no space
   false starts: word -- — preserve exactly as spoken
 
-═══════════════════════════════════════════════════════════════════
-RULE 5 — SPEAKER STRUCTURE
-═══════════════════════════════════════════════════════════════════
+## RULE 5 — SPEAKER STRUCTURE
 Q. lines are asked by examining attorneys.
 A. lines are given by the witness.
 SP lines (MR. X:, MS. X:, THE REPORTER:, THE VIDEOGRAPHER:) are colloquy.
@@ -71,16 +68,12 @@ SP lines (MR. X:, MS. X:, THE REPORTER:, THE VIDEOGRAPHER:) are colloquy.
 If a block is misclassified (e.g., the witness's answer is on a Q. line),
 correct the label. Never invent testimony.
 
-═══════════════════════════════════════════════════════════════════
-RULE 6 — PROPER NOUN CORRECTION
-═══════════════════════════════════════════════════════════════════
+## RULE 6 — PROPER NOUN CORRECTION
 Correct only to names in the provided proper_nouns list.
 If a name is NOT in the list → [SCOPIST: FLAG N: Verify spelling from audio]
 Never invent or guess a spelling not confirmed by the source documents.
 
-═══════════════════════════════════════════════════════════════════
-RULE 7 — HOMOPHONE CORRECTION
-═══════════════════════════════════════════════════════════════════
+## RULE 7 — HOMOPHONE CORRECTION
 Correct ONLY when you are 100% certain from context.
 Examples where context makes it clear:
   "know" vs "no" — "I don't know" vs "No, I didn't"
@@ -88,16 +81,12 @@ Examples where context makes it clear:
   "to" vs "too" vs "two"
 When uncertain → [VERIFY: possible homophone: word1/word2]
 
-═══════════════════════════════════════════════════════════════════
-RULE 9 — VERIFY FLAGS
-═══════════════════════════════════════════════════════════════════
+## RULE 9 — VERIFY FLAGS
 Use [VERIFY: brief description] for uncertain corrections.
 Use [VERIFY: proper noun — not in source list] for unknown names.
 Do NOT use VERIFY for common words you are confident about.
 
-═══════════════════════════════════════════════════════════════════
-RULE 12 — SPEAKER LABEL RESOLUTION
-═══════════════════════════════════════════════════════════════════
+## RULE 12 — SPEAKER LABEL RESOLUTION
 Replace generic "Speaker 0:", "Speaker 1:", etc. with the actual
 speaker labels from the provided speaker_map.
 
@@ -111,15 +100,11 @@ Format for colloquy (SP lines):
 
 All SP labels must be ALL-CAPS followed by a colon and two spaces.
 
-═══════════════════════════════════════════════════════════════════
-RULE 13 — REPORTER / INTERPRETER LABELS
-═══════════════════════════════════════════════════════════════════
+## RULE 13 — REPORTER / INTERPRETER LABELS
 Always: THE REPORTER:  (not "THE COURT REPORTER:", not "REPORTER:")
 Always: THE INTERPRETER:  (not "INTERPRETER:", not "(Interpreter:)")
 
-═══════════════════════════════════════════════════════════════════
-RULE 14 — ELLIPSIS PRESERVATION
-═══════════════════════════════════════════════════════════════════
+## RULE 14 — ELLIPSIS PRESERVATION
 Morson's Rules 270–273:
   . . .   — three spaced periods (trailing off / internal omission)
   . . . . — four spaced periods (omission at end of sentence)
@@ -128,18 +113,14 @@ Morson's Rules 270–273:
 NEVER convert ". . ." to "..." or vice versa — preserve as found.
 NEVER replace an ellipsis with a dash unless it clearly was a dash.
 
-═══════════════════════════════════════════════════════════════════
-RULE 15 — PERCENT / HEIGHT CONTEXT
-═══════════════════════════════════════════════════════════════════
+## RULE 15 — PERCENT / HEIGHT CONTEXT
 Heights: "5.1" in medical context likely means 5'1" → correct to 5'1"
          Flag: [VERIFY: height — verify from audio if ambiguous]
 
 Dollar amounts: "$4.50 per week" for a surgery claim → likely $450
                 Flag with: [VERIFY: dollar amount — verify from audio]
 
-═══════════════════════════════════════════════════════════════════
-RULE 17 — AS-READ PARENTHETICALS
-═══════════════════════════════════════════════════════════════════
+## RULE 17 — AS-READ PARENTHETICALS
 When an attorney reads aloud from a document, set the reading off:
   Q. I'm going to read from page 3.
   (Reading:)
@@ -147,9 +128,7 @@ When an attorney reads aloud from a document, set the reading off:
   (End of reading.)
 Do not insert these unless the transcript clearly shows a reading.
 
-═══════════════════════════════════════════════════════════════════
-RULE 18 — OBJECTION FORMAT
-═══════════════════════════════════════════════════════════════════
+## RULE 18 — OBJECTION FORMAT
 Objections mid-question must be extracted to their own SP line:
   Before: Q. Did you--Objection, form. Did you see the accident?
   After:  Q. Did you --
@@ -159,29 +138,13 @@ Objections mid-question must be extracted to their own SP line:
 Objection punctuation: "Objection." with period.
 Form objection: "Objection.  Form."  (two spaces between)
 
-═══════════════════════════════════════════════════════════════════
-RULE 19 — CROSS-EXAMINATION HEADERS
-═══════════════════════════════════════════════════════════════════
+## RULE 19 — CROSS-EXAMINATION HEADERS
 Always hyphenated:
   CROSS-EXAMINATION  (never "CROSS EXAMINATION")
   REDIRECT EXAMINATION
   RECROSS-EXAMINATION
 
-═══════════════════════════════════════════════════════════════════
-RULE 20 — CONVERSATIONAL TITLES
-═══════════════════════════════════════════════════════════════════
-Correct informal spoken title references:
-  "miss Ozuna"      → "Ms. Ozuna"
-  "missus Garcia"   → "Mrs. Garcia"
-  "mister Davis"    → "Mr. Davis"
-
-Do NOT change already-correct titles (Ms., Mrs., Mr.).
-Do NOT change titles inside quoted material being read aloud.
-If the last name is unclear → [VERIFY: title correction]
-
-═══════════════════════════════════════════════════════════════════
-RULE 21 — SCOPIST FLAGS [SCOPIST: FLAG N: description]
-═══════════════════════════════════════════════════════════════════
+## RULE 21 — SCOPIST FLAGS [SCOPIST: FLAG N: description]
 Insert a scopist flag when you detect an error you CANNOT correct
 with certainty:
 
@@ -202,9 +165,7 @@ DO NOT:
   - Replace the word — insert flag NEXT TO the original text
   - Use any other flag format
 
-═══════════════════════════════════════════════════════════════════
-RULE 22 — INTERPRETER BLOCK EXTRACTION
-═══════════════════════════════════════════════════════════════════
+## RULE 22 — INTERPRETER BLOCK EXTRACTION
 When an interpreter speaks mid-answer, extract to its own SP block:
 
 Before:
@@ -220,9 +181,7 @@ After:
 If the interpreter's words are unclear → THE INTERPRETER:  [inaudible]
 Use THE INTERPRETER: — not INTERPRETER: or (Interpreter:)
 
-═══════════════════════════════════════════════════════════════════
-RULE 23 — VERBATIM AFFIRMATION / NEGATION PRESERVATION
-═══════════════════════════════════════════════════════════════════
+## RULE 23 — VERBATIM AFFIRMATION / NEGATION PRESERVATION
 These must be kept EXACTLY as spoken. Never normalize:
   Yeah  → keep as "Yeah."   (NEVER change to "Yes.")
   Yep   → keep as "Yep."    (NEVER change to "Yes.")
@@ -233,9 +192,7 @@ These must be kept EXACTLY as spoken. Never normalize:
 These are part of the verbatim legal record.
 Normalizing them constitutes alteration of testimony.
 
-═══════════════════════════════════════════════════════════════════
-OUTPUT REQUIREMENTS
-═══════════════════════════════════════════════════════════════════
+## OUTPUT REQUIREMENTS
 Return ONLY the corrected transcript text.
 Do NOT add commentary, explanations, headers, or summaries.
 Do NOT add markdown formatting (no **, no ##, no ---).
@@ -258,7 +215,7 @@ def _build_user_prompt(
     if proper_nouns:
         parts.append(
             "PROPER NOUNS (verified spellings — use these exactly):\n"
-            + "\n".join(f"  {n}" for n in proper_nouns[:80])
+            + "\n".join(f"  {n}" for n in proper_nouns[:30])
         )
 
     if speaker_map:
@@ -338,7 +295,7 @@ def run_ai_correction(
     elif isinstance(job_config, dict):
         confirmed_spellings = dict(job_config.get('confirmed_spellings', {}) or {})
 
-    MAX_CHARS = 12000
+    MAX_CHARS = 18000
     chunks = _split_into_chunks(transcript_text, MAX_CHARS)
     _log(f'Split transcript into {len(chunks)} chunk(s) for AI correction')
 
@@ -362,7 +319,7 @@ def run_ai_correction(
 
         message = client.messages.create(
             model='claude-sonnet-4-6',
-            max_tokens=4096,
+            max_tokens=5500,
             system=TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
             messages=[{'role': 'user', 'content': user_prompt}],
         )

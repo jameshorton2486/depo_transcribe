@@ -56,7 +56,11 @@ SENTENCE_START_NUMBER_WORDS = {
 # Exclusion contexts — do NOT convert numbers in these patterns
 NUMBER_EXCLUSION_RE = re.compile(
     r'(?:'
-    r'[Ee]xhibit\s+\d'      # Exhibit 3
+    r'[Ee]xhibit\s+(?:No\.\s+)?\d'      # Exhibit 3 / Exhibit No. 15
+    r'|No\.\s+\d'                         # Exhibit No. / CSR No. / Cause No. — in legal transcripts
+                                         # "No." before a digit is always a reference, never a count.
+                                         # This guards the digit even when "Exhibit" is outside the
+                                         # 8-char window used by apply_number_to_word().
     r'|\d{1,2}:\d{2}'       # time (2:30)
     r'|\$\s*\d'             # dollar amount
     r'|I-\d'                # interstate highways (I-10)
@@ -184,6 +188,11 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bours\s+of\s+service\b',     'hours of service'),
     # "out of service" — DOT violation type
     (r'\bout\s+of\s+server\b',       'out of service'),
+    # Exhibit number formatting — Morson's Rule 217
+    # exhibit 15 / exhibit no 15 / exhibit number 15 → Exhibit No. 15
+    (r'\b[Ee]xhibit\s+[Nn]umber\s+(\d+)\b',  r'Exhibit No. \1'),
+    (r'\b[Ee]xhibit\s+[Nn]o\.?\s+(\d+)\b',   r'Exhibit No. \1'),
+    (r'\b[Ee]xhibit\s+(\d+)\b',               r'Exhibit No. \1'),
     # "non-CDL" split forms
     (r'\bnon\s+CDL\b',               'non-CDL'),
     (r'\bnon-CDO\b',                 'non-CDL'),
@@ -718,24 +727,9 @@ def fix_conversational_titles(
       the miss           → unchanged (not a title before a name)
     """
     original = text
-    text = re.sub(
-        r'\bmiss\s+(?=\b[A-Z])',
-        'Ms. ',
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(
-        r'\bmissus\s+(?=\b[A-Z])',
-        'Mrs. ',
-        text,
-        flags=re.IGNORECASE,
-    )
-    text = re.sub(
-        r'\bmister\s+(?=\b[A-Z])',
-        'Mr. ',
-        text,
-        flags=re.IGNORECASE,
-    )
+    text = re.sub(r'\b(?i:miss)\s+(?=[A-Z])', 'Ms. ', text)
+    text = re.sub(r'\b(?i:missus)\s+(?=[A-Z])', 'Mrs. ', text)
+    text = re.sub(r'\b(?i:mister)\s+(?=[A-Z])', 'Mr. ', text)
     if text != original:
         records.append(CorrectionRecord(
             original=original,

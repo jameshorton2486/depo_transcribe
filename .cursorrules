@@ -1,0 +1,13 @@
+Before making any changes to this project:
+
+1. Read CLAUDE.md in the project root completely.
+2. Check STABILIZATION_PLAN.md to see which phase and step are active.
+3. Only work on the current phase and step. Do not skip ahead.
+4. Make single-layer changes only. Do not modify multiple layers at once.
+5. Run py_compile on any file you modify before finishing.
+6. Run the required verification for the active plan step before and after code changes when applicable.
+7. After completing a step, remind the user to review git diff and commit with:
+   git add -A
+   git commit -m "phase X stepY: description"
+
+If you are unsure about anything, stop and ask.

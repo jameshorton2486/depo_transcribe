@@ -62,18 +62,18 @@ class TestFix3A_NumberExclusionPerMatch:
     def test_exhibit_far_from_count_does_not_block_conversion(self):
         result = _clean("I signed Exhibit 3 and there were 5 witnesses present.")
         assert "five" in result.lower()
-        assert "Exhibit 3" in result
+        assert "Exhibit No. 3" in result
 
     def test_exhibit_number_itself_not_converted(self):
         result = _clean("I refer you to Exhibit 3.")
-        assert "Exhibit 3" in result
-        assert "Exhibit three" not in result
+        assert "Exhibit No. 3" in result
+        assert "Exhibit No. three" not in result
 
     def test_mixed_block_exhibit_and_multiple_counts(self):
         result = _clean("Exhibit 3 shows 5 items and 7 documents were produced.")
         assert "five" in result.lower()
         assert "seven" in result.lower()
-        assert "Exhibit 3" in result
+        assert "Exhibit No. 3" in result
 
     def test_time_near_count_does_not_block_conversion(self):
         result = _clean("At 3:00 p.m. there were 4 people waiting.")
@@ -305,7 +305,7 @@ class TestFix3G_VerbatimProtectedCleanup:
 class TestPhase3Integration:
     def test_coger_exhibit_and_count_in_same_block(self):
         result = _clean("I reviewed Exhibit 16 and noted 3 discrepancies.", _coger_cfg())
-        assert "Exhibit 16" in result
+        assert "Exhibit No. 16" in result
         assert "three" in result.lower()
 
     def test_coger_subpoena_in_full_context(self):
@@ -321,7 +321,7 @@ class TestPhase3Integration:
             _coger_cfg(),
         )
         assert "Bexar County" in result
-        assert "Exhibit 5" in result
+        assert "Exhibit No. 5" in result
         assert "three" in result.lower() or "3" in result
 
     def test_clean_block_three_tuple_with_confirmed_spellings(self):

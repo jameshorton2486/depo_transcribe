@@ -1080,6 +1080,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._textbox.configure(state="disabled")
         if self._words:
             self._build_word_map(self._words)
+        else:
+            self._word_map = []
         # Always clear any lingering text selection
         self._textbox._textbox.tag_remove("sel", "1.0", "end")
         self.set_status("Change applied — click Save to write to disk.", "#FFCC44")
