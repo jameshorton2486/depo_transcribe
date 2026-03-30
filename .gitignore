@@ -12,5 +12,8 @@ work_files/*.json
 work_files/transcripts/
 *.log
 .pytest_cache/
+.pytest_tmp/
 .idea/
 .claude/
+*.bak
+tmp_app_window*.png
