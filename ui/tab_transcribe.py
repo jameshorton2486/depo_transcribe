@@ -725,7 +725,7 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._create_btn.pack(fill="x")
 
-        container = ctk.CTkFrame(self, fg_color="transparent")
+        container = ctk.CTkScrollableFrame(self, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=10, pady=(6, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────

@@ -16,6 +16,15 @@ from app_logging import get_logger
 
 _logger = get_logger(__name__)
 
+ROLE_SEQUENCE = [
+    "THE WITNESS",
+    "EXAMINING ATTORNEY",
+    "OPPOSING COUNSEL",
+    "THE REPORTER",
+    "THE VIDEOGRAPHER",
+    "THE INTERPRETER",
+]
+
 
 def _count_utterance_words(utterance: Dict) -> int:
     words = utterance.get("words") or []

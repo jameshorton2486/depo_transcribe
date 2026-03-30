@@ -11,8 +11,10 @@ Transcript review tab with:
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
+import tkinter as tk
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
@@ -65,6 +67,18 @@ class TranscriptTab(ctk.CTkFrame):
             command=self._browse_transcript_file,
         )
         self._open_file_btn.pack(side="right", padx=(4, 0))
+
+        self._fnr_toggle_btn = ctk.CTkButton(
+            header,
+            text="Find & Replace",
+            width=120,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#334",
+            text_color="#8ab",
+            command=self._toggle_find_replace,
+        )
+        self._fnr_toggle_btn.pack(side="right", padx=(4, 0))
 
         self._edit_mode_btn = ctk.CTkButton(
             header,
@@ -179,6 +193,100 @@ class TranscriptTab(ctk.CTkFrame):
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
         divider_bottom.pack(fill="x", padx=14, pady=(0, 6))
 
+        # ── Find & Replace bar (hidden until activated) ─────────────────────
+        self._fnr_bar = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=0)
+        # Not packed yet — shown by _toggle_find_replace()
+
+        fnr_inner = ctk.CTkFrame(self._fnr_bar, fg_color="transparent")
+        fnr_inner.pack(fill="x", padx=10, pady=6)
+
+        ctk.CTkLabel(
+            fnr_inner, text="Find:", width=46, anchor="e",
+            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+        ).pack(side="left")
+        self._find_entry = ctk.CTkEntry(fnr_inner, width=220, placeholder_text="Search text…")
+        self._find_entry.pack(side="left", padx=(6, 12))
+
+        ctk.CTkLabel(
+            fnr_inner, text="Replace:", width=58, anchor="e",
+            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+        ).pack(side="left")
+        self._replace_entry = ctk.CTkEntry(fnr_inner, width=220, placeholder_text="Replacement…")
+        self._replace_entry.pack(side="left", padx=(6, 12))
+
+        self._fnr_case_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            fnr_inner, text="Match case", variable=self._fnr_case_var,
+            font=ctk.CTkFont(size=11), width=100
+        ).pack(side="left", padx=(0, 12))
+
+        self._fnr_replace_one_btn = ctk.CTkButton(
+            fnr_inner, text="Replace Next", width=110,
+            fg_color="#1558C0", hover_color="#0F3E8A",
+            command=self._fnr_replace_next,
+        )
+        self._fnr_replace_one_btn.pack(side="left", padx=(0, 6))
+
+        self._fnr_replace_all_btn = ctk.CTkButton(
+            fnr_inner, text="Replace All", width=100,
+            fg_color="#B8860B", hover_color="#9A7209",
+            font=ctk.CTkFont(weight="bold"),
+            command=self._fnr_replace_all,
+        )
+        self._fnr_replace_all_btn.pack(side="left", padx=(0, 12))
+
+        self._fnr_match_label = ctk.CTkLabel(
+            fnr_inner, text="", width=140,
+            font=ctk.CTkFont(size=11), text_color="#7DAACC", anchor="w",
+        )
+        self._fnr_match_label.pack(side="left")
+
+        ctk.CTkButton(
+            fnr_inner, text="✕", width=28, height=28,
+            fg_color="transparent", border_width=1, border_color="#334455",
+            text_color="#AA6666", hover_color="#2A0A0A",
+            command=self._close_find_replace,
+        ).pack(side="right")
+
+        self._find_entry.bind("<KeyRelease>", lambda _: self._fnr_update_count())
+        self._find_entry.bind("<Return>", lambda _: self._fnr_replace_next())
+        self._replace_entry.bind("<Return>", lambda _: self._fnr_replace_all())
+
+        self._fnr_current_pos = "1.0"
+
+        # ── Edit Mode toolbar (hidden until Edit Mode activated) ─────────────
+        self._edit_toolbar = ctk.CTkFrame(self, fg_color="#0D1B2A", corner_radius=4)
+        # Not packed yet — shown when Edit Mode is toggled on
+
+        edit_tb_inner = ctk.CTkFrame(self._edit_toolbar, fg_color="transparent")
+        edit_tb_inner.pack(fill="x", padx=8, pady=4)
+
+        ctk.CTkLabel(
+            edit_tb_inner, text="Speaker label:",
+            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+        ).pack(side="left")
+
+        self._speaker_break_entry = ctk.CTkEntry(
+            edit_tb_inner, width=120, placeholder_text="e.g. Speaker 4"
+        )
+        self._speaker_break_entry.pack(side="left", padx=(6, 8))
+
+        ctk.CTkButton(
+            edit_tb_inner,
+            text="↵  Insert Speaker Break",
+            width=180,
+            fg_color="#1558C0",
+            hover_color="#0F3E8A",
+            command=self._insert_speaker_break,
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            edit_tb_inner,
+            text="← positions cursor before new speaker turn",
+            font=ctk.CTkFont(size=10),
+            text_color="#445566",
+        ).pack(side="left", padx=(12, 0))
+
         self._textbox = ctk.CTkTextbox(
             self,
             font=ctk.CTkFont(family="Courier New", size=13),
@@ -188,6 +296,76 @@ class TranscriptTab(ctk.CTkFrame):
         self._textbox.pack(fill="both", expand=True, padx=14, pady=(0, 6))
         self._textbox._textbox.bind("<<Modified>>", self._on_textbox_modified)
         self._textbox._textbox.bind("<Button-1>", self._on_textbox_click)
+        self._textbox._textbox.bind("<Double-Button-1>", self._on_textbox_double_click)
+        self.winfo_toplevel().bind("<Control-h>", lambda _: self._toggle_find_replace())
+        self.winfo_toplevel().bind("<Escape>", lambda _: self._close_find_replace())
+
+        # ── Right-click context menu ──────────────────────────────────────
+        def _make_context_menu(event):
+            widget = self._textbox._textbox
+            try:
+                inner_x = event.x_root - widget.winfo_rootx()
+                inner_y = event.y_root - widget.winfo_rooty()
+                click_index = widget.index(f"@{inner_x},{inner_y}")
+                char_offset = self._index_to_char_offset(click_index)
+            except Exception as exc:
+                print(f"[RightClick] coord error: {exc}")
+                return
+
+            clicked_item = None
+            if self._word_map:
+                best_dist = float("inf")
+                for item in self._word_map:
+                    if item["char_start"] < 0:
+                        continue
+                    if item["char_start"] <= char_offset <= item["char_end"]:
+                        clicked_item = item
+                        break
+                    dist = min(
+                        abs(char_offset - item["char_start"]),
+                        abs(char_offset - item["char_end"])
+                    )
+                    if dist < best_dist:
+                        best_dist = dist
+                        clicked_item = item
+
+            menu = tk.Menu(widget, tearoff=0)
+
+            if clicked_item:
+                _word = clicked_item["word"]
+                _item = dict(clicked_item)
+
+                menu.add_command(
+                    label=f'Replace  "{_word}"…',
+                    command=lambda: self._ctx_replace_one(_item),
+                )
+                menu.add_command(
+                    label=f'Replace ALL  "{_word}"…',
+                    command=lambda: self._ctx_replace_all(_word),
+                )
+                menu.add_separator()
+                if not self._edit_mode:
+                    menu.add_command(
+                        label=f'Seek audio →  "{_word}"',
+                        command=lambda: self._on_word_clicked(float(_item["start"])),
+                    )
+                menu.add_separator()
+
+            menu.add_command(label="Find & Replace  (Ctrl+H)", command=self._toggle_find_replace)
+
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            except Exception as exc:
+                print(f"[RightClick] popup error: {exc}")
+            finally:
+                menu.grab_release()
+
+        def _show_context_menu(event):
+            _make_context_menu(event)
+            return "break"
+
+        self._textbox._textbox.bind("<Button-3>", _show_context_menu)
+        self._textbox.bind("<Button-3>", _show_context_menu, add=True)
 
         self._log_box = ctk.CTkTextbox(
             self,
@@ -398,44 +576,65 @@ class TranscriptTab(ctk.CTkFrame):
             return
 
         content = self._textbox.get("1.0", "end")
+        content_lower = content.lower()
         search_pos = 0
+
         for raw in words:
             word_text = str(raw.get("word") or raw.get("text") or "").strip()
             if not word_text:
                 continue
-            idx = content.lower().find(word_text.lower(), search_pos)
-            if idx == -1:
-                self._word_map.append(
-                    {
-                        "word": word_text,
-                        "start": float(raw.get("start", 0.0) or 0.0),
-                        "end": float(raw.get("end", 0.0) or 0.0),
-                        "confidence": float(raw.get("confidence", 1.0) or 1.0),
-                        "char_start": -1,
-                        "char_end": -1,
-                    }
+
+            word_lower = word_text.lower()
+            found_start = -1
+
+            candidate = content_lower.find(word_lower, search_pos)
+            while candidate != -1:
+                before_ok = (
+                    candidate == 0
+                    or not content[candidate - 1].isalpha()
                 )
-                continue
-            self._word_map.append(
-                {
-                    "word": word_text,
-                    "start": float(raw.get("start", 0.0) or 0.0),
-                    "end": float(raw.get("end", 0.0) or 0.0),
+                end_pos = candidate + len(word_text)
+                after_ok = (
+                    end_pos >= len(content)
+                    or not content[end_pos].isalpha()
+                )
+                if before_ok and after_ok:
+                    found_start = candidate
+                    break
+                candidate = content_lower.find(word_lower, candidate + 1)
+
+            if found_start == -1:
+                found_start = content_lower.find(word_lower, search_pos)
+
+            if found_start == -1:
+                self._word_map.append({
+                    "word":       word_text,
+                    "start":      float(raw.get("start", 0.0) or 0.0),
+                    "end":        float(raw.get("end",   0.0) or 0.0),
                     "confidence": float(raw.get("confidence", 1.0) or 1.0),
-                    "char_start": idx,
-                    "char_end": idx + len(word_text),
-                }
-            )
-            search_pos = idx + len(word_text)
+                    "char_start": -1,
+                    "char_end":   -1,
+                })
+                continue
+
+            self._word_map.append({
+                "word":       word_text,
+                "start":      float(raw.get("start", 0.0) or 0.0),
+                "end":        float(raw.get("end",   0.0) or 0.0),
+                "confidence": float(raw.get("confidence", 1.0) or 1.0),
+                "char_start": found_start,
+                "char_end":   found_start + len(word_text),
+            })
+            search_pos = found_start + len(word_text)
 
         widget = self._textbox._textbox
         widget.tag_config("current_word", background="#2A4A6A", foreground="white")
-        widget.tag_config("conf_low", foreground="#FF8C00")
-        widget.tag_config("conf_mid", foreground="#CCCC00")
+        widget.tag_config("conf_low",     foreground="#FF8C00")
+        widget.tag_config("conf_mid",     foreground="#CCCC00")
         self._apply_confidence_highlights()
 
         flagged = sum(1 for item in self._word_map if item["confidence"] < 0.8)
-        total = len(self._word_map)
+        total   = len(self._word_map)
         self._conf_label.configure(
             text=f"Confidence: {total} words — {flagged} flagged below 80%",
             text_color="#CC9900" if flagged else "#44AA44",
@@ -544,6 +743,484 @@ class TranscriptTab(ctk.CTkFrame):
         if best:
             self._on_word_clicked(float(best["start"]))
 
+    def _on_textbox_double_click(self, event) -> str:
+        """Double-click a word to open an inline correction popup."""
+        if self._edit_mode or not self._word_map:
+            return "break"
+        # Defer so tkinter finishes its own double-click event chain first
+        self.after(10, lambda: self._show_word_correction_popup(event.x, event.y))
+        return "break"
+
+    def _show_word_correction_popup(self, click_x: int, click_y: int) -> None:
+        """Locate the word under the click and open a correction popup near it."""
+        try:
+            click_index = self._textbox._textbox.index(f"@{click_x},{click_y}")
+        except Exception:
+            return
+
+        char_offset = self._index_to_char_offset(click_index)
+
+        target = None
+        target_idx = -1
+        for i, item in enumerate(self._word_map):
+            if item["char_start"] < 0:
+                continue
+            if item["char_start"] <= char_offset <= item["char_end"]:
+                target = item
+                target_idx = i
+                break
+
+        if target is None:
+            return
+
+        was_playing = bool(self._player and self._player.is_playing)
+        if was_playing:
+            self._player.pause()
+            self._stop_sync_timer()
+
+        popup = ctk.CTkToplevel(self)
+        popup.title("Correct Word")
+        popup.geometry("320x130")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        popup.grab_set()
+
+        try:
+            root = self.winfo_toplevel()
+            abs_x = root.winfo_x() + self._textbox.winfo_rootx() - root.winfo_rootx() + click_x
+            abs_y = root.winfo_y() + self._textbox.winfo_rooty() - root.winfo_rooty() + click_y + 30
+            popup.geometry(f"320x130+{abs_x}+{abs_y}")
+        except Exception:
+            pass
+
+        ctk.CTkLabel(
+            popup,
+            text=f'Correct:  "{target["word"]}"',
+            font=ctk.CTkFont(size=13),
+            anchor="w",
+        ).pack(fill="x", pady=(14, 6), padx=16)
+
+        entry_var = ctk.StringVar(value=target["word"])
+        entry = ctk.CTkEntry(popup, textvariable=entry_var, width=288)
+        entry.pack(pady=(0, 8), padx=16)
+        entry.select_range(0, "end")
+        entry.focus_set()
+
+        def apply(new_word: str | None = None) -> None:
+            val = (new_word or entry_var.get()).strip()
+            popup.grab_release()
+            popup.destroy()
+            if val and val != target["word"]:
+                self._apply_word_correction(target_idx, target, val)
+            if was_playing:
+                self._play_audio()
+
+        def cancel() -> None:
+            popup.grab_release()
+            popup.destroy()
+            if was_playing:
+                self._play_audio()
+
+        entry.bind("<Return>", lambda _e: apply())
+        entry.bind("<Escape>", lambda _e: cancel())
+        popup.protocol("WM_DELETE_WINDOW", cancel)
+
+        btn_row = ctk.CTkFrame(popup, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkButton(btn_row, text="Apply", width=134, command=apply).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            btn_row, text="Cancel", width=134,
+            fg_color="transparent", border_width=1, border_color="#445",
+            text_color="#8ab", command=cancel,
+        ).pack(side="left")
+
+    def _apply_word_correction(self, target_idx: int, target: dict, new_word: str) -> None:
+        """Replace a word in the textbox and update the word_map accordingly."""
+        old_word = target["word"]
+        old_len = target["char_end"] - target["char_start"]
+        new_len = len(new_word)
+        delta = new_len - old_len
+
+        inner = self._textbox._textbox
+        inner.config(state="normal")
+        inner.delete(f"1.0+{target['char_start']}c", f"1.0+{target['char_end']}c")
+        inner.insert(f"1.0+{target['char_start']}c", new_word)
+        inner.config(state="disabled")
+
+        # Update this word's map entry
+        self._word_map[target_idx]["word"] = new_word
+        self._word_map[target_idx]["char_end"] = target["char_start"] + new_len
+        self._word_map[target_idx]["confidence"] = 1.0
+
+        # Shift all subsequent entries
+        for j in range(target_idx + 1, len(self._word_map)):
+            if self._word_map[j]["char_start"] >= 0:
+                self._word_map[j]["char_start"] += delta
+                self._word_map[j]["char_end"] += delta
+
+        self._canonical_text = self._textbox.get("1.0", "end-1c")
+        self._apply_confidence_highlights()
+
+        flagged = sum(1 for w in self._word_map if w["confidence"] < 0.8)
+        total = len(self._word_map)
+        self._conf_label.configure(
+            text=f"Confidence: {total} words — {flagged} flagged below 80%",
+            text_color="#CC9900" if flagged else "#44AA44",
+        )
+        self.set_status(f'Corrected: "{old_word}"  →  "{new_word}"', "#44FF44")
+
+    def _replace_word_dialog(self, item: dict) -> None:
+        """Replace a single word occurrence via a small modal dialog."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Replace Word")
+        dialog.geometry("420x140")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text=f'Replace  "{item["word"]}"  with:', anchor="w").pack(
+            fill="x", padx=16, pady=(14, 4)
+        )
+        entry = ctk.CTkEntry(dialog, width=380)
+        entry.insert(0, item["word"])
+        entry.pack(padx=16, pady=(0, 10))
+        entry.select_range(0, "end")
+        entry.focus()
+
+        def _do_replace():
+            new_text = entry.get().strip()
+            if not new_text:
+                dialog.destroy()
+                return
+            content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+            updated = content[: item["char_start"]] + new_text + content[item["char_end"]:]
+            self._apply_text_update(updated)
+            dialog.destroy()
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16, pady=(0, 10))
+        ctk.CTkButton(btn_row, text="Replace", width=100, command=_do_replace).pack(side="left")
+        ctk.CTkButton(
+            btn_row, text="Cancel", width=80, fg_color="transparent",
+            border_width=1, command=dialog.destroy
+        ).pack(side="left", padx=(8, 0))
+        entry.bind("<Return>", lambda _: _do_replace())
+
+    def _ctx_replace_one(self, item: dict) -> None:
+        """Replace a single word instance from the right-click context menu."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Replace Word")
+        dialog.geometry("440x150")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.lift()
+        dialog.focus_force()
+
+        ctk.CTkLabel(
+            dialog, text=f'Replace  "{item["word"]}"  with:',
+            anchor="w", font=ctk.CTkFont(size=12),
+        ).pack(fill="x", padx=16, pady=(16, 4))
+
+        entry = ctk.CTkEntry(dialog, width=400)
+        entry.insert(0, item["word"])
+        entry.select_range(0, "end")
+        entry.pack(padx=16, pady=(0, 12))
+        entry.focus()
+
+        def _apply():
+            new_text = entry.get()
+            # If unchanged, just close — do not re-render or leave selection
+            if new_text == item["word"]:
+                self._textbox._textbox.tag_remove("sel", "1.0", "end")
+                dialog.destroy()
+                return
+            if new_text == "":
+                dialog.destroy()
+                return
+            content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+            cs = item["char_start"]
+            ce = item["char_end"]
+            updated = content[:cs] + new_text + content[ce:]
+            self._apply_text_update(updated)
+            self.append_log(f'Replaced "{item["word"]}" → "{new_text}" (single instance)')
+            dialog.destroy()
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16)
+        ctk.CTkButton(
+            btn_row, text="Replace", width=100,
+            fg_color="#1558C0", command=_apply
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_row, text="Cancel", width=80,
+            fg_color="transparent", border_width=1,
+            command=dialog.destroy
+        ).pack(side="left", padx=(8, 0))
+        entry.bind("<Return>", lambda _: _apply())
+        entry.bind("<Escape>", lambda _: dialog.destroy())
+
+    def _replace_all_dialog(self, word: str) -> None:
+        """Find and replace ALL occurrences of a word in the transcript."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Replace All")
+        dialog.geometry("460x180")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text="Find:", anchor="w").pack(fill="x", padx=16, pady=(14, 2))
+        find_entry = ctk.CTkEntry(dialog, width=420)
+        find_entry.insert(0, word)
+        find_entry.pack(padx=16, pady=(0, 6))
+
+        ctk.CTkLabel(dialog, text="Replace with:", anchor="w").pack(fill="x", padx=16, pady=(0, 2))
+        replace_entry = ctk.CTkEntry(dialog, width=420)
+        replace_entry.pack(padx=16, pady=(0, 10))
+        replace_entry.focus()
+
+        def _do_replace_all():
+            find_text = find_entry.get().strip()
+            replace_text = replace_entry.get().strip()
+            if not find_text:
+                dialog.destroy()
+                return
+            content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+            import re as _re
+            pattern = _re.compile(_re.escape(find_text), _re.IGNORECASE)
+            count = len(pattern.findall(content))
+            updated = pattern.sub(replace_text, content)
+            self._apply_text_update(updated)
+            self.append_log(
+                f'Replace All: "{find_text}" → "{replace_text}"  ({count} replacement{"s" if count != 1 else ""})'
+            )
+            dialog.destroy()
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16)
+        ctk.CTkButton(btn_row, text="Replace All", width=120, command=_do_replace_all).pack(side="left")
+        ctk.CTkButton(
+            btn_row, text="Cancel", width=80, fg_color="transparent",
+            border_width=1, command=dialog.destroy
+        ).pack(side="left", padx=(8, 0))
+        replace_entry.bind("<Return>", lambda _: _do_replace_all())
+
+    def _ctx_replace_all(self, word: str) -> None:
+        """Replace all instances of a word from the right-click context menu."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Replace All")
+        dialog.geometry("440x190")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.lift()
+        dialog.focus_force()
+
+        ctk.CTkLabel(
+            dialog, text="Find:", anchor="w",
+            font=ctk.CTkFont(size=12)
+        ).pack(fill="x", padx=16, pady=(16, 2))
+        find_entry = ctk.CTkEntry(dialog, width=400)
+        find_entry.insert(0, word)
+        find_entry.pack(padx=16, pady=(0, 8))
+
+        ctk.CTkLabel(
+            dialog, text="Replace with:", anchor="w",
+            font=ctk.CTkFont(size=12)
+        ).pack(fill="x", padx=16, pady=(0, 2))
+        replace_entry = ctk.CTkEntry(dialog, width=400)
+        replace_entry.pack(padx=16, pady=(0, 12))
+        replace_entry.focus()
+
+        def _apply():
+            find_text = find_entry.get().strip()
+            replace_text = replace_entry.get()
+            if not find_text:
+                dialog.destroy()
+                return
+            import re as _re
+            content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+            pattern = _re.compile(_re.escape(find_text), _re.IGNORECASE)
+            count = len(pattern.findall(content))
+            if count == 0:
+                self.set_status(f'No instances of "{find_text}" found.', "#CC4444")
+                dialog.destroy()
+                return
+            updated = pattern.sub(replace_text, content)
+            self._apply_text_update(updated)
+            self.append_log(
+                f'Replace All: "{find_text}" → "{replace_text}"  '
+                f'({count} replacement{"s" if count != 1 else ""})'
+            )
+            dialog.destroy()
+
+        btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_row.pack(fill="x", padx=16)
+        ctk.CTkButton(
+            btn_row, text="Replace All", width=110,
+            fg_color="#B8860B", hover_color="#9A7209",
+            font=ctk.CTkFont(weight="bold"),
+            command=_apply
+        ).pack(side="left")
+        ctk.CTkButton(
+            btn_row, text="Cancel", width=80,
+            fg_color="transparent", border_width=1,
+            command=dialog.destroy
+        ).pack(side="left", padx=(8, 0))
+        replace_entry.bind("<Return>", lambda _: _apply())
+        replace_entry.bind("<Escape>", lambda _: dialog.destroy())
+
+    def _open_find_replace_dialog(self) -> None:
+        """Open Replace All with an empty find field."""
+        self._replace_all_dialog("")
+
+    def _apply_text_update(self, updated_content: str) -> None:
+        """Apply a text change to both the textbox and canonical text, then rebuild word map."""
+        self._canonical_text = updated_content
+        self._textbox.configure(state="normal")
+        self._textbox.delete("1.0", "end")
+        self._textbox.insert("1.0", updated_content)
+        if not self._edit_mode:
+            self._textbox.configure(state="disabled")
+        if self._words:
+            self._build_word_map(self._words)
+        # Always clear any lingering text selection
+        self._textbox._textbox.tag_remove("sel", "1.0", "end")
+        self.set_status("Change applied — click Save to write to disk.", "#FFCC44")
+
+    # ── Find & Replace ────────────────────────────────────────────────────
+
+    def _toggle_find_replace(self) -> None:
+        """Show or hide the Find & Replace bar."""
+        if self._fnr_bar.winfo_ismapped():
+            self._close_find_replace()
+        else:
+            self._fnr_bar.pack(fill="x", padx=0, pady=0, before=self._textbox)
+            self._find_entry.focus()
+            self._find_entry.select_range(0, "end")
+            self._fnr_toggle_btn.configure(
+                fg_color="#1558C0", border_color="#1558C0", text_color="white"
+            )
+            try:
+                sel = self._textbox._textbox.get("sel.first", "sel.last")
+                if sel.strip():
+                    self._find_entry.delete(0, "end")
+                    self._find_entry.insert(0, sel.strip())
+                    self._fnr_update_count()
+            except Exception:
+                pass
+
+    def _close_find_replace(self) -> None:
+        """Hide the Find & Replace bar and clear highlights."""
+        self._fnr_bar.pack_forget()
+        self._fnr_toggle_btn.configure(
+            fg_color="transparent", border_color="#334", text_color="#8ab"
+        )
+        self._textbox._textbox.tag_remove("fnr_highlight", "1.0", "end")
+        self._textbox._textbox.tag_remove("fnr_current", "1.0", "end")
+        self._fnr_match_label.configure(text="")
+        self._fnr_current_pos = "1.0"
+
+    def _fnr_update_count(self) -> None:
+        """Update the match count label as the user types."""
+        find_text = self._find_entry.get()
+        if not find_text:
+            self._fnr_match_label.configure(text="")
+            self._textbox._textbox.tag_remove("fnr_highlight", "1.0", "end")
+            return
+
+        content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+        flags = 0 if self._fnr_case_var.get() else re.IGNORECASE
+        matches = list(re.finditer(re.escape(find_text), content, flags))
+        count = len(matches)
+
+        widget = self._textbox._textbox
+        widget.tag_remove("fnr_highlight", "1.0", "end")
+        widget.tag_config("fnr_highlight", background="#3A3A00", foreground="#FFEE44")
+        widget.tag_config("fnr_current", background="#B8860B", foreground="white")
+
+        for match in matches:
+            start_idx = f"1.0+{match.start()}c"
+            end_idx = f"1.0+{match.end()}c"
+            widget.tag_add("fnr_highlight", start_idx, end_idx)
+
+        if count == 0:
+            self._fnr_match_label.configure(text="No matches", text_color="#CC4444")
+        elif count == 1:
+            self._fnr_match_label.configure(text="1 match", text_color="#44CC44")
+        else:
+            self._fnr_match_label.configure(text=f"{count} matches", text_color="#44CC44")
+
+        self._fnr_current_pos = "1.0"
+
+    def _fnr_replace_next(self) -> None:
+        """Replace the next occurrence of the find text."""
+        find_text = self._find_entry.get().strip()
+        replace_text = self._replace_entry.get()
+        if not find_text:
+            return
+
+        content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+        flags = 0 if self._fnr_case_var.get() else re.IGNORECASE
+
+        try:
+            start_offset = self._index_to_char_offset(self._fnr_current_pos)
+        except Exception:
+            start_offset = 0
+
+        match = re.search(re.escape(find_text), content[start_offset:], flags)
+        if match is None and start_offset > 0:
+            match = re.search(re.escape(find_text), content, flags)
+            start_offset = 0
+            self._fnr_match_label.configure(text="Wrapped to top", text_color="#FFAA44")
+
+        if match is None:
+            self._fnr_match_label.configure(text="No matches", text_color="#CC4444")
+            return
+
+        abs_start = start_offset + match.start()
+        abs_end = start_offset + match.end()
+
+        widget = self._textbox._textbox
+        widget.tag_remove("fnr_current", "1.0", "end")
+        cur_start = f"1.0+{abs_start}c"
+        cur_end = f"1.0+{abs_end}c"
+        widget.tag_add("fnr_current", cur_start, cur_end)
+        widget.see(cur_start)
+
+        updated = content[:abs_start] + replace_text + content[abs_end:]
+        self._apply_text_update(updated)
+
+        self._fnr_current_pos = f"1.0+{abs_start + len(replace_text)}c"
+        self._fnr_update_count()
+
+    def _fnr_replace_all(self) -> None:
+        """Replace every occurrence and report the count."""
+        find_text = self._find_entry.get().strip()
+        replace_text = self._replace_entry.get()
+        if not find_text:
+            return
+
+        content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+        flags = 0 if self._fnr_case_var.get() else re.IGNORECASE
+        pattern = re.compile(re.escape(find_text), flags)
+        count = len(pattern.findall(content))
+
+        if count == 0:
+            self._fnr_match_label.configure(text="No matches found", text_color="#CC4444")
+            return
+
+        updated = pattern.sub(replace_text, content)
+        self._apply_text_update(updated)
+
+        self._fnr_match_label.configure(
+            text=f"✓  {count} replacement{'s' if count != 1 else ''} made",
+            text_color="#44FF44",
+        )
+        self.append_log(
+            f'Find & Replace: "{find_text}" → "{replace_text}"  '
+            f'({count} replacement{"s" if count != 1 else ""})'
+        )
+        self._fnr_current_pos = "1.0"
+        self._textbox._textbox.tag_remove("fnr_highlight", "1.0", "end")
+        self._textbox._textbox.tag_remove("fnr_current", "1.0", "end")
+
     def _index_to_char_offset(self, index: str) -> int:
         try:
             content = self._textbox.get("1.0", "end")
@@ -608,14 +1285,29 @@ class TranscriptTab(ctk.CTkFrame):
                     widget.tag_remove("current_word", "1.0", "end")
                     if item["char_start"] >= 0:
                         start_tk = f"1.0+{item['char_start']}c"
-                        end_tk = f"1.0+{item['char_end']}c"
+                        end_tk   = f"1.0+{item['char_end']}c"
                         widget.tag_add("current_word", start_tk, end_tk)
-                        widget.see(start_tk)
+                        # Only scroll if the word is not already visible — prevents jumpy viewport
+                        if not self._is_position_visible(start_tk):
+                            widget.see(start_tk)
                 self._sync_timer_id = self.after(250, self._sync_playback)
             else:
                 self._sync_timer_id = None
         except Exception:
             self._sync_timer_id = None
+
+    def _is_position_visible(self, tk_index: str) -> bool:
+        """Return True if the given text index is currently visible in the viewport."""
+        try:
+            widget = self._textbox._textbox
+            top_line = int(widget.index("@0,0").split(".")[0])
+            bottom_line = int(
+                widget.index(f"@{widget.winfo_width()},{widget.winfo_height()}").split(".")[0]
+            )
+            target_line = int(widget.index(tk_index).split(".")[0])
+            return top_line <= target_line <= bottom_line
+        except Exception:
+            return False
 
     def _schedule_position_update(self):
         if self._position_job is not None:
@@ -738,6 +1430,8 @@ class TranscriptTab(ctk.CTkFrame):
         self._edit_mode = not self._edit_mode
         if self._edit_mode:
             self._textbox.configure(state="normal")
+            self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4), before=self._textbox)
+            self._speaker_break_entry.delete(0, "end")
             self._edit_mode_btn.configure(
                 text="Exit Edit Mode",
                 fg_color="#1558C0",
@@ -753,12 +1447,40 @@ class TranscriptTab(ctk.CTkFrame):
         else:
             self._canonical_text = self._textbox.get("1.0", "end-1c")
             self._textbox.configure(state="disabled")
+            self._edit_toolbar.pack_forget()
             self._edit_mode_btn.configure(
                 text="Edit Mode",
                 fg_color="transparent",
                 border_color="#334",
                 text_color="#8ab",
             )
-            self.set_status("Read Mode — click any word to seek audio.", "gray")
+            self.set_status("Read Mode — click to seek audio · double-click any word to correct it.", "gray")
             if self._words:
                 self._build_word_map(self._words)
+
+    def _insert_speaker_break(self) -> None:
+        """Split the transcript at the cursor and insert a new speaker label on a new line."""
+        if not self._edit_mode:
+            return
+
+        label = self._speaker_break_entry.get().strip()
+        if not label:
+            self.set_status("Enter a speaker label first (e.g.  Speaker 4)", "#FFAA44")
+            return
+
+        widget = self._textbox._textbox
+        try:
+            cursor_idx = widget.index("insert")
+        except Exception:
+            self.set_status("Click inside the transcript to place the cursor first.", "#FFAA44")
+            return
+
+        insert_text = f"\n{label}: "
+        widget.insert(cursor_idx, insert_text)
+
+        new_cursor = f"{cursor_idx}+{len(insert_text)}c"
+        widget.mark_set("insert", new_cursor)
+        widget.see(new_cursor)
+
+        self._canonical_text = self._textbox.get("1.0", "end-1c")
+        self.set_status(f"Inserted  {label}:  — type the spoken text now.", "#44FF44")
