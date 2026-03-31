@@ -35,6 +35,30 @@ def _l(doc, text, bold=False):
     run.bold = bold
 
 
+def derive_correct_spelling(letters_as_given: str) -> str:
+    """
+    Derive the probable correct spelling from a hyphenated
+    letter sequence produced by Morson's Rule 157.
+
+    Examples:
+      B-A-L-D-E-R-A-S  → Balderas
+      B-r-e-n-n-e-n    → Brennen
+      T-O-V-A-R        → Tovar
+
+    This is a SUGGESTION only. The scopist must verify
+    against the audio before accepting.
+
+    Returns empty string if input is not a valid
+    hyphenated letter sequence.
+    """
+    parts = letters_as_given.split('-')
+    if len(parts) < 3:
+        return ''
+    if not all(len(p) == 1 and p.isalpha() for p in parts):
+        return ''
+    return ''.join(parts).capitalize()
+
+
 def write_post_record_section(
     doc: Document,
     spellings: List[PostRecordSpelling],

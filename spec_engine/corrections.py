@@ -57,10 +57,11 @@ SENTENCE_START_NUMBER_WORDS = {
 NUMBER_EXCLUSION_RE = re.compile(
     r'(?:'
     r'[Ee]xhibit\s+(?:No\.\s+)?\d'      # Exhibit 3 / Exhibit No. 15
-    r'|No\.\s+\d'                         # Exhibit No. / CSR No. / Cause No. — in legal transcripts
-                                         # "No." before a digit is always a reference, never a count.
-                                         # This guards the digit even when "Exhibit" is outside the
-                                         # 8-char window used by apply_number_to_word().
+    r'|No\.\s+\d'                         # Exhibit No. / CSR No. / Cause No. —
+                                         # "No." before a digit is always a legal
+                                         # reference, never a count. Guards the digit
+                                         # even when "Exhibit" is outside the 8-char
+                                         # apply_number_to_word() window.
     r'|\d{1,2}:\d{2}'       # time (2:30)
     r'|\$\s*\d'             # dollar amount
     r'|I-\d'                # interstate highways (I-10)
@@ -193,6 +194,20 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\b[Ee]xhibit\s+[Nn]umber\s+(\d+)\b',  r'Exhibit No. \1'),
     (r'\b[Ee]xhibit\s+[Nn]o\.?\s+(\d+)\b',   r'Exhibit No. \1'),
     (r'\b[Ee]xhibit\s+(\d+)\b',               r'Exhibit No. \1'),
+    # 408th Judicial District — Deepgram digit-by-digit garbles
+    # Appears in reporter preamble on every Bexar County deposition.
+    (r'\b4\s+0\s+8(?:th)?\s+[Jj]udicial\s+[Dd]istrict\b',
+     '408th Judicial District'),
+    (r'\bfour\s+o\s+eight\s+[Jj]udicial\s+[Dd]istrict\b',
+     '408th Judicial District'),
+    (r'\bfour\s+zero\s+eight\s+[Jj]udicial\s+[Dd]istrict\b',
+     '408th Judicial District'),
+    (r'\b408\s+[Jj]udicial\s+[Dd]istrict\b',
+     '408th Judicial District'),
+    # "Cause Number" preamble garbles — Deepgram mishears "cop number"
+    (r'\bcop\s+number\b',            'Cause Number'),
+    (r'\bcaught\s+number\b',         'Cause Number'),
+    (r'\bcause\s+numbers?\b',        'Cause Number'),
     # "non-CDL" split forms
     (r'\bnon\s+CDL\b',               'non-CDL'),
     (r'\bnon-CDO\b',                 'non-CDL'),
@@ -327,6 +342,14 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
 
 # ── Deepgram artifact duplicate (Priority 5 — Spec 2.2) ──────────────────────
 ARTIFACT_DUPLICATE_RE = re.compile(r'\b(\w{4,})\s+\1\b', re.IGNORECASE)
+# Morson's Rule 157: spaced single letters → hyphenated
+# Matches 3+ consecutive single letters separated by spaces.
+# Requires word boundary at start and end.
+# Multi-letter words break the sequence — only single chars match.
+# Letters followed by periods are not matched (protects Q. A. initials).
+SPELLED_LETTERS_RE = re.compile(
+    r'\b([A-Za-z](?:\s+[A-Za-z]){2,})\b'
+)
 
 
 # ── Case-preservation helper ──────────────────────────────────────────────────
@@ -592,6 +615,45 @@ def apply_artifact_removal(
         records.append(CorrectionRecord(
             original=text, corrected=new_text,
             pattern='artifact_duplicate_4plus', block_index=block_index,
+        ))
+    return new_text
+
+
+def apply_spelled_letter_hyphenation(
+    text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+) -> str:
+    """
+    Join space-separated single letters with hyphens.
+    Morson's Rule 157: spelled letters use hyphens between them.
+
+    VERBATIM RULE: Letters are never changed or collapsed.
+    Only spaces between single letters become hyphens.
+
+    Examples:
+      B r e n n e n     → B-r-e-n-n-e-n
+      B A L D E R A S   → B-A-L-D-E-R-A-S
+      T O V A R         → T-O-V-A-R
+
+    Guards:
+      - Requires 3+ consecutive single letters
+      - Letters followed by periods are excluded (Q. A. initials)
+      - Multi-letter words break the sequence
+    """
+    original = text
+
+    def _hyphenate(m: re.Match) -> str:
+        return '-'.join(m.group(0).split())
+
+    new_text = SPELLED_LETTERS_RE.sub(_hyphenate, text)
+
+    if new_text != original:
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=new_text,
+            pattern='spelled_letter_hyphenation_rule157',
+            block_index=block_index,
         ))
     return new_text
 
@@ -945,6 +1007,7 @@ def clean_block(
       4b. Date mashup flagging
       4c. Sentence-start number spelled out (Morson's English Guide)
       5.  Deepgram duplicate artifact removal (4+ char words only)
+      5b. Spelled-letter hyphenation (Morson's Rule 157)
       6.  Spaced dashes (word--word → word -- word)
       7.  Uh-huh / Uh-uh hyphenation normalization
       8.  Even dollar amount cleanup ($450.00 → $450)
@@ -972,6 +1035,7 @@ def clean_block(
     text = apply_san_name_flag(text, records, flags, block_index, flag_counter)
     text = apply_sentence_start_number(text, records, block_index)
     text = apply_artifact_removal(text, records, block_index)
+    text = apply_spelled_letter_hyphenation(text, records, block_index)
     text = fix_spaced_dashes(text, records, block_index)
     text = fix_uh_huh_hyphenation(text, records, block_index)
     text = fix_even_dollar_amounts(text, records, block_index)

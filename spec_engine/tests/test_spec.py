@@ -911,7 +911,7 @@ def test_qa_width_applied_to_qa_lines():
             )
 
 
-@pytest.mark.skip(reason="Asserts line-wrapping behavior not yet in format_blocks_to_text — Phase 2 task")
+@pytest.mark.skip(reason="Asserts SP-aligned continuation which is wrong per UFM spec — UFM requires left-margin continuation. Also imports removed formatter module. DOCX SP output is covered by test_emitter_speaker_continuation_aligns_under_content.")
 def test_format_blocks_speaker_continuation_alignment():
     from core.correction_runner import format_blocks_to_text as format_blocks
     from spec_engine.models import Block, BlockType

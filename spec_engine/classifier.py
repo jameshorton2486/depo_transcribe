@@ -20,6 +20,7 @@ from .models import (
     Block, BlockType, JobConfig, LineType, ScopistFlag, PostRecordSpelling,
     SpeakerMapUnverifiedError,
 )
+from .pages.post_record import derive_correct_spelling
 from .speaker_resolver import ROLE_ATTORNEY, ROLE_EXAMINING_ATTORNEY, ROLE_INTERPRETER, ROLE_OPPOSING_COUNSEL, ROLE_REPORTER, ROLE_VIDEOGRAPHER, ROLE_WITNESS
 
 
@@ -494,7 +495,7 @@ def classify_block(
             letters = spelling_match.group(2).strip()
             prs = PostRecordSpelling(
                 name=name,
-                correct_spelling="",      # blank — scopist must confirm from letters_as_given
+                correct_spelling=derive_correct_spelling(letters),
                 letters_as_given=letters,
                 block_index=block_index,
                 flag=f"Verify: spelled on record as {letters}",
