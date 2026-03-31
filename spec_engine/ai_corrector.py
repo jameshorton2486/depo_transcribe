@@ -192,6 +192,27 @@ These must be kept EXACTLY as spoken. Never normalize:
 These are part of the verbatim legal record.
 Normalizing them constitutes alteration of testimony.
 
+## RULE 24 — POST-RECORD SPELLING RETROACTIVE CORRECTION
+
+When CONFIRMED POST-RECORD SPELLINGS are provided below,
+the spellings are AUTHORITATIVE. They were established on
+the record by the witness or attorney spelling out a name
+letter by letter.
+
+For each confirmed spelling:
+  - The correct form is given (e.g., Balderas)
+  - All prior instances in this chunk where the name
+    appears in any phonetic or misspelled form must be
+    corrected to the confirmed spelling
+  - Do NOT alter the hyphenated letter sequence itself
+    (e.g., B-A-L-D-E-R-A-S must remain as written —
+    it is part of the verbatim record)
+  - Do NOT correct instances that appear AFTER the
+    spelling was given — those are already correct
+
+If no CONFIRMED POST-RECORD SPELLINGS section appears
+in the prompt, this rule does not apply.
+
 ## OUTPUT REQUIREMENTS
 Return ONLY the corrected transcript text.
 Do NOT add commentary, explanations, headers, or summaries.
@@ -208,6 +229,7 @@ def _build_user_prompt(
     proper_nouns: list[str],
     speaker_map: dict,
     confirmed_spellings: dict,
+    post_record_spellings: list = None,
 ) -> str:
     """Build the user-turn prompt with case-specific context."""
     parts = []
@@ -229,6 +251,22 @@ def _build_user_prompt(
             "CONFIRMED SPELLINGS (use exactly):\n"
             + "\n".join(f"  {k} → {v}" for k, v in list(confirmed_spellings.items())[:40])
         )
+
+    if post_record_spellings:
+        confirmed_prs = [
+            prs for prs in post_record_spellings
+            if getattr(prs, 'correct_spelling', '')
+        ]
+        if confirmed_prs:
+            parts.append(
+                "CONFIRMED POST-RECORD SPELLINGS"
+                " (authoritative — correct all prior instances):\n"
+                + "\n".join(
+                    f"  {getattr(prs, 'letters_as_given', '')} → "
+                    f"{getattr(prs, 'correct_spelling', '')}"
+                    for prs in confirmed_prs
+                )
+            )
 
     context_block = "\n\n".join(parts)
     if context_block:
@@ -295,6 +333,16 @@ def run_ai_correction(
     elif isinstance(job_config, dict):
         confirmed_spellings = dict(job_config.get('confirmed_spellings', {}) or {})
 
+    post_record_spellings: list = []
+    if hasattr(job_config, 'post_record_spellings'):
+        post_record_spellings = list(
+            getattr(job_config, 'post_record_spellings', []) or []
+        )
+    elif isinstance(job_config, dict):
+        post_record_spellings = list(
+            job_config.get('post_record_spellings', []) or []
+        )
+
     MAX_CHARS = 18000
     chunks = _split_into_chunks(transcript_text, MAX_CHARS)
     _log(f'Split transcript into {len(chunks)} chunk(s) for AI correction')
@@ -315,6 +363,7 @@ def run_ai_correction(
             proper_nouns,
             speaker_map,
             confirmed_spellings,
+            post_record_spellings,
         )
 
         message = client.messages.create(
