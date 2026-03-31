@@ -35,6 +35,8 @@ from typing import List, Optional, Tuple
 
 from .models import Block, CorrectionRecord, JobConfig, ScopistFlag
 
+logger = logging.getLogger(__name__)
+
 
 TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\s*(AM|PM)\b\.?", re.IGNORECASE)
 
@@ -1026,6 +1028,8 @@ def clean_block(
 
     records: List[CorrectionRecord] = []
 
+    _before = text  # snapshot for block-level summary log
+
     text = apply_multiword_corrections(text, records, block_index)
     text = apply_case_corrections(text, job_config, records, block_index)
     text = apply_universal_corrections(text, records, block_index)
@@ -1046,6 +1050,15 @@ def clean_block(
     text = enforce_terminal_punctuation(text, records, block_index)
     text = normalize_sentence_spacing(text, records, block_index)
     # Step 8: uh/um — NEVER touched. No code here intentionally.
+
+    # ── Block-level debug log (off by default — enable with DEBUG level) ─────
+    if records and logger.isEnabledFor(logging.DEBUG):
+        rule_names = sorted({r.pattern.split(":")[0] for r in records})
+        logger.debug(
+            "[corrections] block %d: %d correction(s) fired  rules=%s\n"
+            "  before: %r\n  after:  %r",
+            block_index, len(records), rule_names, _before[:80], text[:80],
+        )
 
     return text, records, list(flags)
 

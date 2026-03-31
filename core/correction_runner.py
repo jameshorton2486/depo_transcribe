@@ -4,12 +4,13 @@ core/correction_runner.py
 Orchestrates the full deterministic correction pass on a completed transcript.
 
 Workflow:
-  1. Locate the Deepgram JSON file that was saved alongside the .txt transcript
-  2. Build a minimal JobConfig from the ufm_fields.json in the same folder
-  3. Run: build_blocks_from_deepgram → process_blocks (corrections + QA + validation)
-  4. Format the corrected blocks into plain text
-  5. Write {stem}_corrected.txt and {stem}_corrections.json to the same folder
-  6. Return a result dict the UI can consume
+  1. Locate the Deepgram JSON file saved alongside the .txt transcript
+  2. Load job_config.json from source_docs/ (single source of truth)
+  3. Build a full JobConfig — all UFM fields + confirmed_spellings + speaker_map
+  4. Run: build_blocks_from_deepgram → process_blocks (corrections + QA + validation)
+  5. Format the corrected blocks into plain text
+  6. Write {stem}_corrected.txt and {stem}_corrections.json to the same folder
+  7. Return a result dict the UI can consume
 
 Called from ui/tab_transcript.py via a background thread.
 """
@@ -84,37 +85,115 @@ def format_blocks_to_text(blocks: list) -> str:
     return "\n\n".join(lines)
 
 
-# ── JobConfig builder from UFM fields ────────────────────────────────────────
+# ── job_config loader ────────────────────────────────────────────────────────
 
-def _build_job_config_from_ufm(ufm_fields: dict) -> Any:
+def _load_job_config_for_transcript(transcript_path: str) -> dict:
     """
-    Build a minimal JobConfig from the UFM fields JSON that was saved
-    during intake. Falls back to defaults for missing fields.
+    Load job_config.json from source_docs/ for the given transcript.
+
+    Directory layout assumed:
+        .../CaseFolder/Deepgram/filename.txt   ← transcript_path
+        .../CaseFolder/source_docs/job_config.json
+
+    Returns an empty dict if the file does not exist — caller must handle this.
     """
+    from core.job_config_manager import load_job_config
+    case_root = str(Path(transcript_path).parent.parent)
+    return load_job_config(case_root)
+
+
+# ── JobConfig builder ─────────────────────────────────────────────────────────
+
+def _build_job_config_from_ufm(job_config_data: dict) -> Any:
+    """
+    Build a complete JobConfig from a loaded job_config.json dict.
+
+    Reads UFM page fields from job_config_data["ufm_fields"] and
+    confirmed_spellings from job_config_data["confirmed_spellings"]
+    (top-level key — NOT inside ufm_fields).
+
+    No silent fallbacks — missing ufm_fields is logged as an error
+    and results in an empty JobConfig with default values only.
+    """
+    from core.field_mapping import UFM_TO_CFG_SCALAR
     from spec_engine.models import JobConfig, CounselInfo
+
+    # ── Validate structure — no silent fallback ───────────────────────────────
+    ufm = job_config_data.get("ufm_fields", {})
+    if not ufm:
+        logger.error(
+            "[CorrectionRunner] ufm_fields missing or empty in job_config — "
+            "JobConfig will use defaults only"
+        )
 
     cfg = JobConfig()
 
-    cfg.cause_number = ufm_fields.get("cause_number", "")
-    cfg.case_style = ufm_fields.get("case_style", "")
-    cfg.plaintiff_name = ufm_fields.get("plaintiff_name", "")
-    cfg.court = ufm_fields.get("court_type", "")
-    cfg.county = ufm_fields.get("county", "")
-    cfg.depo_date = ufm_fields.get("depo_date", "")
-    cfg.witness_name = ufm_fields.get("witness_name", "")
-    cfg.method = ufm_fields.get("depo_method", "In Person")
-    cfg.reporter_name = ufm_fields.get("reporter_name", "Miah Bardot")
-    cfg.reporter_csr = ufm_fields.get("csr_number", "CSR No. 12129")
-    cfg.reporter_firm = ufm_fields.get("reporter_agency", "SA Legal Solutions")
+    # ── Scalar fields via mapping dict ────────────────────────────────────────
+    for ufm_key, cfg_attr in UFM_TO_CFG_SCALAR.items():
+        value = ufm.get(ufm_key, "")
+        if value and hasattr(cfg, cfg_attr):
+            setattr(cfg, cfg_attr, value)
 
-    spellings = ufm_fields.get("confirmed_spellings", {})
-    if isinstance(spellings, dict):
-        cfg.confirmed_spellings = spellings
+    # ── Complex fields — explicit type coercions ──────────────────────────────
 
-    speaker_map = ufm_fields.get("speaker_map", {})
+    # defendant_name (str) → defendant_names (list[str])
+    defendant = ufm.get("defendant_name", "")
+    if defendant:
+        cfg.defendant_names = [defendant]
+
+    # video_required (str) → is_videotaped (bool)
+    video = ufm.get("video_required", "")
+    cfg.is_videotaped = bool(
+        video and str(video).lower() not in ("", "no", "false")
+    )
+
+    # plaintiff_counsel / defense_counsel → list[CounselInfo]
+    for atty in ufm.get("plaintiff_counsel", []):
+        cfg.plaintiff_counsel.append(CounselInfo(
+            name=atty.get("name", ""),    firm=atty.get("firm", ""),
+            sbot=atty.get("sbot", ""),    address=atty.get("address", ""),
+            phone=atty.get("phone", ""),  party=atty.get("party", ""),
+        ))
+    for atty in ufm.get("defense_counsel", []):
+        cfg.defense_counsel.append(CounselInfo(
+            name=atty.get("name", ""),    firm=atty.get("firm", ""),
+            sbot=atty.get("sbot", ""),    address=atty.get("address", ""),
+            phone=atty.get("phone", ""),  party=atty.get("party", ""),
+        ))
+
+    # speaker_map — JSON stores string keys, JobConfig needs int keys
+    speaker_map = ufm.get("speaker_map", {})
     if isinstance(speaker_map, dict):
         cfg.speaker_map = {int(k): v for k, v in speaker_map.items()}
 
+    # speaker_map_verified — must be True for Q/A classification to use map
+    verified = ufm.get("speaker_map_verified", False)
+    cfg.speaker_map_verified = bool(verified)
+
+    # ── confirmed_spellings — TOP LEVEL of job_config, NOT inside ufm_fields ─
+    spellings = job_config_data.get("confirmed_spellings", {})
+    if isinstance(spellings, dict) and spellings:
+        cfg.confirmed_spellings = spellings
+        logger.info(
+            "[CorrectionRunner] confirmed_spellings: %d entries loaded",
+            len(spellings),
+        )
+    else:
+        logger.warning(
+            "[CorrectionRunner] confirmed_spellings empty — "
+            "name corrections will not run for this transcript"
+        )
+
+    logger.info(
+        "[CorrectionRunner] JobConfig built: cause=%r  witness=%r  "
+        "spellings=%d  speakers=%d  counsel=%d+%d",
+        cfg.cause_number,
+        cfg.witness_name,
+        len(cfg.confirmed_spellings),
+        len(cfg.speaker_map),
+        len(cfg.plaintiff_counsel),
+        len(cfg.defense_counsel),
+    )
     return cfg
 
 
@@ -128,7 +207,7 @@ def _find_deepgram_json(transcript_path: str) -> str | None:
     Matching strategy (in order):
       1. Same stem, .json extension (exact stem match)
       2. Most recently modified .json in the same folder that doesn't end
-         in _raw.json, _corrections.json, or _ufm_fields.json
+         in _raw.json or _corrections.json
     """
     folder = Path(transcript_path).parent
     stem = Path(transcript_path).stem
@@ -146,7 +225,7 @@ def _find_deepgram_json(transcript_path: str) -> str | None:
     if exact_base.exists():
         return str(exact_base)
 
-    excluded_endings = ("_raw.json", "_corrections.json", "_ufm_fields.json")
+    excluded_endings = ("_raw.json", "_corrections.json")
     candidates = [
         f for f in folder.glob("*.json")
         if not any(str(f).endswith(e) for e in excluded_endings)
@@ -155,24 +234,6 @@ def _find_deepgram_json(transcript_path: str) -> str | None:
         return None
 
     return str(max(candidates, key=lambda f: f.stat().st_mtime))
-
-
-def _find_ufm_fields(transcript_path: str) -> dict:
-    """Find and load the most recent _ufm_fields.json in the same folder."""
-    folder = Path(transcript_path).parent
-    ufm_files = sorted(
-        folder.glob("*_ufm_fields.json"),
-        key=lambda f: f.stat().st_mtime,
-        reverse=True,
-    )
-    if not ufm_files:
-        return {}
-    try:
-        with open(ufm_files[0], "r", encoding="utf-8") as fh:
-            return json.load(fh)
-    except Exception as exc:
-        logger.warning("[CorrectionRunner] Could not load UFM fields: %s", exc)
-        return {}
 
 
 # ── Correction records serializer ────────────────────────────────────────────
@@ -256,12 +317,17 @@ def run_correction_job(
         _log(f"Loaded {len(blocks)} blocks")
 
         _log("Loading case configuration...")
-        ufm_fields = _find_ufm_fields(transcript_path)
-        if ufm_fields:
-            _log(f"UFM fields loaded: {len(ufm_fields)} entries")
-            job_config = _build_job_config_from_ufm(ufm_fields)
+        job_config_data = _load_job_config_for_transcript(transcript_path)
+        if job_config_data:
+            _log(
+                f"job_config.json loaded: "
+                f"ufm_fields={len(job_config_data.get('ufm_fields', {}))} keys  "
+                f"spellings={len(job_config_data.get('confirmed_spellings', {}))}  "
+                f"keyterms={len(job_config_data.get('deepgram_keyterms', []))}"
+            )
+            job_config = _build_job_config_from_ufm(job_config_data)
         else:
-            _log("No UFM fields found — using default job config")
+            _log("No job_config.json found — using default JobConfig (no name corrections)")
             from spec_engine.models import JobConfig
             job_config = JobConfig()
 

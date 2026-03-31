@@ -4,7 +4,14 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.intake_parser import IntakeParsedResult
-from core.keyterm_extractor import _is_full_name, merge_from_intake, split_compound_terms
+from core.keyterm_extractor import (
+    _is_full_name,
+    extract_keyterms_from_text,
+    merge_from_intake,
+    normalize_legal_terms,
+    normalize_text,
+    split_compound_terms,
+)
 
 
 def test_full_name_two_words():
@@ -138,3 +145,55 @@ def test_merge_from_intake_empty_reporter():
     intake = _make_intake(["Matthew Coger"])
     _, _, reporter_count = merge_from_intake(intake, [])
     assert reporter_count == 0
+
+
+def test_normalize_text_collapses_whitespace():
+    raw = "TO:\nRaul\tGarza\nRE:\tCase"
+    assert normalize_text(raw) == "TO: Raul Garza RE: Case"
+
+
+def test_normalize_legal_terms_fixes_deuces_tecum():
+    raw = "Please produce under subpoena deuces tecum."
+    assert "subpoena duces tecum" in normalize_legal_terms(raw).lower()
+
+
+def test_extract_keyterms_keeps_full_name():
+    text = "TO: Raul Garza FROM: Gregory J Peterson"
+    result = extract_keyterms_from_text(text)
+    assert "Raul Garza" in result
+
+
+def test_extract_keyterms_keeps_second_full_name():
+    text = "TO: Raul Garza FROM: Gregory J Peterson"
+    result = extract_keyterms_from_text(text)
+    assert "Gregory J Peterson" in result
+
+
+def test_extract_keyterms_keeps_case_number():
+    text = "Cause No. C-12345-24-B"
+    result = extract_keyterms_from_text(text)
+    assert "C-12345-24-B" in result
+
+
+def test_extract_keyterms_keeps_firm_name():
+    text = "Wright & Greenhill PLLC appeared."
+    result = extract_keyterms_from_text(text)
+    assert any("Wright & Greenhill PLLC" == term for term in result)
+
+
+def test_extract_keyterms_keeps_address():
+    text = "Send notice to 13526 George Road Suite 200, San Antonio, TX 78230."
+    result = extract_keyterms_from_text(text)
+    assert any("13526 George Road Suite 200" in term for term in result)
+
+
+def test_extract_keyterms_keeps_subpoena_duces_tecum():
+    text = "Documents requested by subpoena deuces tecum are attached."
+    result = extract_keyterms_from_text(text)
+    assert "Subpoena Duces Tecum" in result
+
+
+def test_extract_keyterms_filters_document_structure_noise():
+    text = "District Court Court Reporter Start Time End Time"
+    result = extract_keyterms_from_text(text)
+    assert "District Court" not in result

@@ -54,6 +54,7 @@ class CorrectionsTab(ctk.CTkFrame):
         self._ai_text: str = ''
         self._running: bool = False
         self._docx_running: bool = False
+        self._source_text: str = ''        # raw text captured at correction time (for diff)
 
         self._build_ui()
 
@@ -420,6 +421,13 @@ class CorrectionsTab(ctk.CTkFrame):
 
     def _run_job(self):
         from core.correction_runner import run_correction_job
+        from pathlib import Path
+
+        # Capture raw text now so we can diff after corrections
+        try:
+            self._source_text = Path(self._source_path).read_text(encoding="utf-8")
+        except Exception:
+            self._source_text = ''
 
         run_correction_job(
             transcript_path=self._source_path,
@@ -468,6 +476,45 @@ class CorrectionsTab(ctk.CTkFrame):
 
             # Load corrections JSON into log panel
             self._load_corrections_json_into_log(json_path)
+
+            # ── Diff summary ─────────────────────────────────────────────────
+            if self._source_text and corr_text:
+                try:
+                    from core.diff_engine import summary as diff_summary
+                    d = diff_summary(self._source_text, corr_text)
+                    if d["total_changes"]:
+                        self._append_log(
+                            f"\n── Diff Summary ──────────────────────────\n"
+                            f"  Lines changed:  {d['replaces']}\n"
+                            f"  Lines added:    {d['inserts']}\n"
+                            f"  Lines removed:  {d['deletes']}\n"
+                            f"──────────────────────────────────────────"
+                        )
+                except Exception as exc:
+                    logger.debug("[CorrectionsTab] Diff summary failed: %s", exc)
+
+            # ── Low-confidence words from job_config ──────────────────────────
+            if corr_path:
+                try:
+                    from pathlib import Path as _Path
+                    from core.job_config_manager import load_job_config
+                    case_root = str(_Path(corr_path).parent.parent)
+                    jc = load_job_config(case_root)
+                    low_conf = jc.get("low_confidence_words", [])
+                    if low_conf:
+                        lines = [f"\n── Low-Confidence Words ({len(low_conf)}) ─────"]
+                        for w in low_conf[:20]:
+                            lines.append(
+                                f"  {w['word']:20s}  {w['confidence']:.2f}  "
+                                f"@ {w['start']:.1f}s"
+                            )
+                        if len(low_conf) > 20:
+                            lines.append(f"  … and {len(low_conf) - 20} more")
+                        lines.append("──────────────────────────────────────────")
+                        self._append_log("\n".join(lines))
+                        self._update_stat(self._stat_spellings, str(len(low_conf)))
+                except Exception as exc:
+                    logger.debug("[CorrectionsTab] Low-conf load failed: %s", exc)
 
             # Enable action buttons
             self._open_corrected_btn.configure(state="normal")
@@ -579,9 +626,9 @@ class CorrectionsTab(ctk.CTkFrame):
 
         try:
             source = self._source_path or ''
-            from core.correction_runner import _find_ufm_fields, _build_job_config_from_ufm
-            ufm = _find_ufm_fields(source)
-            job_config = _build_job_config_from_ufm(ufm) if ufm else None
+            from core.correction_runner import _load_job_config_for_transcript, _build_job_config_from_ufm
+            job_config_data = _load_job_config_for_transcript(source)
+            job_config = _build_job_config_from_ufm(job_config_data) if job_config_data else None
         except Exception:
             job_config = None
 

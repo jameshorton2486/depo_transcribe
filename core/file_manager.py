@@ -19,8 +19,9 @@ MONTH_ABBR = {
 }
 
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
-KEYTERMS_FILENAME = "keyterms.json"
-CONFIRMED_SPELLINGS_FILE = "confirmed_spellings.json"
+
+# ── Private constants used only by the deprecated vocabulary functions below ──
+_KEYTERMS_FILENAME = "keyterms.json"
 
 
 def build_case_path(
@@ -108,13 +109,19 @@ def save_job_vocabulary(
     reporter_terms: list[str] | None = None,
 ) -> str | None:
     """
-    Save all vocabulary data to the case folder as keyterms.json.
+    DEPRECATED — superseded by core.job_config_manager.merge_and_save().
+    Retained only because existing tests cover this function.
+    Do not call from new code.
     """
+    logger.warning(
+        "[FileManager] save_job_vocabulary() is deprecated. "
+        "Use core.job_config_manager.merge_and_save() instead."
+    )
     if not case_folder or not os.path.isdir(case_folder):
         logger.warning("[FileManager] Case folder not found: %s", case_folder)
         return None
 
-    path = os.path.join(case_folder, KEYTERMS_FILENAME)
+    path = os.path.join(case_folder, _KEYTERMS_FILENAME)
     term_counts = {
         "total": len(final_keyterms),
         "reporter": len(reporter_terms or []),
@@ -187,9 +194,15 @@ def save_job_vocabulary(
 
 def load_job_vocabulary(case_folder: str) -> dict | None:
     """
-    Load keyterms.json from the case folder.
+    DEPRECATED — superseded by core.job_config_manager.load_job_config().
+    Retained only because existing tests cover this function.
+    Do not call from new code.
     """
-    path = os.path.join(case_folder, KEYTERMS_FILENAME)
+    logger.warning(
+        "[FileManager] load_job_vocabulary() is deprecated. "
+        "Use core.job_config_manager.load_job_config() instead."
+    )
+    path = os.path.join(case_folder, _KEYTERMS_FILENAME)
     if not os.path.isfile(path):
         logger.info("[FileManager] No keyterms.json found in: %s", case_folder)
         return None
@@ -205,7 +218,3 @@ def load_job_vocabulary(case_folder: str) -> dict | None:
     except Exception as exc:
         logger.error("[FileManager] Failed to load keyterms.json: %s", exc)
         return None
-
-
-def get_keyterms_path(case_folder: str) -> str:
-    return os.path.join(case_folder, KEYTERMS_FILENAME)

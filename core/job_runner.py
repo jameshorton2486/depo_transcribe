@@ -58,7 +58,7 @@ def run_transcription_job(
         from pipeline.chunker import chunk_audio, cleanup_chunks
         from pipeline.transcriber import transcribe_chunk
         from pipeline.assembler import reassemble_chunks
-        from core.keyterm_extractor import save_confirmed_spellings
+        from core.job_config_manager import merge_and_save
 
         # -- 1. Check FFmpeg -------------------------------------------------------
         _progress(2, "Checking FFmpeg\u2026")
@@ -93,10 +93,6 @@ def run_transcription_job(
             raise RuntimeError(f"Failed to create required case folders: {folder_status['errors']}")
         if folder_status["created"]:
             _log(f"Created folders: {folder_status['created']}")
-
-        if confirmed_spellings:
-            save_confirmed_spellings(case_path, confirmed_spellings)
-            _log(f"Saved {len(confirmed_spellings)} confirmed spellings")
 
         # -- 3. Normalize audio ----------------------------------------------------
         _progress(10, "Normalizing audio\u2026")
@@ -204,13 +200,31 @@ def run_transcription_job(
             json.dump(raw_data, f, indent=2, ensure_ascii=False)
         _log(f"Saved raw: {raw_json_path.name}")
 
-        # Write UFM fields if provided
-        ufm_path = None
-        if ufm_fields:
-            ufm_path = deepgram_dir / f"{base_name}_{stamp}_ufm_fields.json"
-            with open(ufm_path, "w", encoding="utf-8") as f:
-                json.dump(ufm_fields, f, indent=2, ensure_ascii=False)
-            _log(f"Saved UFM fields: {ufm_path.name}")
+        # -- 8b. Save job_config.json → source_docs/ (single source of truth) ----
+        # Extract low-confidence words so the review UI can surface them
+        from core.word_data_loader import CONFIDENCE_LOW
+        raw_words = assembled.get("words", [])
+        low_conf_words = [
+            {
+                "word":       w.get("word", ""),
+                "confidence": round(float(w.get("confidence", 1.0)), 4),
+                "start":      w.get("start", 0.0),
+                "end":        w.get("end",   0.0),
+            }
+            for w in raw_words
+            if isinstance(w, dict) and float(w.get("confidence", 1.0)) < CONFIDENCE_LOW
+        ]
+        if low_conf_words:
+            _log(f"Low-confidence words: {len(low_conf_words)}")
+
+        job_config_path = merge_and_save(
+            str(out_dir),
+            ufm_fields=ufm_fields or {},
+            confirmed_spellings=confirmed_spellings or {},
+            deepgram_keyterms=keyterms or [],
+            low_confidence_words=low_conf_words,
+        )
+        _log(f"Saved job_config.json → source_docs/")
 
         # -- 9. Cleanup temp chunks ------------------------------------------------
         cleanup_chunks(chunks)
@@ -225,7 +239,7 @@ def run_transcription_job(
             "transcript_path": str(txt_path),
             "json_path":       str(json_path),
             "raw_json_path":   str(raw_json_path),
-            "ufm_fields_path": str(ufm_path) if ufm_path else None,
+            "job_config_path": str(job_config_path) if job_config_path else None,
             "output_dir":      str(out_dir),
             "transcript_text": transcript_text,
             "error":           None,

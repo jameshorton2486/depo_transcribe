@@ -336,19 +336,14 @@ class IntakeReviewDialog(ctk.CTkToplevel):
         # Also push into _populate_case_fields for any UI refresh
         self._parent._populate_case_fields(self._data)
 
-        # Save ufm_fields.json to output folder if available
+        # Save ufm_fields into job_config.json → source_docs/ (overwrites, no timestamp)
         out_dir = self._parent._last_output_dir
         if out_dir and os.path.isdir(out_dir):
-            cause = ufm.get("cause_number", "unknown")
-            witness_parts = ufm.get("witness_name", "").split()
-            lname = witness_parts[-1] if witness_parts else "unknown"
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            ufm_path = Path(out_dir) / f"{cause}_{lname}_{stamp}_ufm_fields.json"
+            from core.job_config_manager import merge_and_save
             try:
-                with open(ufm_path, "w", encoding="utf-8") as f:
-                    json.dump(ufm, f, indent=2, ensure_ascii=False)
+                merge_and_save(out_dir, ufm_fields=ufm)
                 self._parent.winfo_toplevel().transcript_tab.append_log(
-                    f"Saved UFM fields: {ufm_path.name}"
+                    "Saved UFM fields → source_docs/job_config.json"
                 )
             except Exception as exc:
                 self._parent.winfo_toplevel().transcript_tab.append_log(
@@ -1280,38 +1275,34 @@ class TranscribeTab(ctk.CTkFrame):
         Only runs when the case folder exists on disk.
         """
         from core.pdf_extractor import find_case_pdf, find_reporter_notes
-        from core.file_manager import load_job_vocabulary
+        from core.job_config_manager import load_job_config
 
         base_path = self._get_current_save_path()
         if not base_path or not os.path.isdir(base_path):
             return
 
-        existing_vocab = load_job_vocabulary(base_path)
-        if existing_vocab and not self._pdf_already_loaded:
-            logger.info("[AutoDetect] Found existing keyterms.json  reloading.")
-            terms = existing_vocab.get("final_keyterms", [])
+        existing_config = load_job_config(base_path)
+        if existing_config and not self._pdf_already_loaded:
+            terms = existing_config.get("deepgram_keyterms", [])
             if terms:
+                logger.info("[AutoDetect] Found existing job_config.json — reloading %d keyterms", len(terms))
                 self._keyterms_box.configure(state="normal")
                 self._keyterms_box.delete("1.0", "end")
                 self._keyterms_box.insert("1.0", "\n".join(terms))
                 self._keyterms_box.configure(state="disabled")
                 self._current_keyterms = list(terms)
 
-            self._confirmed_spellings = existing_vocab.get("confirmed_spellings", {})
-            case_info = existing_vocab.get("case_info", {})
-            if case_info.get("cause_number") and not self._cause_var.get().strip():
-                self._cause_var.set(case_info["cause_number"])
-            if not self._date_var.get().strip():
-                dep_date = case_info.get("deposition_date", "")
-                if dep_date:
-                    self._date_var.set(dep_date)
+            self._confirmed_spellings = existing_config.get("confirmed_spellings", {})
+            ufm = existing_config.get("ufm_fields", {})
+            if ufm.get("cause_number") and not self._cause_var.get().strip():
+                self._cause_var.set(ufm["cause_number"])
+            if not self._date_var.get().strip() and ufm.get("depo_date"):
+                self._date_var.set(ufm["depo_date"])
 
-            counts = existing_vocab.get("term_counts", {})
             self._extract_status_label.configure(
                 text=(
-                    f"Reloaded {counts.get('total', len(terms))}/100 keyterms "
-                    f"from saved vocabulary  "
-                    f"(saved {existing_vocab.get('saved_at', '')[:10]})"
+                    f"Reloaded {len(terms)}/100 keyterms from job_config.json  "
+                    f"({len(self._confirmed_spellings)} spellings)"
                 ),
                 text_color="#44AA66",
             )
@@ -1599,20 +1590,28 @@ class TranscribeTab(ctk.CTkFrame):
                 except Exception as exc:
                     logger.warning("[LoadProject] PDF load failed: %s", exc)
 
-        # ── 4. Restore keyterms.json ──────────────────────────────────────────
-        keyterms_file = os.path.join(folder, "keyterms.json")
-        if os.path.isfile(keyterms_file):
+        # ── 4. Restore keyterms from job_config.json ──────────────────────────
+        from core.job_config_manager import load_job_config
+        job_config_data = load_job_config(folder)
+        terms = job_config_data.get("deepgram_keyterms", [])
+        if terms:
+            self._current_keyterms = terms
+            self._update_keyterms_display(terms)
+            self._update_keyterms_count()
+            logger.info("[LoadProject] Restored %d keyterms from job_config.json", len(terms))
+        elif os.path.isfile(os.path.join(folder, "keyterms.json")):
+            # Legacy fallback — read keyterms.json if job_config.json has none
             try:
-                with open(keyterms_file, "r", encoding="utf-8") as fh:
+                with open(os.path.join(folder, "keyterms.json"), "r", encoding="utf-8") as fh:
                     kt_data = json.load(fh)
-                terms = kt_data.get("keyterms") or kt_data.get("terms") or []
+                terms = kt_data.get("keyterms") or kt_data.get("final_keyterms") or kt_data.get("terms") or []
                 if terms:
                     self._current_keyterms = terms
                     self._update_keyterms_display(terms)
                     self._update_keyterms_count()
-                    logger.info("[LoadProject] Restored %d keyterms", len(terms))
+                    logger.info("[LoadProject] Restored %d keyterms from legacy keyterms.json", len(terms))
             except Exception as exc:
-                logger.warning("[LoadProject] keyterms.json load failed: %s", exc)
+                logger.warning("[LoadProject] Legacy keyterms.json load failed: %s", exc)
 
         # ── 5. Update path entry to show folder (not just the .txt file) ──────
         self._load_path_entry.configure(state="normal")
@@ -1650,18 +1649,17 @@ class TranscribeTab(ctk.CTkFrame):
 
         deepgram_dir = os.path.dirname(txt_path)
         ufm_fields_data = {}
-        ufm_files = [
-            f for f in os.listdir(deepgram_dir)
-            if f.endswith("_ufm_fields.json")
-        ] if os.path.isdir(deepgram_dir) else []
 
-        if ufm_files:
-            newest_ufm = max(ufm_files, key=lambda f: os.path.getmtime(os.path.join(deepgram_dir, f)))
-            try:
-                with open(os.path.join(deepgram_dir, newest_ufm), "r", encoding="utf-8") as fh:
-                    ufm_fields_data = json.load(fh)
-            except Exception:
-                pass
+        # Load job_config.json from source_docs/ (sibling of Deepgram/)
+        case_folder = str(Path(deepgram_dir).parent)
+        try:
+            from core.job_config_manager import load_job_config
+            job_config_data = load_job_config(case_folder)
+            ufm_fields_data = job_config_data.get("ufm_fields", {})
+            if not ufm_fields_data:
+                logger.info("[LoadCase] No ufm_fields in job_config.json — UFM review disabled")
+        except Exception as exc:
+            logger.warning("[LoadCase] Could not load job_config.json: %s", exc)
 
         if ufm_fields_data.get("depo_date"):
             depo_date = ufm_fields_data["depo_date"]
@@ -1770,7 +1768,6 @@ class TranscribeTab(ctk.CTkFrame):
             return
 
         self._last_pdf_path = filepath
-        self._pdf_already_loaded = True
         self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
         self._extract_status_label.configure(text="Extracting case info and keyterms\u2026", text_color="white")
 
@@ -1787,7 +1784,6 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _apply_pdf_results(self, results: dict, auto_detected: bool = False):
         """Populate fields and keyterms from one PDF extraction result."""
-        from core.file_manager import save_job_vocabulary
 
         self._upload_pdf_btn.configure(
             state="normal",
@@ -1811,7 +1807,11 @@ class TranscribeTab(ctk.CTkFrame):
             for badge in (self._cause_badge, self._witness_badge, self._date_badge):
                 txt, col = _BADGE["failed"]
                 badge.configure(text=txt, text_color=col)
+            # Do NOT set _pdf_already_loaded — allow retry
             return
+
+        # Mark loaded only on a successfully parsed PDF
+        self._pdf_already_loaded = True
 
         # Cause Number
         cause_val, cause_src = results.get("cause_number", (None, "failed"))
@@ -1896,13 +1896,16 @@ class TranscribeTab(ctk.CTkFrame):
             )
             if self._current_case_path:
                 self._create_case_folders_now()
-                save_job_vocabulary(
-                    case_folder=self._current_case_path,
-                    intake_result=intake_result,
-                    final_keyterms=final_keyterms,
-                    reporter_terms=reporter_terms,
+                from core.job_config_manager import merge_and_save
+                from core.ufm_field_mapper import map_intake_to_ufm
+                ufm_fields = map_intake_to_ufm(self._extracted_case_data)
+                merge_and_save(
+                    self._current_case_path,
+                    ufm_fields=ufm_fields,
+                    confirmed_spellings=dict(intake_result.confirmed_spellings),
+                    deepgram_keyterms=final_keyterms,
                 )
-                logger.info("[UI] Vocabulary saved to case folder: %s", self._current_case_path)
+                logger.info("[UI] job_config.json saved: %s", self._current_case_path)
 
         sources = [cause_src, witness_src, date_src]
         filled = sum(1 for s in sources if s != "failed")
@@ -1925,15 +1928,46 @@ class TranscribeTab(ctk.CTkFrame):
             text=btn_text,
             fg_color="#2A6F3A",
         )
-        self._update_keyterms_count()
-        self._extract_status_label.configure(
-            text=(
-                f"Reporter notes auto-detected: {os.path.basename(filepath)}"
-                if auto_detected else
-                f"Reporter notes loaded: {os.path.basename(filepath)}"
-            ),
-            text_color="#44FF44",
-        )
+
+        # Re-merge keyterms if PDF was already processed this session
+        if self._last_intake_result is not None:
+            from core.keyterm_extractor import extract_keyterms_from_text, merge_from_intake
+            from core.job_config_manager import merge_and_save
+
+            reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
+            final_keyterms, intake_count, reporter_count = merge_from_intake(
+                intake=self._last_intake_result,
+                reporter_terms=reporter_terms,
+                limit=MAX_KEYTERMS,
+            )
+            self._current_keyterms = final_keyterms or None
+            self._keyterms_box.configure(state="normal")
+            self._keyterms_box.delete("1.0", "end")
+            self._keyterms_box.insert("1.0", "\n".join(final_keyterms))
+            self._keyterms_box.configure(state="disabled")
+            self._update_keyterms_count()
+
+            if self._current_case_path:
+                merge_and_save(self._current_case_path, deepgram_keyterms=final_keyterms)
+                logger.info("[ReporterNotes] Merged %d keyterms saved to job_config.json", len(final_keyterms))
+
+            self._extract_status_label.configure(
+                text=(
+                    f"Keyterms updated: {len(final_keyterms)}/100  "
+                    f"{intake_count} from PDF, {reporter_count} from reporter notes"
+                ),
+                text_color="#44FF44",
+            )
+        else:
+            self._update_keyterms_count()
+            self._extract_status_label.configure(
+                text=(
+                    f"Reporter notes {'auto-detected' if auto_detected else 'loaded'}: "
+                    f"{os.path.basename(filepath)}"
+                ),
+                text_color="#44FF44",
+            )
+
         self._append_transcript_log(
             f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {filepath}"
         )
@@ -1962,7 +1996,6 @@ class TranscribeTab(ctk.CTkFrame):
 
     def start_transcription(self):
         """Public entry point called by TranscriptTab."""
-        from core.file_manager import load_job_vocabulary, save_job_vocabulary
 
         if self._correction_mode:
             messagebox.showinfo(
@@ -2019,16 +2052,6 @@ class TranscribeTab(ctk.CTkFrame):
             ),
             text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
         )
-
-        if self._current_case_path:
-            self._create_case_folders_now()
-            existing = load_job_vocabulary(self._current_case_path)
-            if not existing and self._last_intake_result:
-                save_job_vocabulary(
-                    case_folder=self._current_case_path,
-                    intake_result=self._last_intake_result,
-                    final_keyterms=final_keyterms,
-                )
 
         # Disable button
         self._running = True
@@ -2191,43 +2214,22 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._transcript_text = text
 
-        # ── 2. Persist speaker_map to ufm_fields ─────────────────────────────
+        # ── 2. Persist speaker_map to job_config.json → source_docs/ ─────────
         if speaker_map:
             self._ufm_fields["speaker_map"] = speaker_map
             self._ufm_fields["speaker_map_verified"] = True
 
-            deepgram_dir = os.path.dirname(self._current_txt_path)
-            if os.path.isdir(deepgram_dir):
-                ufm_files = sorted(
-                    [f for f in os.listdir(deepgram_dir)
-                     if f.endswith("_ufm_fields.json")],
-                    key=lambda f: os.path.getmtime(
-                        os.path.join(deepgram_dir, f)),
-                    reverse=True,
-                )
-                ufm_path = os.path.join(
-                    deepgram_dir,
-                    ufm_files[0] if ufm_files else "speaker_labels_ufm_fields.json",
-                )
-                try:
-                    existing = {}
-                    if ufm_files:
-                        with open(ufm_path, "r", encoding="utf-8") as fh:
-                            existing = json.load(fh)
-                    existing["speaker_map"] = {
-                        str(k): v for k, v in speaker_map.items()
-                    }
-                    existing["speaker_map_verified"] = True
-                    with open(ufm_path, "w", encoding="utf-8") as fh:
-                        json.dump(existing, fh, indent=2, ensure_ascii=False)
-                    logger.info(
-                        "[SpeakerLabels] Wrote speaker_map to %s",
-                        os.path.basename(ufm_path),
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        "[SpeakerLabels] Could not update ufm_fields.json: %s", exc
-                    )
+            try:
+                from core.job_config_manager import load_job_config, merge_and_save
+                case_folder = str(Path(self._current_txt_path).parent.parent)
+                job_config_data = load_job_config(case_folder)
+                ufm = dict(job_config_data.get("ufm_fields", {}))
+                ufm["speaker_map"] = {str(k): v for k, v in speaker_map.items()}
+                ufm["speaker_map_verified"] = True
+                merge_and_save(case_folder, ufm_fields=ufm)
+                logger.info("[SpeakerLabels] Wrote speaker_map to job_config.json")
+            except Exception as exc:
+                logger.warning("[SpeakerLabels] Could not update job_config.json: %s", exc)
 
         # ── 3. Update UI ──────────────────────────────────────────────────────
         transcript_tab = self.winfo_toplevel().transcript_tab

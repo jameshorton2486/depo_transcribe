@@ -18,6 +18,41 @@ if TYPE_CHECKING:
 
 MAX_KEYTERMS = 100
 
+MULTIWORD_FIXES = {
+    "subpoena deuces tecum": "subpoena duces tecum",
+}
+
+STRUCTURE_BLACKLIST = {
+    "district court",
+    "court reporter",
+    "the witness",
+    "the reporter",
+    "special instructions",
+    "ordered by",
+    "start time",
+    "end time",
+    "read and sign",
+}
+
+LEGAL_PHRASES = (
+    "subpoena duces tecum",
+    "duces tecum",
+)
+
+NAME_PATTERN = re.compile(
+    r"\b[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+)+(?:\s+(?:Jr|Sr|III))?\b"
+)
+CASE_NUMBER_PATTERN = re.compile(r"\b[Cc]-?\d{4,}-\d{2}-[A-Z]\b")
+FIRM_PATTERN = re.compile(
+    r"\b[A-Z][A-Za-z&., ]+(?:PLLC|LLP|LLC|P\.C\.|PC|Firm|Offices)\b"
+)
+ADDRESS_PATTERN = re.compile(
+    r"\b\d{3,5}\s+[A-Za-z0-9.\- ]+?"
+    r"(?:Street|St|Avenue|Ave|Road|Rd|Suite|Ste|Place|Pl|Expressway|Blvd)\b"
+    r"(?:[^,\n]*)(?:,\s*[A-Za-z.\- ]+)*(?:\s+\d{5}(?:-\d{4})?)?",
+    re.IGNORECASE,
+)
+
 SKIP_WORDS = {
     "the", "of", "and", "or", "a", "an", "in", "at", "by", "to",
     "for", "with", "this", "that", "is", "are", "was", "be",
@@ -75,6 +110,8 @@ def _is_valid_term(term: str) -> bool:
     if not normalized or len(normalized) <= 1:
         return False
     if lowered in STOPWORDS:
+        return False
+    if lowered in STRUCTURE_BLACKLIST:
         return False
     if normalized.isdigit():
         return False
@@ -184,27 +221,60 @@ def clean_keyterms(raw: list[str] | None) -> list[str]:
     return _prioritize(deduped)
 
 
+def normalize_text(text: str) -> str:
+    """Collapse raw extracted text into a regex-friendly single-line form."""
+    text = text.replace("\n", " ")
+    text = text.replace("\t", " ")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def normalize_legal_terms(text: str) -> str:
+    """Normalize known multi-word legal phrase garbles before extraction."""
+    normalized = text or ""
+    for wrong, correct in MULTIWORD_FIXES.items():
+        normalized = re.sub(re.escape(wrong), correct, normalized, flags=re.IGNORECASE)
+    return normalized
+
+
+def _extract_structured_entities(text: str) -> list[str]:
+    """Extract multi-word legal entities from normalized text."""
+    terms: list[str] = []
+
+    for pattern in (NAME_PATTERN, CASE_NUMBER_PATTERN, FIRM_PATTERN, ADDRESS_PATTERN):
+        terms.extend(match.group(0).strip(" ,.;:") for match in pattern.finditer(text))
+
+    lowered = text.lower()
+    for phrase in LEGAL_PHRASES:
+        if phrase in lowered:
+            terms.append(phrase.title() if phrase == "subpoena duces tecum" else phrase)
+
+    return terms
+
+
 def extract_keyterms_from_text(text: str) -> list[str]:
     """
     Extract candidate keyterms from reporter notes text.
 
-    Pulls quoted phrases, legal all-caps terms, and proper noun phrases.
+    Uses structured regex extraction first, then supplements with quoted
+    phrases, legal all-caps terms, and proper noun phrases.
     """
-    terms: list[str] = []
+    normalized_text = normalize_legal_terms(normalize_text(text or ""))
+    terms: list[str] = _extract_structured_entities(normalized_text)
 
-    quoted = re.findall(r'"([^"]{2,50})"', text or "")
+    quoted = re.findall(r'"([^"]{2,50})"', normalized_text)
     terms.extend(quoted)
 
-    caps_words = re.findall(r"\b([A-Z]{3,})\b", text or "")
+    caps_words = re.findall(r"\b([A-Z]{3,})\b", normalized_text)
     terms.extend(caps_words)
 
     proper_phrases = re.findall(
         r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b",
-        text or "",
+        normalized_text,
     )
     terms.extend(proper_phrases)
 
-    return terms
+    return clean_keyterms(terms)
 
 
 def merge_keyterms(
@@ -269,19 +339,3 @@ def merge_from_intake(
 
     final = pdf_capped + reporter_fill
     return final, len(pdf_capped), len(reporter_fill)
-
-
-def save_confirmed_spellings(
-    case_folder: str,
-    spellings: dict[str, str],
-) -> None:
-    """
-    Save confirmed spellings to the case folder for downstream formatter use.
-    """
-    path = os.path.join(case_folder, "confirmed_spellings.json")
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            json.dump(spellings, handle, indent=2, ensure_ascii=False)
-        logger.info("[Keyterms] Saved %s spelling corrections: %s", len(spellings), path)
-    except Exception as exc:
-        logger.error("[Keyterms] Failed to save spellings: %s", exc)

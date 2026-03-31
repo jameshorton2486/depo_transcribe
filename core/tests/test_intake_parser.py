@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.intake_parser import (
     STANDARD_LEGAL_SPELLINGS,
+    _normalize_confirmed_spellings,
     _strip_markdown_fences,
     filter_keyterms,
     hard_filter_keyterms,
@@ -115,3 +116,36 @@ def test_standard_spellings_contains_pass_witness():
 
 def test_standard_spellings_contains_leading():
     assert STANDARD_LEGAL_SPELLINGS["Bleeding"] == "Leading."
+
+
+def test_normalize_confirmed_spellings_canonicalizes_value_case():
+    result = _normalize_confirmed_spellings(
+        {"Caso": "picasso"},
+        ["Picasso", "Techy Inc"],
+    )
+    assert result["Caso"] == "Picasso"
+
+
+def test_normalize_confirmed_spellings_canonicalizes_multiword_value():
+    result = _normalize_confirmed_spellings(
+        {"Techy": "techy inc", "Aboca": "aboca llc"},
+        ["Picasso", "Techy Inc", "Aboca LLC"],
+    )
+    assert result["Techy"] == "Techy Inc"
+    assert result["Aboca"] == "Aboca LLC"
+
+
+def test_normalize_confirmed_spellings_strips_whitespace():
+    result = _normalize_confirmed_spellings(
+        {"  Caso  ": "  Picasso  "},
+        ["Picasso"],
+    )
+    assert result["Caso"] == "Picasso"
+
+
+def test_normalize_confirmed_spellings_keeps_unknown_target_when_needed():
+    result = _normalize_confirmed_spellings(
+        {"Macao": "Macao"},
+        ["Picasso"],
+    )
+    assert result["Macao"] == "Macao"

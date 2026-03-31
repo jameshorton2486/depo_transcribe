@@ -321,6 +321,32 @@ def _coerce_dict(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _normalize_confirmed_spellings(
+    ai_spellings: dict[str, str],
+    filtered_terms: list[str],
+) -> dict[str, str]:
+    """
+    Merge AI-provided spelling corrections with the standard legal map and
+    canonicalize correction targets against extracted proper nouns.
+    """
+    canonical_terms = {
+        " ".join(term.split()).strip().lower(): " ".join(term.split()).strip()
+        for term in filtered_terms
+        if " ".join(term.split()).strip()
+    }
+    merged = dict(STANDARD_LEGAL_SPELLINGS)
+
+    for wrong, correct in ai_spellings.items():
+        wrong_text = " ".join(str(wrong).split()).strip()
+        correct_text = " ".join(str(correct).split()).strip()
+        if not wrong_text or not correct_text:
+            continue
+        canonical_correct = canonical_terms.get(correct_text.lower(), correct_text)
+        merged[wrong_text] = canonical_correct
+
+    return merged
+
+
 def _build_vocabulary_terms(data: dict[str, Any], filtered_terms: list[str]) -> list[VocabularyTerm]:
     filtered_lookup = {term.lower() for term in filtered_terms}
     result: list[VocabularyTerm] = []
@@ -408,6 +434,8 @@ def parse_intake_document(
         f"[IntakeParser] Terms: {len(raw_terms) if isinstance(raw_terms, list) else 0} raw  "
         f"{len(filtered_terms)} after filter"
     )
+    if filtered_terms:
+        log(f"[IntakeParser] Keyterm preview: {filtered_terms[:10]}")
     if len(filtered_terms) > 40:
         logger.warning(
             "[IntakeParser] %s terms  approaching 60-term intake cap",
@@ -416,10 +444,10 @@ def parse_intake_document(
 
     vocabulary_terms = _build_vocabulary_terms(data, filtered_terms)
     ai_spellings = _coerce_dict(data.get("confirmed_spellings"))
-    final_spellings = {
-        **STANDARD_LEGAL_SPELLINGS,
-        **{str(k): str(v) for k, v in ai_spellings.items()},
-    }
+    final_spellings = _normalize_confirmed_spellings(ai_spellings, filtered_terms)
+    if final_spellings:
+        preview_items = list(final_spellings.items())[:10]
+        log(f"[IntakeParser] Confirmed spellings preview: {preview_items}")
 
     result = IntakeParsedResult(
         cause_number=_coerce_str(data.get("cause_number")),
