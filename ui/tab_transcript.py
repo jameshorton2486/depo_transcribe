@@ -45,6 +45,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._words: list[dict] = []
         self._word_data_request_id = 0
+        self._low_confidence_words: list[dict] = []
 
         self._highlight_var = ctk.BooleanVar(value=True)
         self._build_ui()
@@ -67,6 +68,17 @@ class TranscriptTab(ctk.CTkFrame):
             command=self._browse_transcript_file,
         )
         self._open_file_btn.pack(side="right", padx=(4, 0))
+
+        self._run_corrections_btn = ctk.CTkButton(
+            header,
+            text="⚙ Run Corrections",
+            width=145,
+            fg_color="#1A6B3A",
+            hover_color="#145230",
+            state="disabled",
+            command=self._run_corrections_pipeline,
+        )
+        self._run_corrections_btn.pack(side="right", padx=(4, 0))
 
         self._fnr_toggle_btn = ctk.CTkButton(
             header,
@@ -193,6 +205,29 @@ class TranscriptTab(ctk.CTkFrame):
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
         divider_bottom.pack(fill="x", padx=14, pady=(0, 6))
 
+        self._low_conf_frame = ctk.CTkFrame(self, fg_color="#101826")
+        self._low_conf_frame.pack(fill="x", padx=14, pady=(0, 6))
+
+        low_conf_header = ctk.CTkFrame(self._low_conf_frame, fg_color="transparent")
+        low_conf_header.pack(fill="x", padx=8, pady=(6, 2))
+
+        self._low_conf_title = ctk.CTkLabel(
+            low_conf_header,
+            text="Low-Confidence Review: no transcript loaded",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#CCAA44",
+            anchor="w",
+        )
+        self._low_conf_title.pack(side="left")
+
+        self._low_conf_box = ctk.CTkTextbox(
+            self._low_conf_frame,
+            height=78,
+            font=ctk.CTkFont(family="Courier New", size=10),
+            state="disabled",
+        )
+        self._low_conf_box.pack(fill="x", padx=8, pady=(0, 8))
+
         # ── Find & Replace bar (hidden until activated) ─────────────────────
         self._fnr_bar = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=0)
         # Not packed yet — shown by _toggle_find_replace()
@@ -292,6 +327,7 @@ class TranscriptTab(ctk.CTkFrame):
             font=ctk.CTkFont(family="Courier New", size=13),
             wrap="word",
             state="disabled",
+            undo=True,
         )
         self._textbox.pack(fill="both", expand=True, padx=14, pady=(0, 6))
         self._textbox._textbox.bind("<<Modified>>", self._on_textbox_modified)
@@ -454,6 +490,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._open_review_btn.configure(state="disabled")
         self._copy_btn.configure(state="disabled")
         self._save_btn.configure(state="disabled")
+        self._run_corrections_btn.configure(state="disabled")
         self._path_label.configure(text="Processing…", text_color="gray")
 
     def set_transcription_complete(self, transcript_path: str, folder_path: str):
@@ -495,10 +532,12 @@ class TranscriptTab(ctk.CTkFrame):
             self._path_label.configure(text=f"Loaded: {filepath}", text_color="gray")
             self._copy_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
+            self._run_corrections_btn.configure(state="normal")
             try:
                 self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
             except AttributeError:
                 pass
+            self._load_low_confidence_words(filepath)
             self._load_word_data(filepath)
         except Exception as exc:
             self._path_label.configure(text=f"Failed to load: {exc}", text_color="#CC4444")
@@ -523,6 +562,57 @@ class TranscriptTab(ctk.CTkFrame):
             self.after(0, lambda: self._on_word_data_loaded(request_id, filepath, words))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _load_low_confidence_words(self, filepath: str) -> None:
+        low_conf: list[dict] = []
+        try:
+            from pathlib import Path
+            from core.job_config_manager import load_job_config
+
+            case_root = str(Path(filepath).parent.parent)
+            job_config = load_job_config(case_root)
+            if isinstance(job_config, dict):
+                raw_words = job_config.get("low_confidence_words", []) or []
+                if isinstance(raw_words, list):
+                    low_conf = [item for item in raw_words if isinstance(item, dict)]
+        except Exception as exc:
+            self.append_log(f"Low-confidence review unavailable: {exc}")
+        self._update_low_confidence_panel(low_conf)
+
+    def _update_low_confidence_panel(self, words: list[dict]) -> None:
+        self._low_confidence_words = list(words or [])
+        self._low_conf_box.configure(state="normal")
+        self._low_conf_box.delete("1.0", "end")
+
+        if not self._low_confidence_words:
+            self._low_conf_title.configure(
+                text="Low-Confidence Review: none stored for this transcript",
+                text_color="#7DAACC",
+            )
+            self._low_conf_box.insert(
+                "1.0",
+                "No low-confidence words were stored in source_docs/job_config.json "
+                "for this transcript.",
+            )
+            self._low_conf_box.configure(state="disabled")
+            return
+
+        self._low_conf_title.configure(
+            text=f"Low-Confidence Review: {len(self._low_confidence_words)} words below threshold",
+            text_color="#CCAA44",
+        )
+        lines = []
+        for item in self._low_confidence_words[:20]:
+            word = str(item.get("word", "") or "")
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+            start = float(item.get("start", 0.0) or 0.0)
+            lines.append(f"{word:20s}  {confidence:.2f}  @ {start:.1f}s")
+        if len(self._low_confidence_words) > 20:
+            lines.append(f"... and {len(self._low_confidence_words) - 20} more")
+
+        self._low_conf_box.insert("1.0", "\n".join(lines))
+        self._low_conf_box.configure(state="disabled")
+        self.append_log(f"Loaded {len(self._low_confidence_words)} low-confidence words")
 
     def _on_word_data_loaded(self, request_id: int, filepath: str, words: list[dict]):
         if request_id != self._word_data_request_id or filepath != self._current_path:
@@ -1409,6 +1499,79 @@ class TranscriptTab(ctk.CTkFrame):
         if self._review_docx_path and os.path.isfile(self._review_docx_path):
             os.startfile(self._review_docx_path)
 
+    def _run_corrections_pipeline(self) -> None:
+        """Run the deterministic corrections pipeline on the current transcript.
+
+        Runs in a background thread. On completion the corrected text is
+        applied directly into the textbox via _apply_text_update() so that
+        confidence highlighting and word-map sync stay intact.
+        """
+        if not self._current_path:
+            return
+
+        self._run_corrections_btn.configure(state="disabled", text="Correcting…")
+        self.set_status("Running corrections pipeline…", "#4499FF")
+        self._log_box.configure(state="normal")
+        self._log_box.delete("1.0", "end")
+        self._log_box.configure(state="disabled")
+
+        def worker():
+            from core.correction_runner import run_correction_job
+            run_correction_job(
+                self._current_path,
+                progress_callback=lambda msg: self.after(0, self.append_log, msg),
+                done_callback=lambda result: self.after(0, self._on_corrections_done, result),
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_corrections_done(self, result: dict) -> None:
+        """Called on the main thread when the corrections pipeline finishes."""
+        self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+
+        if not result.get("success"):
+            err = result.get("error", "unknown error")
+            self.set_status(f"Corrections failed: {err[:80]}", "#CC4444")
+            self.append_log(f"ERROR: {err}")
+            return
+
+        corrected_text = result.get("corrected_text", "")
+        if not corrected_text.strip():
+            self.set_status("Corrections ran but returned no text.", "#FFAA44")
+            return
+
+        # Apply corrected text in-place — rebuilds word map and highlights.
+        # Preserve the cursor position so the viewport doesn't jump to the top.
+        try:
+            cursor_pos = self._textbox._textbox.index("insert")
+        except Exception:
+            cursor_pos = "1.0"
+        self._apply_text_update(corrected_text)
+        try:
+            self._textbox._textbox.mark_set("insert", cursor_pos)
+            self._textbox._textbox.see(cursor_pos)
+        except Exception:
+            pass
+
+        # Point the current path at the written _corrected.txt file so that
+        # Save and subsequent operations target the corrected version.
+        corrected_path = result.get("corrected_path")
+        if corrected_path:
+            self._current_path = corrected_path
+            self._path_label.configure(text=f"Loaded: {corrected_path}", text_color="gray")
+
+        count = result.get("correction_count", 0)
+        flags = result.get("flag_count", 0)
+        self.set_status(
+            f"✓ Corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
+            "  Click Save to write to disk.",
+            "#44FF44",
+        )
+        self.append_log(
+            f"Done: {count} correction(s), {flags} scopist flag(s). "
+            f"File: {corrected_path or self._current_path}"
+        )
+
     def destroy(self):
         self._stop_sync_timer()
         if self._position_job is not None:
@@ -1432,6 +1595,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._edit_mode = not self._edit_mode
         if self._edit_mode:
             self._textbox.configure(state="normal")
+            self._textbox._textbox.edit_reset()  # fresh undo stack for this session
             self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4), before=self._textbox)
             self._speaker_break_entry.delete(0, "end")
             self._edit_mode_btn.configure(
@@ -1442,8 +1606,22 @@ class TranscriptTab(ctk.CTkFrame):
             )
             self._stop_sync_timer()
             self._textbox._textbox.tag_remove("current_word", "1.0", "end")
+            # Undo/redo — active only inside Edit Mode
+            self._textbox._textbox.bind(
+                "<Control-z>",
+                lambda _: self._textbox._textbox.edit_undo() or "break",
+            )
+            self._textbox._textbox.bind(
+                "<Control-Z>",
+                lambda _: self._textbox._textbox.edit_undo() or "break",
+            )
+            self._textbox._textbox.bind(
+                "<Control-y>",
+                lambda _: self._textbox._textbox.edit_redo() or "break",
+            )
             self.set_status(
-                "Edit Mode — type corrections directly. Click 'Exit Edit Mode' when done.",
+                "Edit Mode — type freely: corrections, Enter for new lines, paste text.  "
+                "Ctrl+Z = undo  ·  Ctrl+Y = redo  ·  Click 'Exit Edit Mode' when done.",
                 "#4499FF",
             )
         else:
@@ -1456,6 +1634,10 @@ class TranscriptTab(ctk.CTkFrame):
                 border_color="#334",
                 text_color="#8ab",
             )
+            # Remove undo/redo bindings when leaving Edit Mode
+            self._textbox._textbox.unbind("<Control-z>")
+            self._textbox._textbox.unbind("<Control-Z>")
+            self._textbox._textbox.unbind("<Control-y>")
             self.set_status("Read Mode — click to seek audio · double-click any word to correct it.", "gray")
             if self._words:
                 self._build_word_map(self._words)
