@@ -1,11 +1,15 @@
 """
 core/config.py
 
-Central constants for Depo-Pro.
-Never scatter these values across files — import from here.
+Shared core-layer constants for Depo-Pro.
 
+This module is intentionally separate from the repo-root config.py:
+- config.py handles active runtime/pipeline settings and API integration values
+- core/config.py handles reusable core constants consumed across core modules
+
+Never scatter these values across files — import from here.
 If a value needs to change (model upgrade, schema version bump, etc.)
-it changes in ONE place and takes effect everywhere.
+it changes in one place and takes effect everywhere.
 """
 
 # ── AI Model ──────────────────────────────────────────────────────────────────
@@ -23,8 +27,6 @@ JOB_CONFIG_VERSION  = 1          # increment when schema changes
 # ── Deepgram Keyterms ─────────────────────────────────────────────────────────
 # Deepgram Nova-3 hard cap is 100 terms per request.
 # MIN_TERM_LENGTH filters noise (single letters, two-char fragments).
-# NOTE: MAX_KEYTERMS is also defined in core/keyterm_extractor.py.
-#       Keep both values in sync until keyterm_extractor.py is updated
-#       to import from here.
+# Both values are imported by core/keyterm_extractor.py — change here only.
 MAX_KEYTERMS    = 100
 MIN_TERM_LENGTH = 3

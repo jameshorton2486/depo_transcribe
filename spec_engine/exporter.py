@@ -1,5 +1,10 @@
 """
-ASCII export utility for Depo-Pro.
+spec_engine/exporter.py
+
+ASCII export utility for final spec-engine transcript output.
+This exporter belongs to the spec_engine layer and operates on corrected,
+formatted transcript content. It is distinct from pipeline/exporter.py, which
+writes raw transcription-side outputs directly from Deepgram results.
 """
 
 from __future__ import annotations

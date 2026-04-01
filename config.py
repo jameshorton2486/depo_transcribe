@@ -1,9 +1,12 @@
 """
-config.py — Depo-Pro Tools
-Central configuration for all pipeline constants and API keys.
+config.py — application runtime and pipeline configuration.
 
-Edit this file to change any pipeline behaviour without touching pipeline code.
-API keys are loaded from the .env file — never hardcode them here.
+This is the top-level config module used by the active audio/transcription
+pipeline and app runtime. It is distinct from core/config.py, which stores
+shared core-layer constants such as job-config and keyterm settings.
+
+Edit this file to change pipeline/runtime behavior without touching pipeline
+code. API keys are loaded from the .env file — never hardcode them here.
 """
 
 import os
