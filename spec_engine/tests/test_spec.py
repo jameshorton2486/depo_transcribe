@@ -1115,7 +1115,7 @@ def test_certificate_mentions_original_deposition_transcript():
 
 
 def test_block_builder_uses_word_objects():
-    from pipeline.block_builder import build_blocks_from_deepgram
+    from spec_engine.block_builder import build_blocks_from_deepgram
     from spec_engine.models import Word
 
     blocks = build_blocks_from_deepgram(
@@ -1239,7 +1239,7 @@ def test_parse_indexed_ai_output_rejects_reordered_output():
 
 
 def test_build_blocks_from_text_splits_sentences():
-    from pipeline.block_builder import build_blocks_from_text
+    from spec_engine.block_builder import build_blocks_from_text
 
     blocks = build_blocks_from_text("State your name. Did you go there?")
     assert len(blocks) == 2

@@ -12,6 +12,7 @@ share typed data contracts across the formatting pipeline.
 # Merger and section-ordering bugs were patched in March 2026 (Prompt 5 of 6).
 # ─────────────────────────────────────────────────────────────────────────────
 import logging as _logging
+
 _logging.getLogger(__name__).debug("ufm_engine loaded (inactive subsystem)")
 
 from .data_models import MergeResult, RenderRequest, TemplateDefinition

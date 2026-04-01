@@ -8,7 +8,6 @@ chunks by comparing timestamps. The last word timestamp of chunk N is used
 as the cutoff for the start of chunk N+1.
 """
 
-from collections import defaultdict
 from typing import Any, Dict, List
 
 from config import CHUNK_OVERLAP_SECONDS

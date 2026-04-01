@@ -120,7 +120,8 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     # ── Objection garble — single word variants → "Objection." ──────────────
     # These are universal: apply to every deposition regardless of case.
     # Source: DeproPro Reference Rev 2, Table 5 (Q/A Classification)
-    (r'\bInjection\b(?!\s+form)[.]?',   'Objection.'),
+    (r'^\s*Injection\b(?!\s+(?:form|point|site|therapy|treatment|cortisone|steroid|trigger))[.]?',
+     'Objection.'),
     (r'\bInfection\b[.]?',              'Objection.'),
     (r'\bDetection\b[.]?',              'Objection.'),
     (r'\bProtection\b(?!\s+order)[.]?', 'Objection.'),
@@ -139,7 +140,7 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
 
     # ── Leading variants → "Leading." ────────────────────────────────────────
     (r'\bBleeding\b[.]?',               'Leading.'),
-    (r'\bLeaving\b[.]?',                'Leading.'),
+    (r'(?i)\b(Objection[.,]\s{1,3})Leaving\b[.]?', r'\1Leading.'),
     (r'\bWarming\b[.]?',                'Leading.'),
     (r'\bWarm\s+[Ll]eading\b[.]?',      'Leading.'),
 
@@ -242,9 +243,10 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Mid-sentence Okay / All right before the next capitalized sentence
     (r'\b(Okay|All right),\s+(?=[A-Z])', r'\1.  '),
 
-    # Mhmm variants → Mm-hmm (idempotent — matches only un-normalized forms)
-    (r'\b[Mm]hmm\b',  'Mm-hmm'),
-    (r'\b[Mm]mhm\b',  'Mm-hmm'),
+    # Mhmm variants → mm-hmm (capitalize_first() handles sentence-start case)
+    (r'\b[Mm]hmm\b',  'mm-hmm'),
+    (r'\b[Mm]mhm\b',  'mm-hmm'),
+    (r'\bcurtory\b', 'perjury'),
 
     # Brooke Army Medical Center
     (r'\bBrook\s+Army\b', 'Brooke Army'),
@@ -634,9 +636,10 @@ def apply_spelled_letter_hyphenation(
     Only spaces between single letters become hyphens.
 
     Examples:
-      B r e n n e n     → B-r-e-n-n-e-n
+      B r e n n e n     → B-R-E-N-N-E-N
       B A L D E R A S   → B-A-L-D-E-R-A-S
       T O V A R         → T-O-V-A-R
+      j o b s t o w n  → J-O-B-S-T-O-W-N
 
     Guards:
       - Requires 3+ consecutive single letters
@@ -646,7 +649,9 @@ def apply_spelled_letter_hyphenation(
     original = text
 
     def _hyphenate(m: re.Match) -> str:
-        return '-'.join(m.group(0).split())
+        # UFM/court-reporter convention: spelled letters are always uppercased.
+        # "j o b s t o w n" → "J-O-B-S-T-O-W-N"
+        return '-'.join(m.group(0).split()).upper()
 
     new_text = SPELLED_LETTERS_RE.sub(_hyphenate, text)
 
@@ -710,7 +715,7 @@ def fix_uh_huh_hyphenation(
     Deepgram frequently outputs these without the hyphen:
       uh huh  → Uh-huh
       uh uh   → Uh-uh
-      mm hmm  → Mm-hmm  (also handled for completeness)
+      mm hmm  → mm-hmm  (capitalize_first handles sentence-start case)
 
     VERBATIM RULE: These are preserved — the hyphenation fix is purely
     typographic, not a word change. The spoken sound is the same.
@@ -723,7 +728,7 @@ def fix_uh_huh_hyphenation(
     original = text
     text = re.sub(r'\buh\s+huh\b', 'Uh-huh', text, flags=re.IGNORECASE)
     text = re.sub(r'\buh\s+uh\b', 'Uh-uh', text, flags=re.IGNORECASE)
-    text = re.sub(r'\bmm\s+hmm\b', 'Mm-hmm', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bmm\s+hmm\b', 'mm-hmm', text, flags=re.IGNORECASE)
     if text != original:
         records.append(CorrectionRecord(
             original=original,

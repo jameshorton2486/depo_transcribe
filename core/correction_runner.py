@@ -293,8 +293,14 @@ def run_correction_job(
             done_callback(result)
 
     try:
-        from pipeline.block_builder import build_blocks_from_deepgram, build_blocks_from_text
+        from spec_engine.block_builder import build_blocks_from_deepgram, build_blocks_from_text
         from spec_engine.processor import process_blocks
+        from app_logging import start_pipeline_session, end_pipeline_session
+
+        session_id = start_pipeline_session(
+            "CORRECTIONS",
+            transcript=Path(transcript_path).name,
+        )
 
         _log("Locating Deepgram JSON...")
         json_path = _find_deepgram_json(transcript_path)
@@ -370,6 +376,16 @@ def run_correction_job(
 
         _log(f"✓ Correction complete — {correction_count} corrections, {flag_count} flags")
 
+        end_pipeline_session(
+            session_id, "CORRECTIONS",
+            success=True,
+            blocks=len(corrected_blocks),
+            corrections=correction_count,
+            flags=flag_count,
+            spellings=len(job_config.confirmed_spellings),
+            output=Path(corrected_path).name,
+        )
+
         _done({
             "success": True,
             "corrected_path": str(corrected_path),
@@ -383,6 +399,10 @@ def run_correction_job(
     except Exception as exc:
         logger.exception("[CorrectionRunner] Failed: %s", exc)
         _log(f"ERROR: {exc}")
+        try:
+            end_pipeline_session(session_id, "CORRECTIONS", success=False, error=str(exc)[:120])
+        except Exception:
+            pass
         _done({
             "success": False,
             "corrected_path": None,

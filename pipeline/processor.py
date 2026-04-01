@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from pipeline.block_builder import build_blocks_from_deepgram
+from spec_engine.block_builder import build_blocks_from_deepgram
 from spec_engine.processor import process_blocks
 from core.correction_runner import format_blocks_to_text
 

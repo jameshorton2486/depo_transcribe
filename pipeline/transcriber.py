@@ -55,12 +55,12 @@ def _transcribe_direct(
         min(len(keyterms or []), 100),
     )
 
+    # smart_format intentionally omitted — it overrides filler_words on Nova-3
     params = {
         "model": model,
         "language": "en",
-        "smart_format": "true",
         "punctuate": "true",
-        "paragraphs": "true",
+        "paragraphs": "false",
         "diarize": "true",
         "utterances": "true",
         "filler_words": "true",
@@ -118,6 +118,7 @@ def _transcribe_direct(
                     "confidence":      w.get("confidence", 0),
                     "speaker":         w.get("speaker"),
                     "punctuated_word": w.get("punctuated_word", w.get("word", "")),
+                    "type":            w.get("type", "word"),
                 }
                 for w in alt.get("words", [])
             ]
@@ -136,6 +137,7 @@ def _transcribe_direct(
                             "end":        w.get("end", 0),
                             "confidence": w.get("confidence", 0),
                             "speaker":    w.get("speaker"),
+                            "type":       w.get("type", "word"),
                         }
                         for w in u.get("words", [])
                     ],

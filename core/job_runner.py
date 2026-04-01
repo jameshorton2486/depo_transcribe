@@ -9,7 +9,6 @@ Called from ui/tab_transcribe.py in a background thread.
 
 import json
 import os
-import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -222,10 +221,12 @@ def run_transcription_job(
 
         job_config_path = merge_and_save(
             str(out_dir),
-            ufm_fields=ufm_fields or {},
-            confirmed_spellings=confirmed_spellings or {},
-            deepgram_keyterms=keyterms or [],
-            low_confidence_words=low_conf_words,
+            # Pass None when empty so merge_and_save preserves the existing
+            # values rather than overwriting them with empty dicts/lists.
+            ufm_fields=ufm_fields if ufm_fields else None,
+            confirmed_spellings=confirmed_spellings if confirmed_spellings else None,
+            deepgram_keyterms=keyterms if keyterms else None,
+            low_confidence_words=low_conf_words if low_conf_words else None,
         )
         _log("Saved job_config.json → source_docs/")
 

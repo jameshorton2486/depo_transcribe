@@ -152,6 +152,25 @@ class VLCPlayer:
         except Exception:
             return False
 
+    def set_rate(self, rate: float) -> bool:
+        """Set playback speed. 1.0 = normal, 0.5 = half, 2.0 = double."""
+        if not self.is_available:
+            return False
+        try:
+            self._player.set_rate(max(0.25, min(4.0, float(rate))))
+            return True
+        except Exception:
+            return False
+
+    def get_rate(self) -> float:
+        """Return current playback rate. Returns 1.0 on error."""
+        if not self.is_available:
+            return 1.0
+        try:
+            return float(self._player.get_rate())
+        except Exception:
+            return 1.0
+
     def release(self) -> None:
         try:
             if self._player is not None:

@@ -2,7 +2,7 @@
 spec_engine/tests/test_rule_spelled_letters.py
 
 Tests for spelled-letter hyphenation — Morson's Rule 157.
-VERBATIM RULE: letters are never changed, only spaces become hyphens.
+UFM RULE: letters are uppercased and spaces become hyphens.
 All offline and deterministic.
 Run: python -m pytest spec_engine/tests/test_rule_spelled_letters.py -v
 """
@@ -22,7 +22,7 @@ class TestHappyPath:
     def test_lowercase_name_hyphenated(self):
         result = clean_block(
             "My name is spelled B r e n n e n.", _cfg())[0]
-        assert "B-r-e-n-n-e-n" in result
+        assert "B-R-E-N-N-E-N" in result
 
     def test_uppercase_name_hyphenated(self):
         result = clean_block(
@@ -40,10 +40,11 @@ class TestHappyPath:
             "spelled A B C for the record.", records, 0)
         assert "A-B-C" in result
 
-    def test_letters_not_changed(self):
+    def test_letters_uppercased(self):
+        # UFM convention: spelled letters are always uppercased.
         result = clean_block(
             "Name spelled B r e n n e n.", _cfg())[0]
-        assert "B-r-e-n-n-e-n" in result
+        assert "B-R-E-N-N-E-N" in result
         assert "Brennen" not in result
 
 
@@ -86,7 +87,7 @@ class TestPunctuationBoundary:
     def test_spelled_name_mid_sentence(self):
         result = clean_block(
             "The witness, B r e n n e n, testified.", _cfg())[0]
-        assert "B-r-e-n-n-e-n" in result
+        assert "B-R-E-N-N-E-N" in result
 
 
 class TestPassOrdering:

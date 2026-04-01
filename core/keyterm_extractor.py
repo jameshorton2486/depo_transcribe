@@ -10,13 +10,12 @@ import re
 from typing import TYPE_CHECKING
 
 from app_logging import get_logger
+from core.config import MAX_KEYTERMS, MIN_TERM_LENGTH
 
 logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from core.intake_parser import IntakeParsedResult
-
-MAX_KEYTERMS = 100
 
 MULTIWORD_FIXES = {
     "subpoena deuces tecum": "subpoena duces tecum",
@@ -117,7 +116,7 @@ def _is_valid_term(term: str) -> bool:
         return False
     if re.fullmatch(r"[^a-zA-Z0-9]+", normalized):
         return False
-    if len(normalized.split()) == 1 and lowered.islower() and len(normalized) < 4:
+    if len(normalized.split()) == 1 and lowered.islower() and len(normalized) <= MIN_TERM_LENGTH:
         return False
     return True
 
@@ -180,7 +179,7 @@ def split_compound_terms(terms: list[str]) -> list[str]:
             ).strip()
             cleaned = re.sub(r"^\d+\s+", "", cleaned).strip()
 
-            if not cleaned or cleaned.lower() in SKIP_WORDS or len(cleaned) <= 2:
+            if not cleaned or cleaned.lower() in SKIP_WORDS or len(cleaned) < MIN_TERM_LENGTH:
                 continue
             if cleaned.isdigit():
                 continue

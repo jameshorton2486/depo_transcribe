@@ -14,7 +14,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
-from ..models import CorrectionRecord, JobConfig, ScopistFlag
+from ..models import JobConfig
 
 COLOR_ORANGE = RGBColor(0xB4, 0x5F, 0x06)
 FONT = "Courier New"

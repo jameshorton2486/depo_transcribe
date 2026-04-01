@@ -41,6 +41,12 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._player: VLCPlayer | None = None
         self._player_ready = False
+        self._speed_rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+        self._speed_idx = 2   # index into _speed_rates; 2 = 1.0x (default)
+        self._gap_threshold = 2.0   # seconds of silence that qualify as a skippable gap
+        self._waveform_peaks: list[float] = []   # normalised 0.0–1.0 amplitude per bucket
+        self._waveform_duration: float = 0.0
+        self._waveform_request_id: int = 0
         self._position_job = None
 
         self._words: list[dict] = []
@@ -53,7 +59,7 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=14, pady=(10, 4))
+        header.pack(fill="x", padx=14, pady=(4, 2))
 
         ctk.CTkLabel(
             header,
@@ -125,26 +131,26 @@ class TranscriptTab(ctk.CTkFrame):
         self._status_label = ctk.CTkLabel(
             self,
             text="Ready",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=13),
             text_color="gray",
             anchor="w",
         )
         self._status_label.pack(fill="x", padx=14, pady=(0, 2))
 
         divider_top = ctk.CTkFrame(self, height=1, fg_color="#293243")
-        divider_top.pack(fill="x", padx=14, pady=(0, 6))
+        divider_top.pack(fill="x", padx=14, pady=(0, 3))
 
         self._path_label = ctk.CTkLabel(
             self,
             text="No transcript loaded.",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=13),
             text_color="gray",
             anchor="w",
         )
-        self._path_label.pack(fill="x", padx=14, pady=(0, 4))
+        self._path_label.pack(fill="x", padx=14, pady=(0, 2))
 
         player_row = ctk.CTkFrame(self, fg_color="transparent")
-        player_row.pack(fill="x", padx=14, pady=(0, 4))
+        player_row.pack(fill="x", padx=14, pady=(0, 2))
 
         self._play_btn = ctk.CTkButton(player_row, text="Play", width=72, command=self._play_audio)
         self._play_btn.pack(side="left", padx=(0, 4))
@@ -155,12 +161,39 @@ class TranscriptTab(ctk.CTkFrame):
         self._stop_btn = ctk.CTkButton(player_row, text="Stop", width=72, command=self._stop_audio)
         self._stop_btn.pack(side="left", padx=(0, 8))
 
+        # ── Speed control ────────────────────────────────────────────────────
+        self._speed_down_btn = ctk.CTkButton(
+            player_row, text="◀", width=24, command=self._speed_down,
+            font=ctk.CTkFont(size=13),
+        )
+        self._speed_down_btn.pack(side="left", padx=(0, 2))
+
+        self._speed_label = ctk.CTkLabel(
+            player_row, text="1.0×", width=38,
+            font=ctk.CTkFont(size=13), anchor="center",
+        )
+        self._speed_label.pack(side="left")
+
+        self._speed_up_btn = ctk.CTkButton(
+            player_row, text="▶", width=24, command=self._speed_up,
+            font=ctk.CTkFont(size=13),
+        )
+        self._speed_up_btn.pack(side="left", padx=(2, 8))
+        # ────────────────────────────────────────────────────────────────────
+
+        self._skip_gap_btn = ctk.CTkButton(
+            player_row, text="⏭ Skip Gap", width=90,
+            command=self._skip_to_next_speech,
+            font=ctk.CTkFont(size=13),
+        )
+        self._skip_gap_btn.pack(side="left", padx=(0, 8))
+
         self._position_label = ctk.CTkLabel(
             player_row,
             text="00:00 / 00:00",
             width=110,
             anchor="w",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=13),
         )
         self._position_label.pack(side="left")
 
@@ -168,7 +201,7 @@ class TranscriptTab(ctk.CTkFrame):
             player_row,
             text="No audio loaded",
             anchor="w",
-            font=ctk.CTkFont(size=11),
+            font=ctk.CTkFont(size=13),
             text_color="gray",
         )
         self._audio_label.pack(side="left", padx=(10, 10), fill="x", expand=True)
@@ -181,13 +214,30 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._load_audio_btn.pack(side="right")
 
+        # ── Waveform scrubber ────────────────────────────────────────────────
+        self._waveform_frame = ctk.CTkFrame(self, fg_color="#0D1420", corner_radius=4)
+        self._waveform_frame.pack(fill="x", padx=14, pady=(0, 2))
+        self._waveform_frame.pack_forget()   # hidden until audio is loaded
+
+        self._waveform_canvas = tk.Canvas(
+            self._waveform_frame,
+            height=48,
+            bg="#0D1420",
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self._waveform_canvas.pack(fill="x", padx=2, pady=2)
+        self._waveform_canvas.bind("<Button-1>", self._on_waveform_click)
+        self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
+        # ────────────────────────────────────────────────────────────────────
+
         conf_row = ctk.CTkFrame(self, fg_color="transparent")
-        conf_row.pack(fill="x", padx=14, pady=(0, 4))
+        conf_row.pack(fill="x", padx=14, pady=(0, 2))
 
         self._conf_label = ctk.CTkLabel(
             conf_row,
             text="Confidence: no word-level data loaded",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=13),
             text_color="gray",
             anchor="w",
         )
@@ -198,15 +248,15 @@ class TranscriptTab(ctk.CTkFrame):
             text="Highlight low-confidence words",
             variable=self._highlight_var,
             command=self._refresh_confidence_highlights,
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=13),
         )
         self._highlight_toggle.pack(side="right")
 
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
-        divider_bottom.pack(fill="x", padx=14, pady=(0, 6))
+        divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
 
         self._low_conf_frame = ctk.CTkFrame(self, fg_color="#101826")
-        self._low_conf_frame.pack(fill="x", padx=14, pady=(0, 6))
+        self._low_conf_frame.pack(fill="x", padx=14, pady=(0, 3))
 
         low_conf_header = ctk.CTkFrame(self._low_conf_frame, fg_color="transparent")
         low_conf_header.pack(fill="x", padx=8, pady=(6, 2))
@@ -214,7 +264,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._low_conf_title = ctk.CTkLabel(
             low_conf_header,
             text="Low-Confidence Review: no transcript loaded",
-            font=ctk.CTkFont(size=11, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             text_color="#CCAA44",
             anchor="w",
         )
@@ -222,11 +272,11 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._low_conf_box = ctk.CTkTextbox(
             self._low_conf_frame,
-            height=78,
-            font=ctk.CTkFont(family="Courier New", size=10),
+            height=56,
+            font=ctk.CTkFont(family="Courier New", size=13),
             state="disabled",
         )
-        self._low_conf_box.pack(fill="x", padx=8, pady=(0, 8))
+        self._low_conf_box.pack(fill="x", padx=8, pady=(0, 4))
 
         # ── Find & Replace bar (hidden until activated) ─────────────────────
         self._fnr_bar = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=0)
@@ -237,14 +287,14 @@ class TranscriptTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             fnr_inner, text="Find:", width=46, anchor="e",
-            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+            font=ctk.CTkFont(size=13), text_color="#7DAACC"
         ).pack(side="left")
         self._find_entry = ctk.CTkEntry(fnr_inner, width=220, placeholder_text="Search text…")
         self._find_entry.pack(side="left", padx=(6, 12))
 
         ctk.CTkLabel(
             fnr_inner, text="Replace:", width=58, anchor="e",
-            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+            font=ctk.CTkFont(size=13), text_color="#7DAACC"
         ).pack(side="left")
         self._replace_entry = ctk.CTkEntry(fnr_inner, width=220, placeholder_text="Replacement…")
         self._replace_entry.pack(side="left", padx=(6, 12))
@@ -252,7 +302,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._fnr_case_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             fnr_inner, text="Match case", variable=self._fnr_case_var,
-            font=ctk.CTkFont(size=11), width=100
+            font=ctk.CTkFont(size=13), width=100
         ).pack(side="left", padx=(0, 12))
 
         self._fnr_replace_one_btn = ctk.CTkButton(
@@ -272,7 +322,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._fnr_match_label = ctk.CTkLabel(
             fnr_inner, text="", width=140,
-            font=ctk.CTkFont(size=11), text_color="#7DAACC", anchor="w",
+            font=ctk.CTkFont(size=13), text_color="#7DAACC", anchor="w",
         )
         self._fnr_match_label.pack(side="left")
 
@@ -298,7 +348,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             edit_tb_inner, text="Speaker label:",
-            font=ctk.CTkFont(size=11), text_color="#7DAACC"
+            font=ctk.CTkFont(size=13), text_color="#7DAACC"
         ).pack(side="left")
 
         self._speaker_break_entry = ctk.CTkEntry(
@@ -318,7 +368,7 @@ class TranscriptTab(ctk.CTkFrame):
         ctk.CTkLabel(
             edit_tb_inner,
             text="← positions cursor before new speaker turn",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=13),
             text_color="#445566",
         ).pack(side="left", padx=(12, 0))
 
@@ -365,7 +415,7 @@ class TranscriptTab(ctk.CTkFrame):
                         best_dist = dist
                         clicked_item = item
 
-            menu = tk.Menu(widget, tearoff=0)
+            menu = tk.Menu(widget, tearoff=0, font=("Segoe UI", 12))
 
             if clicked_item:
                 _word = clicked_item["word"]
@@ -405,14 +455,14 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._log_box = ctk.CTkTextbox(
             self,
-            height=56,
-            font=ctk.CTkFont(family="Courier New", size=10),
+            height=40,
+            font=ctk.CTkFont(family="Courier New", size=13),
             state="disabled",
         )
-        self._log_box.pack(fill="x", padx=14, pady=(0, 6))
+        self._log_box.pack(fill="x", padx=14, pady=(0, 3))
 
         action_row = ctk.CTkFrame(self, fg_color="transparent")
-        action_row.pack(fill="x", padx=14, pady=(0, 10))
+        action_row.pack(fill="x", padx=14, pady=(0, 4))
 
         self._open_folder_btn = ctk.CTkButton(
             action_row,
@@ -688,7 +738,14 @@ class TranscriptTab(ctk.CTkFrame):
                     end_pos >= len(content)
                     or not content[end_pos].isalpha()
                 )
-                if before_ok and after_ok:
+                # Reject single-letter matches immediately followed by "."
+                # ("A." / "Q." are structural labels, not spoken words).
+                label_false_match = (
+                    len(word_text) == 1
+                    and end_pos < len(content)
+                    and content[end_pos] == "."
+                )
+                if before_ok and after_ok and not label_false_match:
                     found_start = candidate
                     break
                 candidate = content_lower.find(word_lower, candidate + 1)
@@ -801,6 +858,7 @@ class TranscriptTab(ctk.CTkFrame):
         if ok:
             self._audio_label.configure(text=os.path.basename(audio_path), text_color="#7DD8E8")
             self._schedule_position_update()
+            self._load_waveform(audio_path)
         else:
             self._audio_label.configure(text=f"Could not load audio: {os.path.basename(audio_path)}", text_color="#CC4444")
 
@@ -1172,6 +1230,10 @@ class TranscriptTab(ctk.CTkFrame):
             self._build_word_map(self._words)
         else:
             self._word_map = []
+        self._waveform_peaks = []
+        self._waveform_duration = 0.0
+        self._waveform_canvas.delete("all")
+        self._waveform_frame.pack_forget()
         # Always clear any lingering text selection
         self._textbox._textbox.tag_remove("sel", "1.0", "end")
         self.set_status("Change applied — click Save to write to disk.", "#FFCC44")
@@ -1324,6 +1386,210 @@ class TranscriptTab(ctk.CTkFrame):
         except Exception:
             return 0
 
+    def _speed_down(self) -> None:
+        if self._speed_idx > 0:
+            self._speed_idx -= 1
+            self._apply_speed()
+
+    def _speed_up(self) -> None:
+        if self._speed_idx < len(self._speed_rates) - 1:
+            self._speed_idx += 1
+            self._apply_speed()
+
+    def _apply_speed(self) -> None:
+        rate = self._speed_rates[self._speed_idx]
+        label = f"{rate:.2g}×"   # "0.5×", "1×", "1.25×", etc.
+        self._speed_label.configure(text=label)
+        if self._player:
+            self._player.set_rate(rate)
+
+    # ── Waveform ──────────────────────────────────────────────────────────────
+
+    def _load_waveform(self, audio_path: str) -> None:
+        """Extract amplitude peaks from audio in a background thread."""
+        self._waveform_request_id += 1
+        req_id = self._waveform_request_id
+        self._waveform_peaks = []
+        self._waveform_duration = 0.0
+
+        # Show the frame with a loading label while we compute
+        self._waveform_frame.pack(fill="x", padx=14, pady=(0, 4))
+        self._waveform_canvas.delete("all")
+        w = self._waveform_canvas.winfo_width() or 600
+        self._waveform_canvas.create_text(
+            w // 2, 24, text="Loading waveform…",
+            fill="#446688", font=("Courier New", 10),
+        )
+
+        def worker():
+            peaks, duration = self._extract_waveform_peaks(audio_path)
+            self.after(0, lambda: self._on_waveform_loaded(req_id, peaks, duration))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _extract_waveform_peaks(self, audio_path: str) -> tuple[list[float], float]:
+        """Use FFmpeg to extract RMS amplitude buckets. Returns (peaks, duration_sec)."""
+        import subprocess, json as _json
+        NUM_BUCKETS = 600   # one bucket per pixel at ~600px width
+
+        # Step 1: get duration
+        try:
+            probe = subprocess.run(
+                ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+                capture_output=True, text=True, timeout=10,
+            )
+            duration = float(probe.stdout.strip())
+        except Exception:
+            return [], 0.0
+
+        if duration <= 0:
+            return [], 0.0
+
+        # Step 2: extract audio samples as raw PCM, compute RMS per bucket
+        try:
+            # Read as 8kHz mono s16le — enough resolution for a waveform display
+            result = subprocess.run(
+                ["ffmpeg", "-i", audio_path,
+                 "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+                capture_output=True, timeout=60,
+            )
+            raw = result.stdout
+        except Exception:
+            return [], duration
+
+        if not raw:
+            return [], duration
+
+        import struct, math
+        sample_count = len(raw) // 2
+        if sample_count == 0:
+            return [], duration
+
+        bucket_size = max(1, sample_count // NUM_BUCKETS)
+        peaks = []
+        for i in range(0, sample_count - bucket_size, bucket_size):
+            chunk = struct.unpack_from(f"{bucket_size}h", raw, i * 2)
+            rms = math.sqrt(sum(s * s for s in chunk) / bucket_size)
+            peaks.append(rms)
+
+        # Normalise to 0.0–1.0
+        max_val = max(peaks) if peaks else 1.0
+        if max_val > 0:
+            peaks = [p / max_val for p in peaks]
+
+        return peaks, duration
+
+    def _on_waveform_loaded(self, req_id: int, peaks: list[float], duration: float) -> None:
+        if req_id != self._waveform_request_id:
+            return
+        self._waveform_peaks = peaks
+        self._waveform_duration = duration
+        self._waveform_frame.pack(fill="x", padx=14, pady=(0, 4))
+        self._draw_waveform()
+
+    def _draw_waveform(self) -> None:
+        """Render peaks onto the canvas. Called on resize and after load."""
+        canvas = self._waveform_canvas
+        canvas.delete("all")
+        w = canvas.winfo_width() or 600
+        h = 48
+        peaks = self._waveform_peaks
+
+        if not peaks:
+            return
+
+        # Background
+        canvas.create_rectangle(0, 0, w, h, fill="#0D1420", outline="")
+
+        # Draw waveform bars
+        bar_w = max(1, w / len(peaks))
+        mid = h / 2
+        for i, amp in enumerate(peaks):
+            x = i * bar_w
+            bar_h = max(1, amp * (h / 2 - 2))
+            # Colour: bright teal for speech, dark blue for silence
+            color = "#1E6A8A" if amp > 0.05 else "#0D2030"
+            canvas.create_rectangle(
+                x, mid - bar_h, x + bar_w - 0.5, mid + bar_h,
+                fill=color, outline="",
+            )
+
+        # Playhead
+        self._draw_waveform_playhead()
+
+    def _draw_waveform_playhead(self) -> None:
+        """Draw (or redraw) the white playhead line at the current position."""
+        canvas = self._waveform_canvas
+        canvas.delete("playhead")
+        if not self._waveform_duration or not self._player:
+            return
+        pos = self._player.position_seconds
+        w = canvas.winfo_width() or 600
+        x = int((pos / self._waveform_duration) * w)
+        canvas.create_line(x, 0, x, 48, fill="white", width=1, tags="playhead")
+
+    def _on_waveform_click(self, event) -> None:
+        """Seek to the clicked position in the waveform."""
+        if not self._waveform_duration or not self._player:
+            return
+        w = self._waveform_canvas.winfo_width() or 600
+        ratio = max(0.0, min(1.0, event.x / w))
+        target = ratio * self._waveform_duration
+        self._player.jump_to(target)
+        self.set_status(f"Jumped to {self._format_seconds(target)}", "#7DD8E8")
+        self._schedule_position_update()
+        self._start_sync_timer()
+        self._draw_waveform_playhead()
+
+    def _on_waveform_resize(self, event) -> None:
+        """Redraw waveform when the canvas is resized."""
+        if self._waveform_peaks:
+            self._draw_waveform()
+
+    # ── End waveform ──────────────────────────────────────────────────────────
+
+    def _skip_to_next_speech(self) -> None:
+        """Jump past the next gap of silence >= _gap_threshold seconds.
+
+        Scans forward from the current playback position in the word map,
+        finds the first gap where next_word.start - prev_word.end >= threshold,
+        and jumps to the start of the word after that gap.
+        """
+        if not self._player or not self._player.is_loaded or not self._word_map:
+            return
+
+        pos_sec = self._player.position_seconds
+
+        # Find the word map index closest to current position
+        current_idx = max(0, self._current_word_idx)
+
+        # Walk forward looking for a gap
+        target_sec: float | None = None
+        mapped = [w for w in self._word_map if w["char_start"] >= 0]
+
+        for i in range(current_idx, len(mapped) - 1):
+            this_word = mapped[i]
+            next_word = mapped[i + 1]
+            # Only consider gaps that start after the current playhead
+            if this_word["end"] < pos_sec:
+                continue
+            gap = next_word["start"] - this_word["end"]
+            if gap >= self._gap_threshold:
+                target_sec = next_word["start"]
+                break
+
+        if target_sec is not None:
+            self._player.jump_to(target_sec)
+            self.set_status(
+                f"Skipped gap — jumped to {self._format_seconds(target_sec)}",
+                "#7DD8E8",
+            )
+            self._schedule_position_update()
+            self._start_sync_timer()
+        else:
+            self.set_status("No gap found ahead.", "#FFAA44")
+
     def _play_audio(self):
         if self._player and self._player.play():
             self.set_status("Playing audio", "#7DD8E8")
@@ -1365,24 +1631,54 @@ class TranscriptTab(ctk.CTkFrame):
                 return
             if self._player.is_playing:
                 pos_sec = self._player.position_seconds
-                current = None
-                for idx, item in enumerate(self._word_map):
-                    if item["start"] <= pos_sec <= item["end"]:
-                        current = (idx, item)
+
+                # ── Fast path: still inside the current word ──────────────
+                if 0 <= self._current_word_idx < len(self._word_map):
+                    cur = self._word_map[self._current_word_idx]
+                    if cur["start"] <= pos_sec <= cur["end"]:
+                        self._sync_timer_id = self.after(100, self._sync_playback)
+                        return
+
+                # ── Forward window scan (normal playback) ─────────────────
+                # Start from the last known position; scan at most 20 words
+                # ahead, which covers ~5-10 seconds of typical speech.
+                start_idx = max(0, self._current_word_idx)
+                found_idx, found_item = -1, None
+
+                for idx in range(start_idx, min(start_idx + 20, len(self._word_map))):
+                    item = self._word_map[idx]
+                    if item["start"] > pos_sec + 2.0:
                         break
-                if current and current[0] != self._current_word_idx:
-                    idx, item = current
-                    self._current_word_idx = idx
+                    if item["start"] <= pos_sec <= item["end"]:
+                        found_idx, found_item = idx, item
+                        break
+
+                # ── Fallback full scan (after jump / seek) ────────────────
+                if found_idx == -1:
+                    for idx, item in enumerate(self._word_map):
+                        if item["start"] <= pos_sec <= item["end"]:
+                            found_idx, found_item = idx, item
+                            break
+
+                # ── Update highlight only when word changes ───────────────
+                # During gaps (found_idx == -1), keep the previous highlight
+                # visible — blanking the screen during pauses is distracting.
+                if found_idx != -1 and found_idx != self._current_word_idx:
+                    self._current_word_idx = found_idx
                     widget = self._textbox._textbox
                     widget.tag_remove("current_word", "1.0", "end")
-                    if item["char_start"] >= 0:
-                        start_tk = f"1.0+{item['char_start']}c"
-                        end_tk   = f"1.0+{item['char_end']}c"
+                    if found_item["char_start"] >= 0:
+                        start_tk = f"1.0+{found_item['char_start']}c"
+                        end_tk   = f"1.0+{found_item['char_end']}c"
                         widget.tag_add("current_word", start_tk, end_tk)
-                        # Only scroll if the word is not already visible — prevents jumpy viewport
                         if not self._is_position_visible(start_tk):
                             widget.see(start_tk)
-                self._sync_timer_id = self.after(250, self._sync_playback)
+
+                # Keep waveform playhead in sync
+                if self._waveform_peaks:
+                    self._draw_waveform_playhead()
+
+                self._sync_timer_id = self.after(100, self._sync_playback)
             else:
                 self._sync_timer_id = None
         except Exception:

@@ -1,5 +1,6 @@
 import logging
 import sys
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -66,6 +67,7 @@ def _setup_root_logger():
     root.addHandler(_make_console_handler(logging.WARNING))
     root.addHandler(_make_rotating_handler("app.log", logging.INFO))
     root.addHandler(_make_rotating_handler("errors.log", logging.ERROR))
+    root.addHandler(_make_rotating_handler("pipeline.log", logging.DEBUG))
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -118,3 +120,67 @@ def log_api_call(logger: logging.Logger, model: str, input_chars: int,
         logger.info(msg)
     else:
         logger.error(msg)
+
+
+# ── Pipeline session tracking ─────────────────────────────────────────────────
+
+_BANNER_WIDTH = 72
+
+
+def start_pipeline_session(label: str, **context) -> str:
+    """
+    Write a START banner to pipeline.log marking the beginning of a pipeline run.
+
+    Returns a session_id string (timestamp-based) that can be passed to
+    end_pipeline_session() for a matching END banner.
+
+    Args:
+        label:    Short description, e.g. "TRANSCRIPTION" or "CORRECTIONS"
+        **context: Optional key=value pairs logged with the banner
+                   e.g. cause_number="C-2260-25-G", audio_file="coger.wav"
+
+    Usage:
+        session_id = start_pipeline_session("TRANSCRIPTION", cause="C-2260-25-G")
+        ...
+        end_pipeline_session(session_id, "TRANSCRIPTION", success=True, words=12450)
+    """
+    _setup_root_logger()
+    logger = logging.getLogger("pipeline")
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:19]
+    bar = "═" * _BANNER_WIDTH
+
+    logger.info(bar)
+    logger.info("  ▶  START  %s  [%s]", label, session_id)
+    for key, val in context.items():
+        logger.info("     %-20s %s", f"{key}:", val)
+    logger.info(bar)
+
+    return session_id
+
+
+def end_pipeline_session(
+    session_id: str,
+    label: str,
+    success: bool = True,
+    **context,
+) -> None:
+    """
+    Write an END banner to pipeline.log matching a previous start_pipeline_session().
+
+    Args:
+        session_id: The value returned by start_pipeline_session()
+        label:      Same label used in start_pipeline_session()
+        success:    True = completed OK, False = failed
+        **context:  Summary values, e.g. corrections=14, words=12450, error="..."
+    """
+    _setup_root_logger()
+    logger = logging.getLogger("pipeline")
+    status = "✓  COMPLETE" if success else "✗  FAILED"
+    bar = "═" * _BANNER_WIDTH
+
+    logger.info(bar)
+    logger.info("  %s  %s  [%s]", status, label, session_id)
+    for key, val in context.items():
+        logger.info("     %-20s %s", f"{key}:", val)
+    logger.info(bar)
+    logger.info("")  # blank line between sessions

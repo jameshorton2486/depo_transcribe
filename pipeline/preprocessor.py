@@ -33,6 +33,7 @@ CACHING:
   Example: normalized_depo_audio_default.wav
 """
 
+import hashlib
 import json
 import os
 import subprocess
@@ -63,7 +64,8 @@ AGGRESSIVE_CONFIG = {
     "loudnorm": True,
     "afftdn": True,
     "afftdn_nf": -20,
-    "description": "Poor audio: aggressive denoising + loudnorm",
+    "dynaudnorm": True,
+    "description": "Poor audio: aggressive denoising + loudnorm + speaker leveling",
 }
 
 QUALITY_CONFIGS = {
@@ -225,7 +227,10 @@ def normalize_audio(
     input_path = Path(input_path)
 
     slug = _tier_slug(tier_name)
-    output_filename = f"normalized_{input_path.stem}_{slug}.wav"
+    # Include an 8-char hash of the full source path so that two different
+    # audio files with the same filename never share a cached WAV.
+    path_hash = hashlib.md5(str(input_path.resolve()).encode()).hexdigest()[:8]
+    output_filename = f"normalized_{input_path.stem}_{slug}_{path_hash}.wav"
     output_path = os.path.join(TEMP_DIR, output_filename)
 
     if (
@@ -249,6 +254,9 @@ def normalize_audio(
 
     if config.get("loudnorm"):
         filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+
+    if config.get("dynaudnorm"):
+        filters.append("dynaudnorm=p=0.9:m=100")
 
     filter_chain = ",".join(filters)
 

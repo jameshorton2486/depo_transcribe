@@ -15,7 +15,6 @@ Strip only AFTER joining the full block.
 
 import re
 from collections import Counter
-from pathlib import Path
 from typing import Dict, List, Optional
 
 from docx import Document
