@@ -372,6 +372,53 @@ class TranscriptTab(ctk.CTkFrame):
             text_color="#445566",
         ).pack(side="left", padx=(12, 0))
 
+        self._log_box = ctk.CTkTextbox(
+            self,
+            height=24,
+            font=ctk.CTkFont(family="Courier New", size=13),
+            state="disabled",
+        )
+        self._log_box.pack(side="bottom", fill="x", padx=14, pady=(0, 3))
+
+        action_row = ctk.CTkFrame(self, fg_color="transparent")
+        action_row.pack(side="bottom", fill="x", padx=14, pady=(0, 4))
+
+        self._open_folder_btn = ctk.CTkButton(
+            action_row,
+            text="Open Output Folder",
+            width=150,
+            state="disabled",
+            command=self._open_output_folder,
+        )
+        self._open_folder_btn.pack(side="left", padx=(0, 6))
+
+        self._open_transcript_btn = ctk.CTkButton(
+            action_row,
+            text="Open Transcript",
+            width=130,
+            state="disabled",
+            command=self._open_transcript_file,
+        )
+        self._open_transcript_btn.pack(side="left", padx=(0, 6))
+
+        self._export_review_btn = ctk.CTkButton(
+            action_row,
+            text="Export Review DOCX",
+            width=150,
+            state="disabled",
+            command=self._export_review_docx,
+        )
+        self._export_review_btn.pack(side="left", padx=(0, 6))
+
+        self._open_review_btn = ctk.CTkButton(
+            action_row,
+            text="Open Review DOCX",
+            width=140,
+            state="disabled",
+            command=self._open_review_docx,
+        )
+        self._open_review_btn.pack(side="left")
+
         self._textbox = ctk.CTkTextbox(
             self,
             font=ctk.CTkFont(family="Courier New", size=13),
@@ -452,53 +499,6 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._textbox._textbox.bind("<Button-3>", _show_context_menu)
         self._textbox.bind("<Button-3>", _show_context_menu, add=True)
-
-        self._log_box = ctk.CTkTextbox(
-            self,
-            height=24,
-            font=ctk.CTkFont(family="Courier New", size=13),
-            state="disabled",
-        )
-        self._log_box.pack(fill="x", padx=14, pady=(0, 3))
-
-        action_row = ctk.CTkFrame(self, fg_color="transparent")
-        action_row.pack(fill="x", padx=14, pady=(0, 4))
-
-        self._open_folder_btn = ctk.CTkButton(
-            action_row,
-            text="Open Output Folder",
-            width=150,
-            state="disabled",
-            command=self._open_output_folder,
-        )
-        self._open_folder_btn.pack(side="left", padx=(0, 6))
-
-        self._open_transcript_btn = ctk.CTkButton(
-            action_row,
-            text="Open Transcript",
-            width=130,
-            state="disabled",
-            command=self._open_transcript_file,
-        )
-        self._open_transcript_btn.pack(side="left", padx=(0, 6))
-
-        self._export_review_btn = ctk.CTkButton(
-            action_row,
-            text="Export Review DOCX",
-            width=150,
-            state="disabled",
-            command=self._export_review_docx,
-        )
-        self._export_review_btn.pack(side="left", padx=(0, 6))
-
-        self._open_review_btn = ctk.CTkButton(
-            action_row,
-            text="Open Review DOCX",
-            width=140,
-            state="disabled",
-            command=self._open_review_docx,
-        )
-        self._open_review_btn.pack(side="left")
 
     def _init_player(self):
         def worker():
@@ -635,6 +635,7 @@ class TranscriptTab(ctk.CTkFrame):
         if not self._low_confidence_words:
             if self._low_conf_frame.winfo_ismapped():
                 self._low_conf_frame.pack_forget()
+            self._low_conf_box._textbox.unbind("<Button-1>")
             return
 
         if not self._low_conf_frame.winfo_ismapped():
@@ -663,6 +664,19 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._low_conf_box.insert("1.0", "\n".join(lines))
         self._low_conf_box.configure(state="disabled")
+
+        def _on_panel_click(event, _box=self._low_conf_box, _words=self._low_confidence_words):
+            try:
+                index = _box._textbox.index(f"@{event.x},{event.y}")
+                line_num = int(index.split(".")[0]) - 1
+                if 0 <= line_num < len(_words[:20]):
+                    start = float(_words[line_num].get("start", 0.0) or 0.0)
+                    self._on_word_clicked(start)
+            except Exception:
+                pass
+            return "break"
+
+        self._low_conf_box._textbox.bind("<Button-1>", _on_panel_click)
         self.append_log(f"Loaded {len(self._low_confidence_words)} low-confidence words")
 
     def _on_word_data_loaded(self, request_id: int, filepath: str, words: list[dict]):
@@ -773,7 +787,10 @@ class TranscriptTab(ctk.CTkFrame):
                 "char_start": found_start,
                 "char_end":   found_start + len(word_text),
             })
-            search_pos = found_start + len(word_text)
+            # Single-char tokens from digit-by-digit cause numbers can false-match
+            # inside merged corrected strings and push the sequential search too far.
+            if len(word_text) > 1:
+                search_pos = found_start + len(word_text)
 
         widget = self._textbox._textbox
         widget.tag_config("current_word", background="#2A4A6A", foreground="white")
@@ -1856,6 +1873,7 @@ class TranscriptTab(ctk.CTkFrame):
         if corrected_path:
             self._current_path = corrected_path
             self._path_label.configure(text=f"Loaded: {corrected_path}", text_color="gray")
+            self._load_word_data(corrected_path)
 
         count = result.get("correction_count", 0)
         flags = result.get("flag_count", 0)
