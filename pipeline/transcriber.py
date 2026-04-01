@@ -216,10 +216,9 @@ def transcribe_chunk(
             f"Use one of: {sorted(ALLOWED_MODELS)}"
         )
 
-    keyterms = list(keyterms or [])[:MAX_KEYTERMS]
     logger.info(
         "Sending %s keyterms to Deepgram (direct path): %s",
-        len(keyterms), keyterms[:10],
+        len(keyterms or []), list(keyterms or [])[:10],
     )
     return _transcribe_direct(
         audio_file_path,

@@ -1,21 +1,38 @@
 r"""
 Depo-Pro Transcribe — launcher
 Run: python app.py
+cd C:\Users\james\PycharmProjects\depo_transcribe
 .\.venv\Scripts\python.exe app.py
 
 """
 
-import os, sys
+import os
+import sys
+
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
+_RUNTIME_DIRS = ("temp", "output", "logs", "work_files/transcripts")
 
-for _d in ("temp", "output", "logs", "work_files/transcripts"):
-    os.makedirs(os.path.join(_HERE, _d), exist_ok=True)
 
-from ui.app_window import DepoTranscribeApp
+def _bootstrap_paths() -> None:
+    if _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
 
-if __name__ == "__main__":
+
+def _ensure_runtime_dirs() -> None:
+    for relative_dir in _RUNTIME_DIRS:
+        os.makedirs(os.path.join(_HERE, relative_dir), exist_ok=True)
+
+
+def main() -> None:
+    _bootstrap_paths()
+    _ensure_runtime_dirs()
+
+    from ui.app_window import DepoTranscribeApp
+
     app = DepoTranscribeApp()
     app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

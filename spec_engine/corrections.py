@@ -417,6 +417,8 @@ def apply_case_corrections(
 
 # ── Step 3: Universal corrections ────────────────────────────────────────────
 
+ARTIFACT_ZIP_78216_RE = re.compile(r'(?<!Texas\s)\b78216\b', re.IGNORECASE)
+
 def apply_universal_corrections(
     text: str,
     records: List[CorrectionRecord],
@@ -488,7 +490,6 @@ SAN_NAME_FLAG_RE = re.compile(
     r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b'
 )
 COUNT_RE = re.compile(r'\b([1-9]|10)\b(?=\s+[a-zA-Z])')
-ARTIFACT_ZIP_78216_RE = re.compile(r'(?<!Texas\s)\b78216\b', re.IGNORECASE)
 
 
 def apply_date_normalization(
@@ -1037,6 +1038,13 @@ def clean_block(
 
     text = apply_multiword_corrections(text, records, block_index)
     text = apply_case_corrections(text, job_config, records, block_index)
+    try:
+        from spec_engine.user_rule_store import apply_user_rules
+
+        text, _user_records = apply_user_rules(text, block_index=block_index)
+        records.extend(_user_records)
+    except Exception as _exc:
+        logger.warning("[clean_block] user_rule_store unavailable: %s", _exc)
     text = apply_universal_corrections(text, records, block_index)
     text = normalize_time_and_dashes(text, records, block_index)
     text = apply_number_to_word(text, records, block_index)

@@ -129,6 +129,49 @@ def _split_speaker_text(text: str) -> tuple[str, str]:
     return "", text
 
 
+def emit_blocks(blocks: list) -> str:
+    """
+    Convert processed blocks into plain-text transcript output.
+
+    This mirrors the runtime text export format used by the correction runner.
+    """
+    lines: list[str] = []
+
+    for block in blocks:
+        bt = getattr(block, "block_type", None)
+        block_value = getattr(bt, "value", str(bt)) if bt else "UNKNOWN"
+        text = (block.text or "").strip()
+        role = (getattr(block, "speaker_role", "") or "").strip()
+        name = (getattr(block, "speaker_name", "") or "").strip()
+
+        if not text:
+            continue
+
+        if block_value == "Q":
+            wrapped = textwrap.fill(text, width=QA_WRAP_WIDTH)
+            lines.append(f"\tQ.  {wrapped}")
+        elif block_value == "A":
+            wrapped = textwrap.fill(text, width=QA_WRAP_WIDTH)
+            lines.append(f"\tA.  {wrapped}")
+        elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
+            label = (name or role or "SPEAKER").upper()
+            wrapped = textwrap.fill(text, width=WRAP_WIDTH)
+            lines.append(f"\t\t\t{label}:  {wrapped}")
+        elif block_value in ("PAREN", "PARENTHETICAL", "PN"):
+            lines.append(f"({text})")
+        elif block_value == "FLAG":
+            lines.append(text)
+        else:
+            if name or role:
+                label = (name or role).upper()
+                wrapped = textwrap.fill(text, width=WRAP_WIDTH)
+                lines.append(f"\t\t\t{label}:  {wrapped}")
+            else:
+                lines.append(text)
+
+    return "\n\n".join(lines)
+
+
 # ── Line type emitters (Spec Section 3.3) ────────────────────────────────────
 
 def emit_q_line(doc: Document, text: str):

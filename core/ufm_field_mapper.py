@@ -32,6 +32,7 @@ def map_intake_to_ufm(extracted: dict) -> dict:
     """
     depo       = extracted.get("deposition_details", {}) or {}
     ord_atty   = extracted.get("ordering_attorney", {}) or {}
+    filing_atty = extracted.get("filing_attorney", {}) or {}
     copy_attys = extracted.get("copy_attorneys", []) or []
     all_attys  = extracted.get("all_attorneys", []) or []
     reporter   = extracted.get("court_reporter", {}) or {}
@@ -158,6 +159,8 @@ def map_intake_to_ufm(extracted: dict) -> dict:
         "plaintiff_name":     plaintiff,
         "defendant_name":     defendant,
         "case_style":         case_style,
+        "amendment":          depo.get("amendment", ""),
+        "court_caption":      court_raw,
         "court_type":         court_type,
         "county":             county,
         "state":              depo.get("state", "Texas"),
@@ -196,7 +199,10 @@ def map_intake_to_ufm(extracted: dict) -> dict:
 
         # ── Billing / Copy Info ──────────────────────────────────
         "ordered_by":         depo.get("ordered_by", ""),
+        "ordering_attorney_name": ord_atty.get("name", ""),
         "ordering_firm":      ord_atty.get("firm", ""),
+        "filing_attorney_name": filing_atty.get("name", ""),
+        "filing_attorney_firm": filing_atty.get("firm", ""),
         "copy_attorneys":     copy_attys,
 
         # ── Video / CSR flags ────────────────────────────────────

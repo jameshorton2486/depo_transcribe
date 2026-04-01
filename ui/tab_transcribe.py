@@ -1357,16 +1357,23 @@ class TranscribeTab(ctk.CTkFrame):
                 "witness": ufm_fields.get("witness_name", witness_fallback),
                 "date": ufm_fields.get("depo_date", ""),
                 "court": ufm_fields.get("court_type", ""),
+                "court_caption": ufm_fields.get("court_caption", ""),
                 "case_style": ufm_fields.get("case_style", ""),
                 "method": ufm_fields.get("depo_method", ""),
                 "county": ufm_fields.get("county", ""),
                 "state": ufm_fields.get("state", ""),
                 "ordered_by": ufm_fields.get("ordered_by", ""),
+                "amendment": ufm_fields.get("amendment", ""),
                 "location": ufm_fields.get("depo_location", ""),
                 "scheduled_time": ufm_fields.get("depo_time_start", ""),
             },
             "ordering_attorney": {
+                "name": ufm_fields.get("ordering_attorney_name", ""),
                 "firm": ufm_fields.get("ordering_firm", ""),
+            },
+            "filing_attorney": {
+                "name": ufm_fields.get("filing_attorney_name", ""),
+                "firm": ufm_fields.get("filing_attorney_firm", ""),
             },
             "copy_attorneys": list(ufm_fields.get("copy_attorneys", [])),
             "all_attorneys": [],
@@ -1840,18 +1847,23 @@ class TranscribeTab(ctk.CTkFrame):
 
         intake_result = results.get("intake_result")
         if intake_result:
+            deponent_name = ""
+            if intake_result.deponents:
+                deponent_name = str(intake_result.deponents[0].get("name", "")).strip()
             self._extracted_case_data = {
                 "deposition_details": {
                     "cause_number": intake_result.cause_number or "",
-                    "witness": (
-                        f"{self._firstname_var.get().strip()} {self._lastname_var.get().strip()}".strip()
-                    ),
+                    "witness": deponent_name,
                     "date": intake_result.deposition_date or "",
                     "court": intake_result.court or "",
+                    "court_caption": intake_result.court or "",
                     "case_style": intake_result.case_style or "",
                     "method": intake_result.deposition_method or "",
+                    "ordered_by": intake_result.ordered_by or "",
+                    "amendment": intake_result.amendment or "",
                 },
                 "ordering_attorney": dict(intake_result.ordering_attorney or {}),
+                "filing_attorney": dict(intake_result.filing_attorney or {}),
                 "copy_attorneys": list(intake_result.copy_attorneys or []),
                 "all_attorneys": [],
                 "court_reporter": {

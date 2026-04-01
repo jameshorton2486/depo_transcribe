@@ -255,8 +255,8 @@ class TranscriptTab(ctk.CTkFrame):
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
         divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
 
+        self._low_conf_pady = (0, 3)
         self._low_conf_frame = ctk.CTkFrame(self, fg_color="#101826")
-        self._low_conf_frame.pack(fill="x", padx=14, pady=(0, 3))
 
         low_conf_header = ctk.CTkFrame(self._low_conf_frame, fg_color="transparent")
         low_conf_header.pack(fill="x", padx=8, pady=(6, 2))
@@ -455,7 +455,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._log_box = ctk.CTkTextbox(
             self,
-            height=40,
+            height=24,
             font=ctk.CTkFont(family="Courier New", size=13),
             state="disabled",
         )
@@ -631,21 +631,22 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _update_low_confidence_panel(self, words: list[dict]) -> None:
         self._low_confidence_words = list(words or [])
-        self._low_conf_box.configure(state="normal")
-        self._low_conf_box.delete("1.0", "end")
 
         if not self._low_confidence_words:
-            self._low_conf_title.configure(
-                text="Low-Confidence Review: none stored for this transcript",
-                text_color="#7DAACC",
-            )
-            self._low_conf_box.insert(
-                "1.0",
-                "No low-confidence words were stored in source_docs/job_config.json "
-                "for this transcript.",
-            )
-            self._low_conf_box.configure(state="disabled")
+            if self._low_conf_frame.winfo_ismapped():
+                self._low_conf_frame.pack_forget()
             return
+
+        if not self._low_conf_frame.winfo_ismapped():
+            self._low_conf_frame.pack(
+                fill="x",
+                padx=14,
+                pady=self._low_conf_pady,
+                before=self._textbox,
+            )
+
+        self._low_conf_box.configure(state="normal")
+        self._low_conf_box.delete("1.0", "end")
 
         self._low_conf_title.configure(
             text=f"Low-Confidence Review: {len(self._low_confidence_words)} words below threshold",

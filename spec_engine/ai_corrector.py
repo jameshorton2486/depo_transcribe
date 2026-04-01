@@ -355,8 +355,6 @@ def run_ai_correction(
         _log(f'AI correcting chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)…')
 
         chunk_prompt = chunk
-        if flag_offset > 0:
-            pass
 
         user_prompt = _build_user_prompt(
             chunk_prompt,

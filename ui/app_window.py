@@ -7,6 +7,7 @@ Single-screen layout with the Transcribe tab as the only content area.
 
 import customtkinter as ctk
 from config import DEEPGRAM_API_KEY
+from ui.tab_training import TrainingTab
 from ui.tab_transcript import TranscriptTab
 from ui.tab_transcribe import TranscribeTab
 from ui.tab_corrections import CorrectionsTab
@@ -55,6 +56,7 @@ class DepoTranscribeApp(ctk.CTk):
         self.tab_view.add("Transcribe")
         self.tab_view.add("Transcript")
         self.tab_view.add("Corrections")
+        self.tab_view.add("Training")
 
         self.transcribe_tab = TranscribeTab(self.tab_view.tab("Transcribe"))
         self.transcribe_tab.pack(fill="both", expand=True)
@@ -64,3 +66,12 @@ class DepoTranscribeApp(ctk.CTk):
 
         self.corrections_tab = CorrectionsTab(self.tab_view.tab("Corrections"))
         self.corrections_tab.pack(fill="both", expand=True)
+
+        self.training_tab = TrainingTab(self.tab_view.tab("Training"))
+        self.training_tab.pack(fill="both", expand=True)
+
+        self.tab_view.configure(command=self._on_tab_change)
+
+    def _on_tab_change(self):
+        if self.tab_view.get() == "Training":
+            self.training_tab.on_tab_focus()

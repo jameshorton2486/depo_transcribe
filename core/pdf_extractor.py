@@ -13,6 +13,7 @@ import glob
 from typing import Any
 
 from app_logging import get_logger
+from core.config import AI_MODEL
 
 logger = get_logger(__name__)
 
@@ -234,7 +235,7 @@ def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=AI_MODEL,
             max_tokens=300,
             messages=[{"role": "user", "content": prompt}],
         )

@@ -7,10 +7,11 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app_logging import get_logger
+from core.config import AI_MODEL
 
 logger = get_logger(__name__)
 
@@ -47,16 +48,19 @@ class IntakeParsedResult:
     defendants: list[str]
     deponents: list[dict]
     ordering_attorney: dict
-    copy_attorneys: list[dict]
-    reporter_name: Optional[str]
-    reporter_csr: Optional[str]
-    reporter_firm: Optional[str]
-    reporter_address: Optional[str]
-    vocabulary_terms: list[VocabularyTerm]
-    all_proper_nouns: list[str]
-    confirmed_spellings: dict[str, str]
-    term_count: int
-    parse_method: str
+    filing_attorney: dict = field(default_factory=dict)
+    copy_attorneys: list[dict] = field(default_factory=list)
+    ordered_by: Optional[str] = None
+    amendment: Optional[str] = None
+    reporter_name: Optional[str] = None
+    reporter_csr: Optional[str] = None
+    reporter_firm: Optional[str] = None
+    reporter_address: Optional[str] = None
+    vocabulary_terms: list[VocabularyTerm] = field(default_factory=list)
+    all_proper_nouns: list[str] = field(default_factory=list)
+    confirmed_spellings: dict[str, str] = field(default_factory=dict)
+    term_count: int = 0
+    parse_method: str = "ai"
 
 
 STANDARD_LEGAL_SPELLINGS: dict[str, str] = {
@@ -87,109 +91,127 @@ STANDARD_LEGAL_SPELLINGS: dict[str, str] = {
 }
 
 INTAKE_PARSER_SYSTEM_PROMPT = """
-You are a legal transcript intake parser for a Texas court reporting firm.
-Your job is to extract structured data and vocabulary keyterms from a
-court reporting intake sheet and/or Notice of Deposition PDF.
+You are a Texas court reporter intake processor for SA Legal Solutions.
+You are extracting structured data from a court reporting intake packet.
 
-You must be highly selective. The output feeds Deepgram Nova-3 (100-term
-hard cap) and a transcript formatter substitution pipeline. Garbage terms
-waste cap slots and degrade transcription accuracy.
+These packets often contain multiple document types in one PDF:
+  - SA Legal Solutions intake / scheduling sheet
+  - Notice of Deposition
+  - Notice of Deposition Duces Tecum
+  - Certificate of Service
 
+Your job is to read the ENTIRE packet, recognize which sections exist,
+and extract only the structured data needed for scheduling, transcript
+setup, confirmed spellings, and Deepgram keyterms.
 
-WHAT TO INCLUDE  qualify each term against ALL criteria
+SOURCE PRIORITY
+When the same fact appears in both the intake sheet and the legal pleading:
+  1. Prefer the Notice of Deposition body and caption for legal case data.
+  2. Prefer the intake sheet for scheduling/admin data such as ordered_by.
+  3. If intake sheet and NOD conflict on attorneys, keep BOTH when they
+     represent different roles (ordering attorney vs filing attorney).
 
-Include a term ONLY if ALL of the following are true:
-  1. It is a proper noun, specialized phrase, or technical term
-     that a speech-to-text model is likely to mishear or misspell.
-  2. It has at least two words OR is a single proper noun of 5+
-     characters not in a standard dictionary.
-  3. A court reporter who has not read the case file would benefit
-     from having this term boosted in the transcript.
+SECTION RECOGNITION
+Before extracting values, identify which pages/sections exist:
+  - Intake / scheduling sheet
+  - Notice of Deposition
+  - Duces Tecum
+  - Certificate of Service
 
-VALID term_type categories:
-  PERSON     Full names (first + last minimum). Include a short form
-              ONLY if phonetically distinct from the full form.
-  COMPANY    Full legal entity names including suffix
-              (PLLC, P.C., LLC, Inc., LLP, LC).
-  LOCATION   Full addresses as phrases (never fragments).
-              City + state. County + state. Named incident sites.
-  LEGAL      Multi-word legal phrases specific to this case type.
-              e.g. "Subpoena Duces Tecum", "slip and fall",
-              "dangerous condition", "premises liability".
-  TECHNICAL  Product names, equipment, Bates prefixes, exhibit
-              labels, document section headings, case-specific
-              identifiers referenced in testimony.
-  CUSTOM     Cause numbers, incident identifiers, exhibit numbers
-              (e.g. "Exhibit 17", "Murphy 095") that appear verbatim.
+Ignore Certificate of Service for structured extraction.
+If Duces Tecum exists, extract only the duces tecum flag and the phrase
+"Subpoena Duces Tecum" as a potential keyterm. Ignore the duces tecum body text.
 
+ROBUSTNESS RULES
+  - Cause number formats vary by county. Capture exactly as written.
+  - Rejoin OCR split names across line breaks, especially suffixes like
+    "Jr.", "Sr.", "III", and "IV".
+  - A copy attorney may appear only in the NOD body and not on the intake sheet.
+  - Ordering attorney may differ from the filing/signing attorney. Keep both.
+  - Prefer full firm names including suffixes such as PLLC, P.C., LLC, LLP.
+  - If the NOD title includes "First Amended", "Second Amended",
+    "Third Amended", etc., capture that in amendment.
 
-WHAT TO EXCLUDE  always excluded without exception
+FIELDS TO EXTRACT
+  cause_number: exact string as written
+  court: full court caption string from the NOD caption
+  case_style: full plaintiff v. defendant style
+  deposition_date: as written in the NOD or scheduling sheet
+  deposition_method: one of "In Person", "Via Zoom", "Via Teams", "Telephonic", or null
+  subpoena_duces_tecum: true if the packet is a duces tecum notice, else false
+  amendment: amendment title string or null
+  read_and_sign: true/false if explicitly stated
+  signature_waived: true/false if explicitly stated
+  video_recorded: true/false if explicitly stated
+  plaintiffs: array of plaintiff names from the case caption
+  defendants: array of defendant names from the case caption
+  deponents: array with at least one object when the deponent is identifiable
+  ordering_attorney: attorney on the intake sheet ordering field
+  filing_attorney: attorney who signed the NOD or appears in the signature block
+  copy_attorneys: pull from BOTH the intake sheet and NOD copy/to/by-and-through sections
+  ordered_by: the contact/person from the "Ordered by" or OCR variant "Odered by" field
+  reporter_name / reporter_csr / reporter_firm / reporter_address: reporter data when present
 
-NEVER include:
-  - Single common English words even if capitalized:
-    Court, Texas, Plaintiff, Defendant, Notice, Deposition,
-    Attorney, Firm, March, July, February, January, This,
-    Your, With, Please, Take, Pursuant, Telephone, Facsimile,
-    Witness, Produce, Case, Appearance, Delivery, Signature,
-    Parking, Interpreter, Original, Standard, Certificate,
-    District, Intention, Oral, Cause, County, Austin, Bexar,
-    Will, David, Kathie, Love, Wright, Greenhill, PLLC, William.
-  - Intake form labels and field headers:
-    "Ordered by", "Read & Sign", "Start Time", "End Time",
-    "Special Instructions", "Conference Room", "Trans Rush Due",
-    "Hard Copy", "E-Trans", "BW", "Color", "Pages",
-    "Exhibit Count", "Deponent", "Location", "Date",
-    "Video/Med/Tech", "Appearance", "CNA", "Odered".
-  - Address or name fragments where a complete form is included:
-    Do not include "Wright" if "Wright and Greenhill P.C." exists.
-    Do not include "George Rd" if the full address is included.
-    Do not include "Allan" if "William N. Allan IV" is included.
-  - OCR typos  correct them first, then evaluate.
-    "Mathew"  correct to "Matthew" then include as full name.
-    "Odered"  discard entirely.
-  - Duplicates of any term already in a more complete form.
-  - Any term you cannot justify with a single confident reason.
+DEEPGRAM KEYTERM RULES
+Deepgram keyterms must be selective and case-specific.
+Include a term only if all are true:
+  1. It appears in this packet.
+  2. It is a proper noun, firm name, cause number, or specialized phrase
+     that speech-to-text could plausibly mishear.
+  3. It is a full name/phrase, not a fragment.
 
+Always include when present:
+  - every full person name
+  - every full law firm name with suffix
+  - the reporter firm name
+  - the cause number
+  - ordered_by contact
+  - "Subpoena Duces Tecum" when subpoena_duces_tecum is true
 
-DEDUPLICATION RULES
+Never include:
+  - certificate of service text
+  - duces tecum boilerplate requests/body text
+  - form labels or headers
+  - common English words
+  - address fragments
+  - state abbreviations by themselves
 
-  - Prefer the most complete, correctly spelled version.
-  - Include a short name form only if phonetically distinct.
-  - Do not include firm name without legal suffix if full form exists.
-  - Correct spelling silently before including.
-  - all_proper_nouns must be deduplicated  no term appears twice.
-  - all_proper_nouns must not exceed 60 entries.
-
+Return at most 20 keyterms. Drop the least case-specific terms first.
 
 CONFIRMED SPELLINGS
-
-Generate a confirmed_spellings map of likely Deepgram mishearings
- correct forms based on the names and entities you extract.
-Standard patterns to cover:
-  - Name variants: "Will Allen"  "Will Allan"
-  - Company garbles: "Murphy USAA"  "Murphy USA"
-  - Product mishearings: case-specific product names
-  - Counsel name garbles based on phonetics of extracted names
-
+Generate confirmed_spellings for names/entities with real mishearing risk.
+Cover patterns like:
+  - phonetic surname mishears
+  - suffix variations (Jr./Sr.)
+  - hyphen-loss variants
+  - firm name without legal suffix when the full firm is present
+Do not pad with obvious or pointless variations.
 
 OUTPUT FORMAT
-
-Return ONLY valid JSON. No preamble, no markdown, no explanation.
+Return ONLY valid JSON. No markdown, no explanation.
 
 {
   "cause_number": "string or null",
   "court": "string or null",
   "case_style": "string or null",
   "deposition_date": "string or null",
-  "deposition_method": "In Person | Via Zoom | Via Teams | null",
-  "subpoena_duces_tecum": true | false,
-  "read_and_sign": true | false,
-  "signature_waived": true | false,
-  "video_recorded": true | false,
+  "deposition_method": "In Person | Via Zoom | Via Teams | Telephonic | null",
+  "subpoena_duces_tecum": true,
+  "amendment": "string or null",
+  "read_and_sign": true,
+  "signature_waived": false,
+  "video_recorded": false,
   "plaintiffs": ["string"],
   "defendants": ["string"],
   "deponents": [{"name": "string", "role": "string"}],
   "ordering_attorney": {
+    "name": "string or null",
+    "firm": "string or null",
+    "address": "string or null",
+    "phone": "string or null",
+    "email": "string or null"
+  },
+  "filing_attorney": {
     "name": "string or null",
     "firm": "string or null",
     "address": "string or null",
@@ -202,6 +224,7 @@ Return ONLY valid JSON. No preamble, no markdown, no explanation.
     "address": "string or null",
     "email": "string or null"
   }],
+  "ordered_by": "string or null",
   "reporter_name": "string or null",
   "reporter_csr": "string or null",
   "reporter_firm": "string or null",
@@ -210,26 +233,24 @@ Return ONLY valid JSON. No preamble, no markdown, no explanation.
     {
       "term": "exact string to send to Deepgram",
       "term_type": "PERSON|COMPANY|LOCATION|LEGAL|TECHNICAL|CUSTOM",
-      "field_name": "internal label e.g. plaintiff_counsel[0].name",
-      "reason": "one sentence explaining why Deepgram needs this boosted"
+      "field_name": "internal label",
+      "reason": "one sentence"
     }
   ],
-  "all_proper_nouns": ["flat deduplicated array of term strings  max 60"],
+  "all_proper_nouns": ["flat deduplicated array of term strings"],
   "confirmed_spellings": {
     "deepgram_wrong_form": "correct_form"
   }
 }
-
-The reason field is internal logging only  never shown to users.
-It forces careful justification of each term included.
 """.strip()
 
 
 def INTAKE_PARSER_USER_PROMPT(text: str) -> str:
     return (
-        "Parse the following court reporting intake document.\n"
-        "Apply all extraction and exclusion rules strictly.\n"
-        "Be conservative  when in doubt, leave it out.\n\n"
+        "Parse the following Texas court reporting intake packet.\n"
+        "Recognize the packet sections first, then extract structured data.\n"
+        "Prefer the NOD body for legal case facts and the intake sheet for administrative fields.\n"
+        "Be conservative with keyterms and ignore certificate-of-service text.\n\n"
         f"{text}"
     )
 
@@ -317,6 +338,17 @@ def _coerce_list_of_dict(value: Any) -> list[dict]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _coerce_deponents(data: dict[str, Any]) -> list[dict]:
+    deponents = _coerce_list_of_dict(data.get("deponents"))
+    if deponents:
+        return deponents
+
+    singular = _coerce_str(data.get("deponent"))
+    if singular:
+        return [{"name": singular, "role": "deponent"}]
+    return []
+
+
 def _coerce_dict(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
 
@@ -389,11 +421,14 @@ def parse_intake_document(
     try:
         import pdfplumber
 
-        text = ""
+        text_parts: list[str] = []
         with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages[:5]:
-                text += page.extract_text() or ""
-        text = text.strip()
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    text_parts.append(page_text)
+        text = "\n\n".join(text_parts).strip()
+        text = re.sub(r",\s*\n\s*(Jr\.?|Sr\.?|III|IV)\b", r", \1", text)
     except Exception as exc:
         logger.error("[IntakeParser] PDF read failed: %s", exc)
         return None
@@ -408,12 +443,12 @@ def parse_intake_document(
 
         client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
         message = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=AI_MODEL,
             max_tokens=4096,
             system=INTAKE_PARSER_SYSTEM_PROMPT,
             messages=[{
                 "role": "user",
-                "content": INTAKE_PARSER_USER_PROMPT(text[:8000]),
+                "content": INTAKE_PARSER_USER_PROMPT(text[:16000]),
             }],
         )
         raw_json = _strip_markdown_fences(message.content[0].text.strip())
@@ -461,9 +496,12 @@ def parse_intake_document(
         video_recorded=bool(data.get("video_recorded", False)),
         plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
         defendants=_coerce_list_of_str(data.get("defendants")),
-        deponents=_coerce_list_of_dict(data.get("deponents")),
+        deponents=_coerce_deponents(data),
         ordering_attorney=_coerce_dict(data.get("ordering_attorney")),
+        filing_attorney=_coerce_dict(data.get("filing_attorney")),
         copy_attorneys=_coerce_list_of_dict(data.get("copy_attorneys")),
+        ordered_by=_coerce_str(data.get("ordered_by")),
+        amendment=_coerce_str(data.get("amendment")),
         reporter_name=_coerce_str(data.get("reporter_name")),
         reporter_csr=_coerce_str(data.get("reporter_csr")),
         reporter_firm=_coerce_str(data.get("reporter_firm")),

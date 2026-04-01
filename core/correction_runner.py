@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -29,60 +28,10 @@ from app_logging import get_logger
 logger = get_logger(__name__)
 
 
-# ── Output text formatter ─────────────────────────────────────────────────────
-
-_QA_WRAP = 56   # matches spec_engine/emitter.py QA_WRAP_WIDTH
-_SP_WRAP = 65   # matches spec_engine/emitter.py WRAP_WIDTH
-
 def format_blocks_to_text(blocks: list) -> str:
-    """
-    Convert a processed Block list to plain corrected transcript text.
+    from spec_engine.emitter import emit_blocks
 
-    Q/A lines:   \tQ.  {text} / \tA.  {text}  — two spaces after period
-    SP lines:    \t\t\t{LABEL}:  {text}         — three tabs before label
-    PAREN lines: ({text})
-    FLAG lines:  {text}
-
-    Long lines are wrapped. Continuation lines start at the left margin
-    with no indent, matching UFM plain-text output format.
-    """
-    from spec_engine.models import BlockType
-
-    lines: list[str] = []
-
-    for block in blocks:
-        bt   = getattr(block, "block_type", None)
-        bv   = getattr(bt, "value", str(bt)) if bt else "UNKNOWN"
-        text = (block.text or "").strip()
-        role = (getattr(block, "speaker_role", "") or "").strip()
-        name = (getattr(block, "speaker_name", "") or "").strip()
-
-        if not text:
-            continue
-
-        if bv == "Q":
-            wrapped = textwrap.fill(text, width=_QA_WRAP)
-            lines.append(f"\tQ.  {wrapped}")
-        elif bv == "A":
-            wrapped = textwrap.fill(text, width=_QA_WRAP)
-            lines.append(f"\tA.  {wrapped}")
-        elif bv in ("COLLOQUY", "SPEAKER", "SP"):
-            label   = (name or role or "SPEAKER").upper()
-            wrapped = textwrap.fill(text, width=_SP_WRAP)
-            lines.append(f"\t\t\t{label}:  {wrapped}")
-        elif bv in ("PAREN", "PARENTHETICAL", "PN"):
-            lines.append(f"({text})")
-        elif bv == "FLAG":
-            lines.append(text)
-        else:
-            if name or role:
-                label   = (name or role).upper()
-                wrapped = textwrap.fill(text, width=_SP_WRAP)
-                lines.append(f"\t\t\t{label}:  {wrapped}")
-            else:
-                lines.append(text)
-
-    return "\n\n".join(lines)
+    return emit_blocks(blocks)
 
 
 # ── job_config loader ────────────────────────────────────────────────────────
