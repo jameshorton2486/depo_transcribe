@@ -1915,6 +1915,32 @@ class TranscribeTab(ctk.CTkFrame):
 
             self._auto_detect_source_docs()
 
+            # Validate required filing fields
+            cause = self._cause_var.get().strip()
+            last = self._lastname_var.get().strip()
+            first = self._firstname_var.get().strip()
+            date = self._date_var.get().strip()
+
+            missing = []
+            if not cause:
+                missing.append("Cause Number")
+            if not last:
+                missing.append("Last Name")
+            if not first:
+                missing.append("First Name")
+            if not date:
+                missing.append("Deposition Date")
+
+            if missing:
+                messagebox.showerror(
+                    "Required Fields Missing",
+                    "Please complete the following fields before transcribing:\n\n"
+                    + "\n".join(f"  \u2022 {f}" for f in missing)
+                    + "\n\nThese are required to save the transcript to the "
+                    "correct folder."
+                )
+                return
+
             # Validate API key
             from config import DEEPGRAM_API_KEY
 

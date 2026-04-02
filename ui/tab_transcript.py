@@ -258,7 +258,6 @@ class TranscriptTab(ctk.CTkFrame):
         # ────────────────────────────────────────────────────────────────────
 
         conf_row = ctk.CTkFrame(self, fg_color="transparent")
-        conf_row.pack(fill="x", padx=14, pady=(0, 2))
 
         self._conf_label = ctk.CTkLabel(
             conf_row,
@@ -313,7 +312,6 @@ class TranscriptTab(ctk.CTkFrame):
         self._prev_flagged_btn.pack(side="right", padx=(0, 6))
 
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
-        divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
 
         self._low_conf_pady = (0, 3)
         self._low_conf_frame = ctk.CTkFrame(self, fg_color="#101826")
@@ -432,6 +430,9 @@ class TranscriptTab(ctk.CTkFrame):
         ).pack(side="left", padx=(12, 0))
 
         self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4))
+
+        conf_row.pack(fill="x", padx=14, pady=(0, 2))
+        divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
 
         self._log_box = ctk.CTkTextbox(
             self,
