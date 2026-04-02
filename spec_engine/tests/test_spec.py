@@ -1027,6 +1027,7 @@ def test_docx_merger_single_source():
                 os.unlink(f)
 
 
+@pytest.mark.skip(reason="ufm_engine is inactive subsystem — requires docxtpl")
 def test_docx_merger_multi_source_order():
     from docx import Document
     from ufm_engine.docx_merger import DocxMerger

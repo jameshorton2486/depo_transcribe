@@ -8,7 +8,7 @@ Spec Section 3.3: Five Line Types
 TYPOGRAPHY (must match exactly — Spec Section 5.2):
   Font:         Courier New, 12pt
   Line spacing: Double
-  Tab stops:    360 / 900 / 1440 / 2160 / 2880 twips
+  Tab stops:    720 / 1440 / 2160 twips plus centered header tab
   Margins:      Left 1.25" / Right 1.0" / Top 1.0" / Bottom 1.0"
 
 COLOR USAGE (Spec Section 5.4):
@@ -40,12 +40,10 @@ WRAP_WIDTH = 65
 QA_WRAP_WIDTH = 56
 
 # ── Tab stop positions in twips (Spec Section 5.3) ────────────────────────────
-TAB_360  = 360    # 0.25" — Q./A. letter
-TAB_900  = 900    # 0.625" — Q/A text start
-TAB_1440 = 1440   # 1.0"  — Speaker label
-TAB_2160 = 2160   # 1.5"  — Parenthetical
-TAB_2880 = 2880   # 2.0"  — Reserved
-_STANDARD_TABS = [TAB_360, TAB_900, TAB_1440, TAB_2160]
+TAB_720 = 720     # 0.5" — Q./A. line marker
+TAB_1440 = 1440   # 1.0" — Q./A. text start
+TAB_2160 = 2160   # 1.5" — speaker line text start
+_STANDARD_TABS = [TAB_720, TAB_1440, TAB_2160]
 
 
 # ── Q/A pair safety tracker (Spec Section 5.5) ────────────────────────────────
@@ -179,7 +177,7 @@ def emit_q_line(doc: Document, text: str):
     lines = _wrap_lines(text, QA_WRAP_WIDTH)
     for idx, line in enumerate(lines):
         para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_360, TAB_900])
+        _set_paragraph_format(para, [TAB_720, TAB_1440])
         prefix = '\tQ.\t' if idx == 0 else '\t'
         _add_run(para, f'{prefix}{line}')
 
@@ -189,7 +187,7 @@ def emit_a_line(doc: Document, text: str):
     lines = _wrap_lines(text, QA_WRAP_WIDTH)
     for idx, line in enumerate(lines):
         para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_360, TAB_900])
+        _set_paragraph_format(para, [TAB_720, TAB_1440])
         prefix = '\tA.\t' if idx == 0 else '\t'
         _add_run(para, f'{prefix}{line}')
 
@@ -197,13 +195,13 @@ def emit_a_line(doc: Document, text: str):
 def emit_sp_line(doc: Document, text: str):
     """
     Spec 3.3 Type 3 — Speaker Label: [TAB][TAB][TAB] LABEL: [bold]  text
-    Position: 1440 twips. Label is BOLD. Two literal spaces after colon.
+    Position: 2160 twips. Label is BOLD. Two literal spaces after colon.
     """
     label, content = _split_speaker_text(text)
     if not label:
         for line in _wrap_lines(text, WRAP_WIDTH):
             para = doc.add_paragraph()
-            _set_paragraph_format(para, [TAB_1440])
+            _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
             _add_run(para, '\t\t\t' + line)
         return
 
@@ -211,7 +209,7 @@ def emit_sp_line(doc: Document, text: str):
     lines = _wrap_lines(content, max(10, WRAP_WIDTH - prefix_len))
     for idx, line in enumerate(lines):
         para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_1440])
+        _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
         if idx == 0:
             _add_run(para, '\t\t\t', bold=False)
             _add_run(para, label, bold=True)
@@ -252,6 +250,14 @@ def emit_by_line(doc: Document, text: str):
         _add_run(para, line)
 
 
+def emit_plain_line(doc: Document, text: str):
+    """Plain transcript text with no label or special styling."""
+    for line in _wrap_lines(text, WRAP_WIDTH):
+        para = doc.add_paragraph()
+        _set_paragraph_format(para)
+        _add_run(para, line)
+
+
 def emit_line(doc: Document, line_type: LineType, text: str):
     """Master dispatch — routes to correct emitter based on LineType."""
     dispatch = {
@@ -262,6 +268,7 @@ def emit_line(doc: Document, line_type: LineType, text: str):
         LineType.FLAG:   emit_flag_line,
         LineType.HEADER: emit_header_line,
         LineType.BY:     emit_by_line,
+        LineType.PLAIN:  emit_plain_line,
     }
     fn = dispatch.get(line_type)
     if fn:
@@ -439,6 +446,9 @@ def emit_line_numbered(
             content_run.bold = True
             content_run.font.color.rgb = COLOR_BLACK
         elif line_type == LineType.BY:
+            content_run = para.add_run(visual_line)
+            content_run.font.color.rgb = COLOR_BLACK
+        elif line_type == LineType.PLAIN:
             content_run = para.add_run(visual_line)
             content_run.font.color.rgb = COLOR_BLACK
 

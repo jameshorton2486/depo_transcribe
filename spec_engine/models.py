@@ -32,6 +32,7 @@ class LineType(Enum):
     FLAG   = "FLAG"
     HEADER = "HEADER"
     BY     = "BY"
+    PLAIN  = "PLAIN"
 
 
 @dataclass

@@ -45,13 +45,13 @@ TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\s*(AM|PM)\b\.?", re.IGNORECASE)
 
 # Mid-sentence count context (lowercase)
 NUMBER_WORD_MAP = {
-    '1': 'one', '2': 'two', '3': 'three', '4': 'four', '5': 'five',
+    '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four', '5': 'five',
     '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine', '10': 'ten',
 }
 
 # Sentence-start context (capitalized per Morson's)
 SENTENCE_START_NUMBER_WORDS = {
-    '1': 'One', '2': 'Two', '3': 'Three', '4': 'Four', '5': 'Five',
+    '0': 'Zero', '1': 'One', '2': 'Two', '3': 'Three', '4': 'Four', '5': 'Five',
     '6': 'Six', '7': 'Seven', '8': 'Eight', '9': 'Nine', '10': 'Ten',
 }
 
@@ -74,7 +74,7 @@ NUMBER_EXCLUSION_RE = re.compile(
 
 # Sentence start: digit 1-10 as the FIRST token in the block
 SENTENCE_START_NUM_RE = re.compile(
-    r'^([1-9]|10)\b(?!\s*(?:a\.m|p\.m|\d|:))'
+    r'^(0|[1-9]|10)\b(?!\s*(?:a\.m|p\.m|\d|:))'
 )
 
 
@@ -341,6 +341,9 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Negative lookbehind prevents firing inside Bates numbers like "EXH-100%"
     # (those will not appear in testimony text, but guard anyway).
     (r'(?<![A-Z\-])(\d+\.?\d*)\s*%', r'\1 percent'),
+
+    # Orphaned punctuation cleanup
+    (r',\.', '.'),
 ]
 
 
@@ -489,7 +492,7 @@ SAN_NAME_FLAG_RE = re.compile(
     r'|Benito\b|Elizario\b|Saba\b|Isidro\b|Patricio\b|Ygnacio\b|Augustine\b)'
     r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b'
 )
-COUNT_RE = re.compile(r'\b([1-9]|10)\b(?=\s+[a-zA-Z])')
+COUNT_RE = re.compile(r'\b(0|[1-9]|10)\b(?=\s+[a-zA-Z])')
 
 
 def apply_date_normalization(

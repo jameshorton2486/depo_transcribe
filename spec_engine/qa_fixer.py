@@ -19,6 +19,13 @@ ANSWER_TOKENS = (
 )
 
 TOKEN_RE = re.compile(r"[a-z0-9']+")
+REPORTER_PREAMBLE_START_RE = re.compile(
+    r"\bthis\s+is\s+cause\s+number\b"
+    r"|\bcause\s+number\b"
+    r"|\bthis\s+deposition\s+is\s+being\s+taken\s+in\s+accordance\s+with\b"
+    r"|\bcounsel,\s+will\s+you\s+please\s+state\s+your\s+agreement\b",
+    re.IGNORECASE,
+)
 
 
 def _witness_identity(job_config: Any, original: Block) -> tuple[Any, str | None]:
@@ -38,6 +45,56 @@ def _witness_identity(job_config: Any, original: Block) -> tuple[Any, str | None
         if witness_name is None:
             witness_name = speaker_map.get(str(witness_id))
     return witness_id, witness_name
+
+
+def _is_reporter_block(block: Block) -> bool:
+    speaker_name = (block.speaker_name or "").upper()
+    speaker_role = (block.speaker_role or "").upper()
+    return "REPORTER" in speaker_name or "REPORTER" in speaker_role
+
+
+def _merge_reporter_preamble_blocks(blocks: List[Block]) -> List[Block]:
+    """
+    Join the reporter's opening multi-paragraph preamble before later Q/A fixes.
+    """
+    if not blocks:
+        return blocks
+
+    result: List[Block] = []
+    i = 0
+    while i < len(blocks):
+        current = blocks[i]
+        if (
+            _is_reporter_block(current)
+            and REPORTER_PREAMBLE_START_RE.search((current.text or "").strip())
+        ):
+            merged = current
+            j = i + 1
+            while j < len(blocks):
+                nxt = blocks[j]
+                if not _is_reporter_block(nxt):
+                    break
+                if merged.speaker_id != nxt.speaker_id:
+                    break
+                merged = Block(
+                    raw_text=((merged.raw_text or "") + " " + (nxt.raw_text or "")).strip(),
+                    text=((merged.text or "").rstrip() + " " + (nxt.text or "").lstrip()).strip(),
+                    speaker_id=merged.speaker_id,
+                    speaker_name=merged.speaker_name,
+                    speaker_role=merged.speaker_role,
+                    block_type=merged.block_type,
+                    words=list(merged.words) + list(nxt.words),
+                    flags=list(merged.flags),
+                    meta={**merged.meta, "merged_reporter_preamble": True},
+                )
+                j += 1
+            result.append(merged)
+            i = j
+            continue
+
+        result.append(current)
+        i += 1
+    return result
 
 
 def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Block]:
@@ -157,6 +214,7 @@ def fix_qa_structure(blocks: List[Block], job_config: Any = None) -> List[Block]
     """
     Apply Q/A structural repairs in priority order.
     """
+    blocks = _merge_reporter_preamble_blocks(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
     blocks = _merge_orphaned_continuations(blocks)
     blocks = _remove_near_duplicate_blocks(blocks)

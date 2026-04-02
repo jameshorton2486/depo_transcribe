@@ -83,6 +83,39 @@ def load_cached_blocks(job_config: JobConfig) -> Optional[List[Block]]:
         return None
 
 
+def _get_examiner_label(job_config: JobConfig) -> str:
+    speaker_map = getattr(job_config, "speaker_map", {}) or {}
+    label = speaker_map.get(job_config.examining_attorney_id, "COUNSEL")
+    return (label or "COUNSEL").strip().upper().rstrip(":")
+
+
+def _build_witness_intro_lines(
+    job_config: JobConfig,
+    existing_lines: Optional[List[tuple[LineType, str]]] = None,
+) -> List[tuple[LineType, str]]:
+    """
+    Build the fixed witness introduction block from case metadata.
+
+    Guard against duplicating the EXAMINATION/BY header pair if the body
+    already contains them from the audio-driven oath sequence.
+    """
+    existing_lines = existing_lines or []
+    if any(
+        line_type == LineType.HEADER and "EXAMINATION" in (text or "").upper()
+        for line_type, text in existing_lines
+    ):
+        return []
+
+    witness_name = (job_config.witness_name or "WITNESS").strip().upper()
+    examiner_label = _get_examiner_label(job_config)
+    return [
+        (LineType.HEADER, f"{witness_name},"),
+        (LineType.PLAIN, "having been first duly sworn, testified as follows:"),
+        (LineType.HEADER, "EXAMINATION"),
+        (LineType.BY, f"BY {examiner_label}:"),
+    ]
+
+
 def process_transcript(
     input_docx_path: str,
     output_docx_path: str,
@@ -293,7 +326,8 @@ def process_transcript(
     add_page_break(doc)
 
     # Pages 3+: Transcript body
-    for line_type, text in body_lines:
+    transcript_lines = _build_witness_intro_lines(job_config, body_lines) + body_lines
+    for line_type, text in transcript_lines:
         if use_line_numbers:
             emit_line_numbered(doc, line_type, text, line_tracker, qa_tracker)
         else:

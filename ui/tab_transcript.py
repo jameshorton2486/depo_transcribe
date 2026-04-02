@@ -39,6 +39,8 @@ class TranscriptTab(ctk.CTkFrame):
         self._remap_job: str | None = None
         self._edit_mode: bool = False
         self._current_word_idx: int = -1
+        self.review_state: dict[int, str] = {}
+        self._current_review_idx: int = -1
 
         self._player: VLCPlayer | None = None
         self._player_ready = False
@@ -241,6 +243,40 @@ class TranscriptTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=13),
         )
         self._highlight_toggle.pack(side="right")
+
+        self._confirm_btn = ctk.CTkButton(
+            conf_row,
+            text="Confirm Word",
+            width=112,
+            fg_color="#1A6B3A",
+            hover_color="#145230",
+            command=self._confirm_current_word,
+        )
+        self._confirm_btn.pack(side="right", padx=(0, 6))
+
+        self._next_flagged_btn = ctk.CTkButton(
+            conf_row,
+            text="Next ➡",
+            width=84,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#334",
+            text_color="#8ab",
+            command=self._go_to_next_flagged,
+        )
+        self._next_flagged_btn.pack(side="right", padx=(0, 6))
+
+        self._prev_flagged_btn = ctk.CTkButton(
+            conf_row,
+            text="⬅ Previous",
+            width=96,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#334",
+            text_color="#8ab",
+            command=self._go_to_previous_flagged,
+        )
+        self._prev_flagged_btn.pack(side="right", padx=(0, 6))
 
         divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
         divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
@@ -557,6 +593,8 @@ class TranscriptTab(ctk.CTkFrame):
             content = self._read_transcript(filepath)
             self._current_path = filepath
             self._review_docx_path = None
+            self.review_state = {}
+            self._current_review_idx = -1
             self._open_review_btn.configure(state="disabled")
             self._textbox.configure(state="normal")
             self._textbox.delete("1.0", "end")
@@ -673,6 +711,7 @@ class TranscriptTab(ctk.CTkFrame):
     def _on_word_data_loaded(self, request_id: int, filepath: str, words: list[dict]):
         if request_id != self._word_data_request_id or filepath != self._current_path:
             return
+        self._restore_review_state(words)
         self._words = words
         if words:
             self._build_word_map(words)
@@ -680,6 +719,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._export_review_btn.configure(state="normal")
         else:
             self._word_map = []
+            self.review_state = {}
+            self._current_review_idx = -1
             self._update_confidence_summary()
             self._export_review_btn.configure(state="disabled")
         self.append_log(f"Loaded {len(words)} timestamped words")
@@ -691,13 +732,19 @@ class TranscriptTab(ctk.CTkFrame):
                 text_color="#9AA3B2",
             )
             return
-        summary = get_flagged_summary(self._words)
-        flagged_color = "#FFAA44" if summary["flagged"] else "#7DD8E8"
+        pending = sum(1 for state in self.review_state.values() if state == "pending")
+        critical = sum(
+            1
+            for idx, state in self.review_state.items()
+            if state == "pending" and idx < len(self._words)
+            and float(self._words[idx].get("confidence", 1.0) or 1.0) < 0.80
+        )
+        flagged_color = "#FFAA44" if pending else "#44AA44"
         self._conf_label.configure(
             text=(
-                f"Confidence: {summary['total']} words  |  "
-                f"flagged {summary['flagged']}  |  "
-                f"low {summary['low']}  |  critical {summary['critical']}"
+                f"Review: {len(self._words)} words  |  "
+                f"pending {pending}  |  "
+                f"critical {critical}"
             ),
             text_color=flagged_color,
         )
@@ -717,6 +764,7 @@ class TranscriptTab(ctk.CTkFrame):
         """Build a char-range map from Deepgram words onto the canonical textbox text."""
         self._word_map = []
         self._current_word_idx = -1
+        self._current_review_idx = -1
         if not words:
             self._update_confidence_summary()
             return
@@ -789,12 +837,7 @@ class TranscriptTab(ctk.CTkFrame):
         widget.tag_config("conf_mid",     foreground="#CCCC00")
         self._apply_confidence_highlights()
 
-        flagged = sum(1 for item in self._word_map if item["confidence"] < 0.8)
-        total   = len(self._word_map)
-        self._conf_label.configure(
-            text=f"Confidence: {total} words — {flagged} flagged below 80%",
-            text_color="#CC9900" if flagged else "#44AA44",
-        )
+        self._update_confidence_summary()
 
     def _apply_confidence_tags(self, word_list) -> None:
         self._apply_confidence_highlights()
@@ -805,8 +848,11 @@ class TranscriptTab(ctk.CTkFrame):
         widget.tag_remove("conf_mid", "1.0", "end")
         if not self._highlight_var.get():
             return
-        for item in self._word_map:
+        for idx, item in enumerate(self._word_map):
             if item["char_start"] < 0:
+                continue
+            state = self.review_state.get(idx, "pending")
+            if state != "pending":
                 continue
             start_idx = f"1.0+{item['char_start']}c"
             end_idx = f"1.0+{item['char_end']}c"
@@ -817,6 +863,116 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _refresh_confidence_highlights(self) -> None:
         self._apply_confidence_highlights()
+
+    @staticmethod
+    def _review_key(word: dict) -> tuple[float, float]:
+        return (
+            round(float(word.get("start", 0.0) or 0.0), 3),
+            round(float(word.get("end", 0.0) or 0.0), 3),
+        )
+
+    def _restore_review_state(self, words: list[dict]) -> None:
+        previous = {}
+        for idx, word in enumerate(self._words):
+            state = self.review_state.get(idx)
+            if state in {"confirmed", "corrected"}:
+                previous[self._review_key(word)] = state
+
+        self.review_state = {}
+        for idx, word in enumerate(words):
+            word_text = str(word.get("word") or word.get("text") or "").strip()
+            if not word_text:
+                continue
+            confidence = float(word.get("confidence", 1.0) or 1.0)
+            if confidence < 0.90:
+                self.review_state[idx] = previous.get(self._review_key(word), "pending")
+
+    def get_next_flagged(self, current_idx: int) -> int | None:
+        for i in range(current_idx + 1, len(self._words)):
+            if self.review_state.get(i) == "pending":
+                return i
+        return None
+
+    def get_previous_flagged(self, current_idx: int) -> int | None:
+        for i in range(current_idx - 1, -1, -1):
+            if self.review_state.get(i) == "pending":
+                return i
+        return None
+
+    def _jump_to_review_index(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self._word_map):
+            return
+        item = self._word_map[idx]
+        self._current_review_idx = idx
+        self._on_word_clicked(float(item["start"]))
+        if item["char_start"] >= 0:
+            self._textbox._textbox.mark_set("insert", f"1.0+{item['char_start']}c")
+            self._textbox._textbox.see(f"1.0+{item['char_start']}c")
+
+    def _go_to_next_flagged(self) -> None:
+        start_idx = self._current_review_idx if self._current_review_idx >= 0 else -1
+        idx = self.get_next_flagged(start_idx)
+        if idx is None and start_idx >= 0:
+            idx = self.get_next_flagged(-1)
+        if idx is None:
+            self.set_status("No pending flagged words remain.", "#44AA44")
+            return
+        self._jump_to_review_index(idx)
+
+    def _go_to_previous_flagged(self) -> None:
+        start_idx = self._current_review_idx if self._current_review_idx >= 0 else len(self._words)
+        idx = self.get_previous_flagged(start_idx)
+        if idx is None and start_idx < len(self._words):
+            idx = self.get_previous_flagged(len(self._words))
+        if idx is None:
+            self.set_status("No pending flagged words remain.", "#44AA44")
+            return
+        self._jump_to_review_index(idx)
+
+    def confirm_word(self, idx: int) -> None:
+        if idx < 0 or idx >= len(self._word_map):
+            return
+        if self.review_state.get(idx) != "pending":
+            return
+        self.review_state[idx] = "confirmed"
+        self._apply_confidence_highlights()
+        self._update_confidence_summary()
+        self.set_status(f'Confirmed: "{self._word_map[idx]["word"]}"', "#44FF44")
+
+    def _confirm_current_word(self) -> None:
+        if self._current_review_idx >= 0:
+            self.confirm_word(self._current_review_idx)
+        else:
+            self.set_status("Select or navigate to a flagged word first.", "#FFAA44")
+
+    def _find_changed_range(self, old_text: str, new_text: str) -> tuple[int, int]:
+        prefix = 0
+        old_len = len(old_text)
+        new_len = len(new_text)
+        while prefix < old_len and prefix < new_len and old_text[prefix] == new_text[prefix]:
+            prefix += 1
+
+        old_suffix = old_len
+        new_suffix = new_len
+        while old_suffix > prefix and new_suffix > prefix and old_text[old_suffix - 1] == new_text[new_suffix - 1]:
+            old_suffix -= 1
+            new_suffix -= 1
+
+        return prefix, old_suffix
+
+    def _mark_reviewed_range(self, start_char: int, end_char: int, state: str) -> None:
+        for idx, item in enumerate(self._word_map):
+            char_start = item.get("char_start", -1)
+            char_end = item.get("char_end", -1)
+            if char_start < 0 or char_end < 0:
+                continue
+            overlaps = (
+                max(char_start, start_char) < min(char_end, end_char)
+                or (start_char == end_char and char_start <= start_char <= char_end)
+            )
+            if overlaps and self.review_state.get(idx) == "pending":
+                self.review_state[idx] = state
+                self._current_review_idx = idx
 
     def _browse_transcript_file(self):
         path = filedialog.askopenfilename(
@@ -898,6 +1054,10 @@ class TranscriptTab(ctk.CTkFrame):
                 best_dist = dist
                 best = item
         if best:
+            try:
+                self._current_review_idx = self._word_map.index(best)
+            except ValueError:
+                pass
             self._on_word_clicked(float(best["start"]))
 
     def _on_textbox_double_click(self, event) -> str:
@@ -1002,12 +1162,13 @@ class TranscriptTab(ctk.CTkFrame):
         inner.config(state="normal")
         inner.delete(f"1.0+{target['char_start']}c", f"1.0+{target['char_end']}c")
         inner.insert(f"1.0+{target['char_start']}c", new_word)
-        inner.config(state="disabled")
 
         # Update this word's map entry
         self._word_map[target_idx]["word"] = new_word
         self._word_map[target_idx]["char_end"] = target["char_start"] + new_len
         self._word_map[target_idx]["confidence"] = 1.0
+        self.review_state[target_idx] = "corrected"
+        self._current_review_idx = target_idx
 
         # Shift all subsequent entries
         for j in range(target_idx + 1, len(self._word_map)):
@@ -1017,13 +1178,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._canonical_text = self._textbox.get("1.0", "end-1c")
         self._apply_confidence_highlights()
-
-        flagged = sum(1 for w in self._word_map if w["confidence"] < 0.8)
-        total = len(self._word_map)
-        self._conf_label.configure(
-            text=f"Confidence: {total} words — {flagged} flagged below 80%",
-            text_color="#CC9900" if flagged else "#44AA44",
-        )
+        self._update_confidence_summary()
         self.set_status(f'Corrected: "{old_word}"  →  "{new_word}"', "#44FF44")
 
     def _replace_word_dialog(self, item: dict) -> None:
@@ -1050,7 +1205,7 @@ class TranscriptTab(ctk.CTkFrame):
                 return
             content = self._canonical_text or self._textbox.get("1.0", "end-1c")
             updated = content[: item["char_start"]] + new_text + content[item["char_end"]:]
-            self._apply_text_update(updated)
+            self._apply_text_update(updated, mark_reviewed=True)
             dialog.destroy()
 
         btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
@@ -1097,7 +1252,7 @@ class TranscriptTab(ctk.CTkFrame):
             cs = item["char_start"]
             ce = item["char_end"]
             updated = content[:cs] + new_text + content[ce:]
-            self._apply_text_update(updated)
+            self._apply_text_update(updated, mark_reviewed=True)
             self.append_log(f'Replaced "{item["word"]}" → "{new_text}" (single instance)')
             dialog.destroy()
 
@@ -1144,7 +1299,7 @@ class TranscriptTab(ctk.CTkFrame):
             pattern = _re.compile(_re.escape(find_text), _re.IGNORECASE)
             count = len(pattern.findall(content))
             updated = pattern.sub(replace_text, content)
-            self._apply_text_update(updated)
+            self._apply_text_update(updated, mark_reviewed=True)
             self.append_log(
                 f'Replace All: "{find_text}" → "{replace_text}"  ({count} replacement{"s" if count != 1 else ""})'
             )
@@ -1200,7 +1355,7 @@ class TranscriptTab(ctk.CTkFrame):
                 dialog.destroy()
                 return
             updated = pattern.sub(replace_text, content)
-            self._apply_text_update(updated)
+            self._apply_text_update(updated, mark_reviewed=True)
             self.append_log(
                 f'Replace All: "{find_text}" → "{replace_text}"  '
                 f'({count} replacement{"s" if count != 1 else ""})'
@@ -1227,8 +1382,12 @@ class TranscriptTab(ctk.CTkFrame):
         """Open Replace All with an empty find field."""
         self._replace_all_dialog("")
 
-    def _apply_text_update(self, updated_content: str) -> None:
+    def _apply_text_update(self, updated_content: str, mark_reviewed: bool = False) -> None:
         """Apply a text change to both the textbox and canonical text, then rebuild word map."""
+        old_content = self._canonical_text or self._textbox.get("1.0", "end-1c")
+        if mark_reviewed:
+            start_char, end_char = self._find_changed_range(old_content, updated_content)
+            self._mark_reviewed_range(start_char, end_char, "corrected")
         self._canonical_text = updated_content
         self._textbox.configure(state="normal")
         self._textbox.delete("1.0", "end")
@@ -1981,7 +2140,13 @@ class TranscriptTab(ctk.CTkFrame):
     def _on_textbox_modified(self, event=None) -> None:
         """Keep _canonical_text in sync with edits and schedule word map rebuild."""
         self._textbox._textbox.edit_modified(False)
-        self._canonical_text = self._textbox.get("1.0", "end-1c")
+        updated_text = self._textbox.get("1.0", "end-1c")
+        if updated_text != self._canonical_text:
+            start_char, end_char = self._find_changed_range(self._canonical_text, updated_text)
+            self._mark_reviewed_range(start_char, end_char, "corrected")
+        self._canonical_text = updated_text
+        self._apply_confidence_highlights()
+        self._update_confidence_summary()
         # Debounce word map rebuild: wait 800ms after the user stops typing,
         # then realign confidence highlights to the updated text.
         if hasattr(self, "_remap_job") and self._remap_job is not None:

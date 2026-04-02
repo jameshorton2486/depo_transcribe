@@ -147,8 +147,8 @@ class TestFix5D_SharedTabStopHelper:
         assert _STANDARD_TABS is not None
 
     def test_standard_tabs_contains_correct_values(self):
-        from spec_engine.emitter import TAB_360, TAB_900, TAB_1440, TAB_2160, _STANDARD_TABS
-        assert _STANDARD_TABS == [TAB_360, TAB_900, TAB_1440, TAB_2160]
+        from spec_engine.emitter import TAB_720, TAB_1440, TAB_2160, _STANDARD_TABS
+        assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160]
 
     def test_apply_standard_tabs_helper_exists(self):
         from spec_engine.emitter import _apply_standard_tabs
@@ -158,7 +158,7 @@ class TestFix5D_SharedTabStopHelper:
         from spec_engine.emitter import emit_line_numbered
         src = inspect.getsource(emit_line_numbered)
         assert "_apply_standard_tabs(" in src
-        assert "for stop_twips in [TAB_360" not in src
+        assert "for stop_twips in [TAB_720" not in src
 
     def test_numbered_emitter_still_produces_correct_output(self):
         from spec_engine.emitter import (
@@ -394,7 +394,7 @@ class TestPhase5ExitGate:
 
     def test_standard_tabs_constant_exists(self):
         from spec_engine.emitter import _STANDARD_TABS
-        assert len(_STANDARD_TABS) == 4
+        assert len(_STANDARD_TABS) == 3
 
     def test_lines_per_page_is_25(self):
         from spec_engine.emitter import LineNumberTracker
