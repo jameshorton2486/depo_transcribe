@@ -36,6 +36,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._canonical_text: str = ""
         self._word_map: list[dict] = []
         self._sync_timer_id: str | None = None
+        self._remap_job: str | None = None
         self._edit_mode: bool = False
         self._current_word_idx: int = -1
 
@@ -52,6 +53,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._words: list[dict] = []
         self._word_data_request_id = 0
         self._low_confidence_words: list[dict] = []
+        self._ai_running = False
 
         self._highlight_var = ctk.BooleanVar(value=True)
         self._build_ui()
@@ -97,18 +99,6 @@ class TranscriptTab(ctk.CTkFrame):
             command=self._toggle_find_replace,
         )
         self._fnr_toggle_btn.pack(side="right", padx=(4, 0))
-
-        self._edit_mode_btn = ctk.CTkButton(
-            header,
-            text="Edit Mode",
-            width=110,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#334",
-            text_color="#8ab",
-            command=self._toggle_edit_mode,
-        )
-        self._edit_mode_btn.pack(side="right", padx=(4, 0))
 
         self._copy_btn = ctk.CTkButton(
             header,
@@ -339,9 +329,8 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._fnr_current_pos = "1.0"
 
-        # ── Edit Mode toolbar (hidden until Edit Mode activated) ─────────────
+        # ── Speaker break toolbar (always visible) ───────────────────────────
         self._edit_toolbar = ctk.CTkFrame(self, fg_color="#0D1B2A", corner_radius=4)
-        # Not packed yet — shown when Edit Mode is toggled on
 
         edit_tb_inner = ctk.CTkFrame(self._edit_toolbar, fg_color="transparent")
         edit_tb_inner.pack(fill="x", padx=8, pady=4)
@@ -371,6 +360,8 @@ class TranscriptTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=13),
             text_color="#445566",
         ).pack(side="left", padx=(12, 0))
+
+        self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4))
 
         self._log_box = ctk.CTkTextbox(
             self,
@@ -423,13 +414,16 @@ class TranscriptTab(ctk.CTkFrame):
             self,
             font=ctk.CTkFont(family="Courier New", size=13),
             wrap="word",
-            state="disabled",
+            state="normal",
             undo=True,
         )
         self._textbox.pack(fill="both", expand=True, padx=14, pady=(0, 6))
         self._textbox._textbox.bind("<<Modified>>", self._on_textbox_modified)
         self._textbox._textbox.bind("<Button-1>", self._on_textbox_click)
         self._textbox._textbox.bind("<Double-Button-1>", self._on_textbox_double_click)
+        self._textbox._textbox.bind("<Control-z>", lambda _: self._textbox._textbox.edit_undo() or "break")
+        self._textbox._textbox.bind("<Control-Z>", lambda _: self._textbox._textbox.edit_undo() or "break")
+        self._textbox._textbox.bind("<Control-y>", lambda _: self._textbox._textbox.edit_redo() or "break")
         self.winfo_toplevel().bind("<Control-h>", lambda _: self._toggle_find_replace())
         self.winfo_toplevel().bind("<Escape>", lambda _: self._close_find_replace())
 
@@ -477,11 +471,10 @@ class TranscriptTab(ctk.CTkFrame):
                     command=lambda: self._ctx_replace_all(_word),
                 )
                 menu.add_separator()
-                if not self._edit_mode:
-                    menu.add_command(
-                        label=f'Seek audio →  "{_word}"',
-                        command=lambda: self._on_word_clicked(float(_item["start"])),
-                    )
+                menu.add_command(
+                    label=f'Seek audio →  "{_word}"',
+                    command=lambda: self._on_word_clicked(float(_item["start"])),
+                )
                 menu.add_separator()
 
             menu.add_command(label="Find & Replace  (Ctrl+H)", command=self._toggle_find_replace)
@@ -571,18 +564,16 @@ class TranscriptTab(ctk.CTkFrame):
             self._canonical_text = content
             self._textbox.edit_modified(False)
             self._textbox._textbox.edit_modified(False)
-            self._textbox.configure(state="disabled")
+            self._textbox._textbox.edit_reset()
             self._edit_mode = False
-            self._edit_mode_btn.configure(
-                text="Edit Mode",
-                fg_color="transparent",
-                border_color="#334",
-                text_color="#8ab",
-            )
             self._path_label.configure(text=f"Loaded: {filepath}", text_color="gray")
             self._copy_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
             self._run_corrections_btn.configure(state="normal")
+            self.set_status(
+                "Loaded — type to edit · click to seek audio · double-click to correct a word · Ctrl+Z to undo.",
+                "gray",
+            )
             try:
                 self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
             except AttributeError:
@@ -887,7 +878,7 @@ class TranscriptTab(ctk.CTkFrame):
             self._start_sync_timer()
 
     def _on_textbox_click(self, event) -> None:
-        if self._edit_mode or not self._word_map:
+        if not self._word_map:
             return
         try:
             click_index = self._textbox._textbox.index(f"@{event.x},{event.y}")
@@ -911,7 +902,7 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _on_textbox_double_click(self, event) -> str:
         """Double-click a word to open an inline correction popup."""
-        if self._edit_mode or not self._word_map:
+        if not self._word_map:
             return "break"
         # Defer so tkinter finishes its own double-click event chain first
         self.after(10, lambda: self._show_word_correction_popup(event.x, event.y))
@@ -1242,8 +1233,6 @@ class TranscriptTab(ctk.CTkFrame):
         self._textbox.configure(state="normal")
         self._textbox.delete("1.0", "end")
         self._textbox.insert("1.0", updated_content)
-        if not self._edit_mode:
-            self._textbox.configure(state="disabled")
         if self._words:
             self._build_word_map(self._words)
         else:
@@ -1814,7 +1803,7 @@ class TranscriptTab(ctk.CTkFrame):
             os.startfile(self._review_docx_path)
 
     def _run_corrections_pipeline(self) -> None:
-        """Run the deterministic corrections pipeline on the current transcript.
+        """Run deterministic corrections, then AI correction when configured.
 
         Runs in a background thread. On completion the corrected text is
         applied directly into the textbox via _apply_text_update() so that
@@ -1841,9 +1830,8 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _on_corrections_done(self, result: dict) -> None:
         """Called on the main thread when the corrections pipeline finishes."""
-        self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
-
         if not result.get("success"):
+            self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
             err = result.get("error", "unknown error")
             self.set_status(f"Corrections failed: {err[:80]}", "#CC4444")
             self.append_log(f"ERROR: {err}")
@@ -1851,6 +1839,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         corrected_text = result.get("corrected_text", "")
         if not corrected_text.strip():
+            self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
             self.set_status("Corrections ran but returned no text.", "#FFAA44")
             return
 
@@ -1877,15 +1866,104 @@ class TranscriptTab(ctk.CTkFrame):
 
         count = result.get("correction_count", 0)
         flags = result.get("flag_count", 0)
-        self.set_status(
-            f"✓ Corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
-            "  Click Save to write to disk.",
-            "#44FF44",
-        )
         self.append_log(
             f"Done: {count} correction(s), {flags} scopist flag(s). "
             f"File: {corrected_path or self._current_path}"
         )
+
+        try:
+            from config import ANTHROPIC_API_KEY
+        except Exception:
+            ANTHROPIC_API_KEY = ""
+
+        if ANTHROPIC_API_KEY.strip():
+            self._run_corrections_btn.configure(state="disabled", text="AI Correcting…")
+            self.set_status(
+                "Deterministic corrections complete — running Claude AI pass…",
+                "#4499FF",
+            )
+            self.append_log("Starting AI correction pass…")
+            self._start_ai_correction(corrected_text)
+            return
+
+        self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+        self.set_status(
+            f"✓ Corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
+            "  AI skipped: ANTHROPIC_API_KEY not set.",
+            "#44FF44",
+        )
+
+    def _start_ai_correction(self, corrected_text: str) -> None:
+        """Launch the Claude correction pass from the Transcript tab."""
+        if self._ai_running:
+            return
+
+        if not corrected_text.strip():
+            self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+            self.set_status("No corrected transcript text available for AI pass.", "#FFAA44")
+            return
+
+        self._ai_running = True
+        threading.Thread(
+            target=self._run_ai_job,
+            args=(corrected_text,),
+            daemon=True,
+        ).start()
+
+    def _run_ai_job(self, corrected_text: str) -> None:
+        from spec_engine.ai_corrector import run_ai_correction
+
+        try:
+            from core.correction_runner import (
+                _build_job_config_from_ufm,
+                _load_job_config_for_transcript,
+            )
+
+            source = self._current_path or ""
+            job_config_data = _load_job_config_for_transcript(source)
+            job_config = _build_job_config_from_ufm(job_config_data) if job_config_data else None
+        except Exception:
+            job_config = None
+
+        try:
+            result_text = run_ai_correction(
+                transcript_text=corrected_text,
+                job_config=job_config or {},
+                progress_callback=lambda msg: self.after(0, self.append_log, msg),
+            )
+            self.after(0, self._on_ai_done, result_text, None)
+        except Exception as exc:
+            self.after(0, self._on_ai_done, None, str(exc))
+
+    def _on_ai_done(self, result_text: str | None, error: str | None) -> None:
+        """Apply the AI pass result back into the Transcript tab."""
+        self._ai_running = False
+        self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+
+        if result_text and not error:
+            try:
+                cursor_pos = self._textbox._textbox.index("insert")
+            except Exception:
+                cursor_pos = "1.0"
+            self._apply_text_update(result_text)
+            try:
+                self._textbox._textbox.mark_set("insert", cursor_pos)
+                self._textbox._textbox.see(cursor_pos)
+            except Exception:
+                pass
+
+            if self._current_path:
+                with open(self._current_path, "w", encoding="utf-8") as fh:
+                    fh.write(result_text)
+                self._load_word_data(self._current_path)
+
+            self.set_status("✓ AI correction complete — transcript updated.", "#44FF44")
+            self.append_log("AI correction applied to transcript viewer.")
+            self.append_log("Click Save to confirm the AI-corrected transcript on disk.")
+            return
+
+        self.set_status(f"AI correction failed: {(error or 'unknown')[:80]}", "#CC4444")
+        self.append_log(f"ERROR: {error}")
 
     def destroy(self):
         self._stop_sync_timer()
@@ -1901,67 +1979,36 @@ class TranscriptTab(ctk.CTkFrame):
         super().destroy()
 
     def _on_textbox_modified(self, event=None) -> None:
-        """Keep _canonical_text in sync with manual edits in the textbox."""
+        """Keep _canonical_text in sync with edits and schedule word map rebuild."""
         self._textbox._textbox.edit_modified(False)
-        if self._edit_mode:
-            self._canonical_text = self._textbox.get("1.0", "end-1c")
+        self._canonical_text = self._textbox.get("1.0", "end-1c")
+        # Debounce word map rebuild: wait 800ms after the user stops typing,
+        # then realign confidence highlights to the updated text.
+        if hasattr(self, "_remap_job") and self._remap_job is not None:
+            try:
+                self.after_cancel(self._remap_job)
+            except Exception:
+                pass
+        self._remap_job = self.after(800, self._rebuild_word_map_after_edit)
+
+    def _rebuild_word_map_after_edit(self) -> None:
+        """Rebuild the word map 800ms after the user stops typing.
+
+        Keeps confidence highlights aligned to the current text without
+        rebuilding on every keystroke. Only fires if word data is available.
+        """
+        self._remap_job = None
+        if self._words:
+            self._build_word_map(self._words)
+        else:
+            self._apply_confidence_highlights()
 
     def _toggle_edit_mode(self) -> None:
-        self._edit_mode = not self._edit_mode
-        if self._edit_mode:
-            self._textbox.configure(state="normal")
-            self._textbox._textbox.edit_reset()  # fresh undo stack for this session
-            self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4), before=self._textbox)
-            self._speaker_break_entry.delete(0, "end")
-            self._edit_mode_btn.configure(
-                text="Exit Edit Mode",
-                fg_color="#1558C0",
-                border_color="#1558C0",
-                text_color="white",
-            )
-            self._stop_sync_timer()
-            self._textbox._textbox.tag_remove("current_word", "1.0", "end")
-            # Undo/redo — active only inside Edit Mode
-            self._textbox._textbox.bind(
-                "<Control-z>",
-                lambda _: self._textbox._textbox.edit_undo() or "break",
-            )
-            self._textbox._textbox.bind(
-                "<Control-Z>",
-                lambda _: self._textbox._textbox.edit_undo() or "break",
-            )
-            self._textbox._textbox.bind(
-                "<Control-y>",
-                lambda _: self._textbox._textbox.edit_redo() or "break",
-            )
-            self.set_status(
-                "Edit Mode — type freely: corrections, Enter for new lines, paste text.  "
-                "Ctrl+Z = undo  ·  Ctrl+Y = redo  ·  Click 'Exit Edit Mode' when done.",
-                "#4499FF",
-            )
-        else:
-            self._canonical_text = self._textbox.get("1.0", "end-1c")
-            self._textbox.configure(state="disabled")
-            self._edit_toolbar.pack_forget()
-            self._edit_mode_btn.configure(
-                text="Edit Mode",
-                fg_color="transparent",
-                border_color="#334",
-                text_color="#8ab",
-            )
-            # Remove undo/redo bindings when leaving Edit Mode
-            self._textbox._textbox.unbind("<Control-z>")
-            self._textbox._textbox.unbind("<Control-Z>")
-            self._textbox._textbox.unbind("<Control-y>")
-            self.set_status("Read Mode — click to seek audio · double-click any word to correct it.", "gray")
-            if self._words:
-                self._build_word_map(self._words)
+        """Retired — editing is now always active. Stub retained for safety."""
+        pass
 
     def _insert_speaker_break(self) -> None:
         """Split the transcript at the cursor and insert a new speaker label on a new line."""
-        if not self._edit_mode:
-            return
-
         label = self._speaker_break_entry.get().strip()
         if not label:
             self.set_status("Enter a speaker label first (e.g.  Speaker 4)", "#FFAA44")
