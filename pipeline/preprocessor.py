@@ -28,9 +28,9 @@ AUTO-DETECT DECISION LOGIC (legal transcript optimized):
   over-aggressive denoising decisions.
 
 CACHING:
-  Output filenames include the tier name so that changing quality settings
-  always produces a fresh file rather than reusing a stale cached WAV.
-  Example: normalized_depo_audio_default.wav
+  Output filenames include the tier name and a hash of the full effective
+  preprocessing config so that changing settings always produces a fresh file
+  rather than reusing a stale cached WAV.
 """
 
 import hashlib
@@ -91,6 +91,45 @@ def _tier_slug(tier_name: str) -> str:
         .split("(")[0]
         .strip()
         .replace(" ", "_")
+    )
+
+
+def _hash_config(config_dict: dict) -> str:
+    """Return a deterministic short hash for the effective preprocessing config."""
+    payload = json.dumps(config_dict, sort_keys=True, separators=(",", ":"))
+    return hashlib.md5(payload.encode("utf-8")).hexdigest()[:8]
+
+
+def _build_active_config(config: dict, tier_name: str) -> dict:
+    """Return the full effective preprocessing config that influences audio output."""
+    return {
+        "tier_name": tier_name,
+        "target_sample_rate": TARGET_SAMPLE_RATE,
+        "channels": 1,
+        "audio_codec": "pcm_s16le",
+        "video_disabled": True,
+        "filters": dict(config),
+    }
+
+
+def _legacy_cache_path(input_path: Path, tier_name: str) -> str:
+    """Return the pre-hash cache path for compatibility with older cache files."""
+    slug = _tier_slug(tier_name)
+    path_hash = hashlib.md5(str(input_path.resolve()).encode()).hexdigest()[:8]
+    return os.path.join(
+        TEMP_DIR,
+        f"normalized_{input_path.stem}_{slug}_{path_hash}.wav",
+    )
+
+
+def _cache_path(input_path: Path, tier_name: str, config: dict) -> str:
+    """Return the deterministic cache path for the effective preprocessing config."""
+    slug = _tier_slug(tier_name)
+    path_hash = hashlib.md5(str(input_path.resolve()).encode()).hexdigest()[:8]
+    config_hash = _hash_config(_build_active_config(config, tier_name))
+    return os.path.join(
+        TEMP_DIR,
+        f"normalized_{input_path.stem}_{slug}_{path_hash}_{config_hash}.wav",
     )
 
 
@@ -197,9 +236,10 @@ def normalize_audio(
         RuntimeError: If FFmpeg is not installed or normalization fails.
 
     CACHING NOTE:
-        The output filename includes a slug derived from the tier name so that
-        switching quality settings always triggers a fresh normalization rather
-        than reusing a stale cached WAV from a previous tier.
+        The output filename includes a slug derived from the tier name plus a
+        deterministic hash of the full effective preprocessing config so that
+        switching settings always triggers a fresh normalization rather than
+        reusing a stale cached WAV from a previous run.
     """
     tier_name = "unknown"
 
@@ -226,12 +266,8 @@ def normalize_audio(
 
     input_path = Path(input_path)
 
-    slug = _tier_slug(tier_name)
-    # Include an 8-char hash of the full source path so that two different
-    # audio files with the same filename never share a cached WAV.
-    path_hash = hashlib.md5(str(input_path.resolve()).encode()).hexdigest()[:8]
-    output_filename = f"normalized_{input_path.stem}_{slug}_{path_hash}.wav"
-    output_path = os.path.join(TEMP_DIR, output_filename)
+    output_path = _cache_path(input_path, tier_name, config)
+    legacy_output_path = _legacy_cache_path(input_path, tier_name)
 
     if (
         os.path.exists(output_path)
@@ -245,6 +281,15 @@ def normalize_audio(
         if progress_callback:
             progress_callback(f"Using cached normalized audio ({size_mb:.1f} MB)  [{tier_name}]")
         return output_path
+
+    if (
+        os.path.exists(legacy_output_path)
+        and os.path.getmtime(legacy_output_path) >= os.path.getmtime(str(input_path))
+    ):
+        logger.info(
+            "[Preprocessor] Legacy cache present but config-sensitive cache required: %s",
+            legacy_output_path,
+        )
 
     filters = [f"highpass=f={config['highpass_freq']}"]
 

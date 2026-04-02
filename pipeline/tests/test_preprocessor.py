@@ -41,3 +41,34 @@ def test_default_tier_does_not_include_dynaudnorm(monkeypatch, tmp_path):
     ffmpeg_cmd = calls[0]
     filter_chain = ffmpeg_cmd[ffmpeg_cmd.index("-af") + 1]
     assert "dynaudnorm" not in filter_chain
+
+
+def test_hash_config_is_stable_for_same_config():
+    config = {"a": 1, "b": {"c": True}}
+
+    assert preprocessor._hash_config(config) == preprocessor._hash_config({"b": {"c": True}, "a": 1})
+
+
+def test_cache_path_changes_when_config_changes(tmp_path, monkeypatch):
+    input_path = tmp_path / "sample.wav"
+    input_path.write_bytes(b"input")
+    monkeypatch.setattr(preprocessor, "TEMP_DIR", str(tmp_path))
+
+    default_path = preprocessor._cache_path(input_path, "Default (fair audio)", preprocessor.DEFAULT_CONFIG)
+    aggressive_path = preprocessor._cache_path(input_path, "Aggressive (noisy/poor audio)", preprocessor.AGGRESSIVE_CONFIG)
+
+    assert default_path != aggressive_path
+
+
+def test_cache_path_changes_when_effective_setting_changes(tmp_path, monkeypatch):
+    input_path = tmp_path / "sample.wav"
+    input_path.write_bytes(b"input")
+    monkeypatch.setattr(preprocessor, "TEMP_DIR", str(tmp_path))
+
+    modified_config = dict(preprocessor.DEFAULT_CONFIG)
+    modified_config["highpass_freq"] = 120
+
+    original = preprocessor._cache_path(input_path, "Default (fair audio)", preprocessor.DEFAULT_CONFIG)
+    changed = preprocessor._cache_path(input_path, "Default (fair audio)", modified_config)
+
+    assert original != changed

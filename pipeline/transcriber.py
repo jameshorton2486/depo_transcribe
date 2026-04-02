@@ -5,7 +5,7 @@ Sends audio chunks to Deepgram and returns structured word/utterance data.
 
 Supported models: nova-3, nova-3-medical
 
-All requests use direct HTTP via httpx, with or without keyterms.
+All requests use direct HTTP via httpx.
 """
 
 import os
@@ -20,7 +20,6 @@ from config import (
     DEEPGRAM_READ_TIMEOUT,
     DEEPGRAM_WRITE_TIMEOUT,
 )
-from core.keyterm_extractor import MAX_KEYTERMS
 from core.transcript_merger import merge_utterances
 
 logger = get_logger(__name__)
@@ -40,7 +39,7 @@ def _transcribe_direct(
 ) -> dict:
     """
     Direct HTTP POST to Deepgram API.
-    Used for every transcription request, with or without keyterms.
+    Used for every transcription request.
     """
     import urllib.parse as _parse
 
@@ -48,38 +47,34 @@ def _transcribe_direct(
     if not api_key:
         raise ValueError("DEEPGRAM_API_KEY is not set.")
 
-    keyterms = list(keyterms or [])[:MAX_KEYTERMS]
-    logger.info(
-        "[Transcriber] Keyterm breakdown  total=%d sending=%d",
-        len(keyterms or []),
-        min(len(keyterms or []), 100),
-    )
-
-    # smart_format intentionally omitted — it overrides filler_words on Nova-3
+    # Legal transcript constraints:
+    # - filler_words must stay on for verbatim compliance
+    # - smart_format stays off to avoid Deepgram rewriting dates/currency/etc.
+    # - numerals stays off because spec_engine owns number normalization
+    # - utt_split is the correct pre-recorded utterance control for Nova-3
+    # - keyterms are intentionally disabled for deterministic behavior
     params = {
         "model": model,
         "language": "en",
         "punctuate": "true",
-        "paragraphs": "false",
+        "paragraphs": "true",
         "diarize": "true",
         "utterances": "true",
         "filler_words": "true",
-        "numerals": "true",
+        "smart_format": "false",
+        "numerals": "false",
         "dictation": "false",
         "profanity_filter": "false",
         "utt_split": str(utt_split),
     }
     query = _parse.urlencode(params)
-    if keyterms:
-        for kt in keyterms:
-            query += "&keyterm=" + _parse.quote(str(kt), safe="")
 
     url = f"https://api.deepgram.com/v1/listen?{query}"
     chunk_name = os.path.basename(audio_file_path)
 
     logger.info(
-        "Deepgram direct HTTP call chunk=%s model=%s keyterms=%s",
-        chunk_name, model, len(keyterms or []),
+        "Deepgram direct HTTP call chunk=%s model=%s",
+        chunk_name, model,
     )
 
     if progress_callback:
@@ -216,14 +211,10 @@ def transcribe_chunk(
             f"Use one of: {sorted(ALLOWED_MODELS)}"
         )
 
-    logger.info(
-        "Sending %s keyterms to Deepgram (direct path): %s",
-        len(keyterms or []), list(keyterms or [])[:10],
-    )
     return _transcribe_direct(
         audio_file_path,
         model=model,
         utt_split=utt_split,
-        keyterms=keyterms,
+        keyterms=None,
         progress_callback=progress_callback,
     )
