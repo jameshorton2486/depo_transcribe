@@ -897,10 +897,10 @@ class TranscribeTab(ctk.CTkFrame):
         split_hdr = ctk.CTkFrame(split_inner, fg_color="transparent")
         split_hdr.pack(fill="x")
         ctk.CTkLabel(split_hdr, text="Utterance Split", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
-        self._utt_split_var = ctk.DoubleVar(value=1.2)
+        self._utt_split_var = ctk.DoubleVar(value=0.8)
         self._utt_split_label = ctk.CTkLabel(
             split_hdr,
-            text="1.20",
+            text="0.80",
             font=ctk.CTkFont(size=13),
             text_color="gray",
         )
@@ -1180,8 +1180,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_transcript_path = None
         self._model_var.set("nova-3")
         self._quality_var.set("Auto-detect (recommended)")
-        self._utt_split_var.set(1.2)
-        self._utt_split_label.configure(text="1.20")
+        self._utt_split_var.set(0.8)
+        self._utt_split_label.configure(text="0.80")
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",

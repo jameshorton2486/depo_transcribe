@@ -33,7 +33,7 @@ ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 def _transcribe_direct(
     audio_file_path: str,
     model: str = "nova-3",
-    utt_split: float = 1.2,
+    utt_split: float = 0.8,
     keyterms: list = None,
     progress_callback=None,
 ) -> dict:
@@ -185,7 +185,7 @@ def _transcribe_direct(
 def transcribe_chunk(
     audio_file_path: str,
     model: str = "nova-3",
-    utt_split: float = 1.2,
+    utt_split: float = 0.8,
     keyterms: list = None,
     progress_callback=None,
 ) -> Dict[str, Any]:
