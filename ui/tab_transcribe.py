@@ -1216,6 +1216,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._extracted_case_data = {}
         self._current_case_path = None
         self._last_transcript_path = None
+        self._utt_split_var.set(1.2)
+        self._utt_split_label.configure(text="1.20")
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",
@@ -1285,6 +1287,7 @@ class TranscribeTab(ctk.CTkFrame):
         existing_config = load_job_config(base_path)
         if existing_config and not self._pdf_already_loaded:
             terms = existing_config.get("deepgram_keyterms", [])
+            utt_split = existing_config.get("utt_split")
             if terms:
                 logger.info("[AutoDetect] Found existing job_config.json — reloading %d keyterms", len(terms))
                 self._keyterms_box.configure(state="normal")
@@ -1295,6 +1298,9 @@ class TranscribeTab(ctk.CTkFrame):
 
             self._confirmed_spellings = existing_config.get("confirmed_spellings", {})
             ufm = existing_config.get("ufm_fields", {})
+            if isinstance(utt_split, (int, float)):
+                self._utt_split_var.set(float(utt_split))
+                self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
             if ufm.get("cause_number") and not self._cause_var.get().strip():
                 self._cause_var.set(ufm["cause_number"])
             if not self._date_var.get().strip() and ufm.get("depo_date"):
@@ -1602,6 +1608,10 @@ class TranscribeTab(ctk.CTkFrame):
         from core.job_config_manager import load_job_config
         job_config_data = load_job_config(folder)
         terms = job_config_data.get("deepgram_keyterms", [])
+        utt_split = job_config_data.get("utt_split")
+        if isinstance(utt_split, (int, float)):
+            self._utt_split_var.set(float(utt_split))
+            self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
         if terms:
             self._current_keyterms = terms
             self._update_keyterms_display(terms)
@@ -1664,6 +1674,10 @@ class TranscribeTab(ctk.CTkFrame):
             from core.job_config_manager import load_job_config
             job_config_data = load_job_config(case_folder)
             ufm_fields_data = job_config_data.get("ufm_fields", {})
+            utt_split = job_config_data.get("utt_split")
+            if isinstance(utt_split, (int, float)):
+                self._utt_split_var.set(float(utt_split))
+                self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
             if not ufm_fields_data:
                 logger.info("[LoadCase] No ufm_fields in job_config.json — UFM review disabled")
         except Exception as exc:
