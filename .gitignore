@@ -17,3 +17,7 @@ work_files/transcripts/
 .claude/
 *.bak
 tmp_app_window*.png
+
+.pytest_tmp*/
+.pytest_tmp_*/
+
