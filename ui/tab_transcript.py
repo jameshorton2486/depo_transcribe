@@ -30,9 +30,13 @@ class TranscriptTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color="transparent")
         self._current_path: str | None = None
+        self._corrected_path: str | None = None
         self._current_folder_path: str | None = None
         self._audio_path: str | None = None
         self._review_docx_path: str | None = None
+        self._formatted_docx_path: str | None = None
+        self._original_text: str | None = None
+        self._processed_text: str | None = None
         self._canonical_text: str = ""
         self._word_map: list[dict] = []
         self._sync_timer_id: str | None = None
@@ -56,10 +60,29 @@ class TranscriptTab(ctk.CTkFrame):
         self._word_data_request_id = 0
         self._low_confidence_words: list[dict] = []
         self._ai_running = False
+        self._format_running = False
 
         self._highlight_var = ctk.BooleanVar(value=True)
         self._build_ui()
         self._init_player()
+
+    def _active_transcript_path(self) -> str | None:
+        if self._corrected_path and os.path.isfile(self._corrected_path):
+            return self._corrected_path
+        return self._current_path
+
+    def _save_target_path(self) -> str | None:
+        return self._active_transcript_path()
+
+    def _update_path_label(self) -> None:
+        if self._corrected_path:
+            self._path_label.configure(
+                text=f"Loaded: {self._current_path}  |  Showing processed copy: {self._corrected_path}",
+                text_color="gray",
+            )
+            return
+        if self._current_path:
+            self._path_label.configure(text=f"Loaded: {self._current_path}", text_color="gray")
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -89,6 +112,17 @@ class TranscriptTab(ctk.CTkFrame):
             command=self._run_corrections_pipeline,
         )
         self._run_corrections_btn.pack(side="right", padx=(4, 0))
+
+        self._format_btn = ctk.CTkButton(
+            header,
+            text="Format Transcript",
+            width=145,
+            fg_color="#0F5A6A",
+            hover_color="#0A3A4A",
+            state="disabled",
+            command=self._start_format_transcript,
+        )
+        self._format_btn.pack(side="right", padx=(4, 0))
 
         self._fnr_toggle_btn = ctk.CTkButton(
             header,
@@ -570,6 +604,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._copy_btn.configure(state="disabled")
         self._save_btn.configure(state="disabled")
         self._run_corrections_btn.configure(state="disabled")
+        self._format_btn.configure(state="disabled")
         self._path_label.configure(text="Processing…", text_color="gray")
 
     def set_transcription_complete(self, transcript_path: str, folder_path: str):
@@ -592,6 +627,7 @@ class TranscriptTab(ctk.CTkFrame):
         try:
             content = self._read_transcript(filepath)
             self._current_path = filepath
+            self._corrected_path = None
             self._review_docx_path = None
             self.review_state = {}
             self._current_review_idx = -1
@@ -599,15 +635,18 @@ class TranscriptTab(ctk.CTkFrame):
             self._textbox.configure(state="normal")
             self._textbox.delete("1.0", "end")
             self._textbox.insert("1.0", content)
+            self._original_text = content
+            self._processed_text = None
             self._canonical_text = content
             self._textbox.edit_modified(False)
             self._textbox._textbox.edit_modified(False)
             self._textbox._textbox.edit_reset()
             self._edit_mode = False
-            self._path_label.configure(text=f"Loaded: {filepath}", text_color="gray")
+            self._update_path_label()
             self._copy_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
             self._run_corrections_btn.configure(state="normal")
+            self._format_btn.configure(state="normal")
             self.set_status(
                 "Loaded — type to edit · click to seek audio · double-click to correct a word · Ctrl+Z to undo.",
                 "gray",
@@ -709,7 +748,7 @@ class TranscriptTab(ctk.CTkFrame):
         self.append_log(f"Loaded {len(self._low_confidence_words)} low-confidence words")
 
     def _on_word_data_loaded(self, request_id: int, filepath: str, words: list[dict]):
-        if request_id != self._word_data_request_id or filepath != self._current_path:
+        if request_id != self._word_data_request_id or filepath != self._active_transcript_path():
             return
         self._restore_review_state(words)
         self._words = words
@@ -1887,9 +1926,10 @@ class TranscriptTab(ctk.CTkFrame):
         return f"{total // 60:02d}:{total % 60:02d}"
 
     def _open_transcript_file(self):
-        if self._current_path and os.path.isfile(self._current_path):
+        active_path = self._active_transcript_path()
+        if active_path and os.path.isfile(active_path):
             try:
-                os.startfile(self._current_path)
+                os.startfile(active_path)
                 return
             except OSError:
                 pass
@@ -1909,11 +1949,12 @@ class TranscriptTab(ctk.CTkFrame):
             self.after(2000, lambda: self._copy_btn.configure(text=" Copy All"))
 
     def _save_transcript(self):
-        if not self._current_path:
+        save_path = self._save_target_path()
+        if not save_path:
             return
         try:
             content = self._canonical_text or self._textbox.get("1.0", "end")
-            with open(self._current_path, "w", encoding="utf-8") as fh:
+            with open(save_path, "w", encoding="utf-8") as fh:
                 fh.write(content)
             self._save_btn.configure(text="Saved")
             self.after(2000, lambda: self._save_btn.configure(text=" Save"))
@@ -1921,7 +1962,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._path_label.configure(text=f"Save failed: {exc}", text_color="#CC4444")
 
     def _export_review_docx(self):
-        if not self._current_path or not os.path.isfile(self._current_path):
+        active_path = self._active_transcript_path()
+        if not active_path or not os.path.isfile(active_path):
             messagebox.showerror(
                 "No transcript",
                 "Load a transcript before exporting a confidence review.",
@@ -1937,7 +1979,7 @@ class TranscriptTab(ctk.CTkFrame):
         def worker():
             try:
                 path = export_confidence_docx(
-                    self._current_path,
+                    active_path,
                     self._words,
                     progress_callback=_safe_log,
                 )
@@ -1961,6 +2003,137 @@ class TranscriptTab(ctk.CTkFrame):
         if self._review_docx_path and os.path.isfile(self._review_docx_path):
             os.startfile(self._review_docx_path)
 
+    def _set_format_processing_state(self, is_processing: bool) -> None:
+        self._format_running = is_processing
+        if is_processing:
+            self._format_btn.configure(state="disabled", text="Formatting…")
+            self._run_corrections_btn.configure(state="disabled")
+        else:
+            self._format_btn.configure(
+                state="normal" if self._current_path else "disabled",
+                text="Format Transcript",
+            )
+            self._run_corrections_btn.configure(
+                state="normal" if self._current_path else "disabled",
+                text="⚙ Run Corrections",
+            )
+
+    def _start_format_transcript(self) -> None:
+        if self._format_running:
+            return
+        active_path = self._active_transcript_path()
+        if not active_path or not os.path.isfile(active_path):
+            messagebox.showerror("No transcript", "Load a transcript before formatting.")
+            return
+        if not active_path.lower().endswith(".txt"):
+            messagebox.showerror("Unsupported Source", "Format Transcript requires a .txt transcript.")
+            return
+
+        self._set_format_processing_state(True)
+        self.append_log("Starting formatting pipeline...")
+        self.set_status("Starting formatting pipeline...", "#4499FF")
+
+        threading.Thread(target=self._run_format_pipeline, daemon=True).start()
+
+    def _run_format_pipeline(self) -> None:
+        try:
+            from config import ANTHROPIC_API_KEY
+            from core.correction_runner import (
+                _build_job_config_from_ufm,
+                _load_job_config_for_transcript,
+                run_correction_job,
+            )
+            from core.docx_formatter import format_transcript_to_docx
+            from spec_engine.ai_corrector import run_ai_correction
+
+            source = self._active_transcript_path() or ""
+            job_config_data = _load_job_config_for_transcript(source)
+            ufm = job_config_data.get("ufm_fields", {}) if isinstance(job_config_data, dict) else {}
+            if not ufm.get("speaker_map_verified"):
+                raise ValueError("Speaker mapping must be verified before formatting.")
+
+            self.after(0, self.append_log, "Applying corrections...")
+            correction_result: dict = {}
+
+            def _capture_done(result: dict) -> None:
+                correction_result.update(result)
+
+            run_correction_job(
+                source,
+                progress_callback=lambda msg: self.after(0, self.append_log, msg),
+                done_callback=_capture_done,
+            )
+
+            if not correction_result.get("success"):
+                raise RuntimeError(correction_result.get("error", "Correction pipeline failed"))
+
+            corrected_path = correction_result.get("corrected_path") or source
+            final_text = correction_result.get("corrected_text", "")
+
+            if ANTHROPIC_API_KEY.strip():
+                self.after(0, self.append_log, "Running AI review...")
+                job_config = _build_job_config_from_ufm(job_config_data) if job_config_data else {}
+                final_text = run_ai_correction(
+                    transcript_text=final_text,
+                    job_config=job_config or {},
+                    progress_callback=lambda msg: self.after(0, self.append_log, msg),
+                )
+                with open(corrected_path, "w", encoding="utf-8") as fh:
+                    fh.write(final_text)
+            else:
+                self.after(0, self.append_log, "AI review skipped — ANTHROPIC_API_KEY not set.")
+
+            self.after(0, self.append_log, "Formatting document...")
+            output_path = format_transcript_to_docx(
+                corrected_path,
+                progress_callback=lambda msg: self.after(0, self.append_log, msg),
+            )
+
+            self.after(0, self._on_format_done, corrected_path, final_text, output_path, None)
+        except Exception as exc:
+            self.after(0, self._on_format_done, None, None, None, str(exc))
+
+    def _on_format_done(
+        self,
+        corrected_path: str | None,
+        final_text: str | None,
+        output_path: str | None,
+        error: str | None,
+    ) -> None:
+        self._set_format_processing_state(False)
+
+        if error:
+            self.set_status(f"Formatting failed: {error[:80]}", "#CC4444")
+            self.append_log(f"ERROR: {error}")
+            messagebox.showerror("Format Transcript Failed", error)
+            return
+
+        if corrected_path and final_text is not None:
+            if self._original_text is None:
+                self._original_text = self._canonical_text or self._textbox.get("1.0", "end-1c")
+            self._corrected_path = corrected_path
+            self._processed_text = final_text
+            self._formatted_docx_path = output_path
+            self._update_path_label()
+            try:
+                cursor_pos = self._textbox._textbox.index("insert")
+            except Exception:
+                cursor_pos = "1.0"
+            self._apply_text_update(self._processed_text)
+            try:
+                self._textbox._textbox.mark_set("insert", cursor_pos)
+                self._textbox._textbox.see(cursor_pos)
+            except Exception:
+                pass
+            self._load_low_confidence_words(corrected_path)
+            self._load_word_data(corrected_path)
+
+        self.append_log("Formatting complete")
+        if output_path:
+            self.append_log(f"Formatted DOCX: {os.path.basename(output_path)}")
+            self.set_status("Transcript formatted successfully", "#44FF44")
+            messagebox.showinfo("Format Complete", f"Transcript formatted:\n{output_path}")
+
     def _run_corrections_pipeline(self) -> None:
         """Run deterministic corrections, then AI correction when configured.
 
@@ -1968,7 +2141,8 @@ class TranscriptTab(ctk.CTkFrame):
         applied directly into the textbox via _apply_text_update() so that
         confidence highlighting and word-map sync stay intact.
         """
-        if not self._current_path:
+        source = self._active_transcript_path()
+        if not source:
             return
 
         self._run_corrections_btn.configure(state="disabled", text="Correcting…")
@@ -1980,7 +2154,7 @@ class TranscriptTab(ctk.CTkFrame):
         def worker():
             from core.correction_runner import run_correction_job
             run_correction_job(
-                self._current_path,
+                source,
                 progress_callback=lambda msg: self.after(0, self.append_log, msg),
                 done_callback=lambda result: self.after(0, self._on_corrections_done, result),
             )
@@ -2008,19 +2182,20 @@ class TranscriptTab(ctk.CTkFrame):
             cursor_pos = self._textbox._textbox.index("insert")
         except Exception:
             cursor_pos = "1.0"
-        self._apply_text_update(corrected_text)
+        if self._original_text is None:
+            self._original_text = self._canonical_text or self._textbox.get("1.0", "end-1c")
+        self._processed_text = corrected_text
+        self._apply_text_update(self._processed_text)
         try:
             self._textbox._textbox.mark_set("insert", cursor_pos)
             self._textbox._textbox.see(cursor_pos)
         except Exception:
             pass
 
-        # Point the current path at the written _corrected.txt file so that
-        # Save and subsequent operations target the corrected version.
         corrected_path = result.get("corrected_path")
         if corrected_path:
-            self._current_path = corrected_path
-            self._path_label.configure(text=f"Loaded: {corrected_path}", text_color="gray")
+            self._corrected_path = corrected_path
+            self._update_path_label()
             self._load_word_data(corrected_path)
 
         count = result.get("correction_count", 0)
@@ -2078,7 +2253,7 @@ class TranscriptTab(ctk.CTkFrame):
                 _load_job_config_for_transcript,
             )
 
-            source = self._current_path or ""
+            source = self._active_transcript_path() or ""
             job_config_data = _load_job_config_for_transcript(source)
             job_config = _build_job_config_from_ufm(job_config_data) if job_config_data else None
         except Exception:
@@ -2105,16 +2280,18 @@ class TranscriptTab(ctk.CTkFrame):
             except Exception:
                 cursor_pos = "1.0"
             self._apply_text_update(result_text)
+            self._processed_text = result_text
             try:
                 self._textbox._textbox.mark_set("insert", cursor_pos)
                 self._textbox._textbox.see(cursor_pos)
             except Exception:
                 pass
 
-            if self._current_path:
-                with open(self._current_path, "w", encoding="utf-8") as fh:
+            save_path = self._save_target_path()
+            if save_path:
+                with open(save_path, "w", encoding="utf-8") as fh:
                     fh.write(result_text)
-                self._load_word_data(self._current_path)
+                self._load_word_data(save_path)
 
             self.set_status("✓ AI correction complete — transcript updated.", "#44FF44")
             self.append_log("AI correction applied to transcript viewer.")
@@ -2145,6 +2322,8 @@ class TranscriptTab(ctk.CTkFrame):
             start_char, end_char = self._find_changed_range(self._canonical_text, updated_text)
             self._mark_reviewed_range(start_char, end_char, "corrected")
         self._canonical_text = updated_text
+        if self._processed_text is not None and self._corrected_path:
+            self._processed_text = updated_text
         self._apply_confidence_highlights()
         self._update_confidence_summary()
         # Debounce word map rebuild: wait 800ms after the user stops typing,

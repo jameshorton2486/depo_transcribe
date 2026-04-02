@@ -1,7 +1,7 @@
 """
 ui/tab_transcribe.py
 
-Main transcription UI — file picker, settings, case info, and keyterms.
+Main transcription UI — file picker, settings, and case info intake.
 Includes IntakeReviewDialog for reviewing/editing AI-extracted case data.
 """
 
@@ -16,11 +16,6 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app_logging import get_logger
-from core.keyterm_extractor import (
-    MAX_KEYTERMS,
-    extract_keyterms_from_text,
-    merge_keyterms,
-)
 
 logger = get_logger(__name__)
 _DEFAULT_BUTTON_COLOR = ["#3B8ED0", "#1F6AA5"]
@@ -690,9 +685,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._extracted_case_data: dict = {}
         self._ufm_fields: dict = {}
         self._reporter_notes_text: str = ""
-        self._current_keyterms: list[str] | None = None
         self._confirmed_spellings: dict = {}
-        self._last_intake_result = None
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
         self._correction_mode: bool = False
@@ -1005,11 +998,11 @@ class TranscribeTab(ctk.CTkFrame):
         self._path_preview_label.pack(anchor="w", padx=8, pady=(2, 6))
         self._update_path_preview()
 
-        # ── 5. Keyterms ───────────────────────────────────────────────────────
-        keyterms_card = ctk.CTkFrame(container)
-        keyterms_card.pack(fill="x", pady=(0, 3))
+        # ── 5. Source Documents / Output ─────────────────────────────────────
+        source_docs_card = ctk.CTkFrame(container)
+        source_docs_card.pack(fill="x", pady=(0, 3))
 
-        kt_inner = ctk.CTkFrame(keyterms_card, fg_color="transparent")
+        kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
         kt_inner.pack(fill="x", padx=8, pady=(3, 3))
 
         # ── 5a. Source documents sub-section ─────────────────────────────────
@@ -1039,14 +1032,6 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._upload_reporter_notes_btn.pack(side="left")
 
-        self._keyterms_count_label = ctk.CTkLabel(
-            src_btn_row,
-            text=f"0/{MAX_KEYTERMS} keyterms",
-            font=ctk.CTkFont(size=13),
-            text_color="gray",
-        )
-        self._keyterms_count_label.pack(side="left", padx=(14, 0))
-
         self._rescan_btn = ctk.CTkButton(
             src_btn_row,
             text="\U0001f504 Re-Scan",
@@ -1058,7 +1043,7 @@ class TranscribeTab(ctk.CTkFrame):
         # Extraction status label (shown after PDF upload or scan)
         self._extract_status_label = ctk.CTkLabel(
             kt_inner,
-            text="No documents loaded \u2014 upload an NOD PDF or reporter notes to extract keyterms.",
+            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
             font=ctk.CTkFont(size=13),
             text_color="gray",
             wraplength=820,
@@ -1066,37 +1051,16 @@ class TranscribeTab(ctk.CTkFrame):
             justify="left",
         )
         self._extract_status_label.pack(anchor="w", pady=(2, 0))
-
-        # Divider between source docs and keyterms list
-        ctk.CTkFrame(kt_inner, height=1, fg_color="#252535").pack(
-            fill="x", pady=(4, 3)
-        )
-
-        # ── 5b. Extracted keyterms sub-section ───────────────────────────────
-        kt_hdr = ctk.CTkFrame(kt_inner, fg_color="transparent")
-        kt_hdr.pack(fill="x", pady=(0, 4))
-
-        ctk.CTkLabel(
-            kt_hdr,
-            text="Extracted Keyterms",
-            font=ctk.CTkFont(size=13, weight="bold"),
-        ).pack(side="left")
-
         self._review_btn = ctk.CTkButton(
-            kt_hdr,
+            kt_inner,
             text="\U0001f4cb Review & Edit",
             width=135,
             state="disabled",
             command=self._open_review_dialog,
         )
-        self._review_btn.pack(side="right")
+        self._review_btn.pack(anchor="e", pady=(4, 4))
 
-        self._keyterms_box = ctk.CTkTextbox(kt_inner, height=44)
-        self._keyterms_box.pack(fill="x", pady=(0, 4))
-        self._keyterms_box.insert("1.0", "")
-        self._keyterms_box.configure(state="disabled")
-
-        # ── 5c. Output action buttons ─────────────────────────────────────────
+        # ── 5b. Output action buttons ────────────────────────────────────────
         output_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
         output_row.pack(fill="x")
 
@@ -1210,12 +1174,12 @@ class TranscribeTab(ctk.CTkFrame):
         """Reset auto-detected case data when switching to a new case."""
         self._pdf_already_loaded = False
         self._reporter_notes_text = ""
-        self._current_keyterms = None
         self._confirmed_spellings = {}
-        self._last_intake_result = None
         self._extracted_case_data = {}
         self._current_case_path = None
         self._last_transcript_path = None
+        self._model_var.set("nova-3")
+        self._quality_var.set("Auto-detect (recommended)")
         self._utt_split_var.set(1.2)
         self._utt_split_label.configure(text="1.20")
         self._review_btn.configure(state="disabled")
@@ -1235,10 +1199,32 @@ class TranscribeTab(ctk.CTkFrame):
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
         self._extract_status_label.configure(
-            text="No documents loaded — upload an NOD PDF or reporter notes to extract keyterms.",
+            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
             text_color="gray",
         )
-        self._update_keyterms_count()
+
+    def _apply_saved_transcription_settings(self, config_data: dict | None):
+        """Restore persisted transcription settings from job_config.json."""
+        if not isinstance(config_data, dict):
+            return
+
+        model = config_data.get("model")
+        if model in {"nova-3", "nova-3-medical"}:
+            self._model_var.set(model)
+
+        audio_quality = config_data.get("audio_quality")
+        if audio_quality in {
+            "Auto-detect (recommended)",
+            "Clean (good/excellent audio)",
+            "Default (fair audio)",
+            "Aggressive (noisy/poor audio)",
+        }:
+            self._quality_var.set(audio_quality)
+
+        utt_split = config_data.get("utt_split")
+        if isinstance(utt_split, (int, float)):
+            self._utt_split_var.set(float(utt_split))
+            self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
         if hasattr(self, "_load_meta_frame"):
             self._load_meta_frame.pack_forget()
         if hasattr(self, "_load_action_frame"):
@@ -1269,7 +1255,6 @@ class TranscribeTab(ctk.CTkFrame):
             text="Rescanning for source documents\u2026",
             text_color="gray",
         )
-        self._update_keyterms_count()
         self._auto_detect_source_docs()
 
     def _auto_detect_source_docs(self):
@@ -1286,21 +1271,9 @@ class TranscribeTab(ctk.CTkFrame):
 
         existing_config = load_job_config(base_path)
         if existing_config and not self._pdf_already_loaded:
-            terms = existing_config.get("deepgram_keyterms", [])
-            utt_split = existing_config.get("utt_split")
-            if terms:
-                logger.info("[AutoDetect] Found existing job_config.json — reloading %d keyterms", len(terms))
-                self._keyterms_box.configure(state="normal")
-                self._keyterms_box.delete("1.0", "end")
-                self._keyterms_box.insert("1.0", "\n".join(terms))
-                self._keyterms_box.configure(state="disabled")
-                self._current_keyterms = list(terms)
-
+            self._apply_saved_transcription_settings(existing_config)
             self._confirmed_spellings = existing_config.get("confirmed_spellings", {})
             ufm = existing_config.get("ufm_fields", {})
-            if isinstance(utt_split, (int, float)):
-                self._utt_split_var.set(float(utt_split))
-                self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
             if ufm.get("cause_number") and not self._cause_var.get().strip():
                 self._cause_var.set(ufm["cause_number"])
             if not self._date_var.get().strip() and ufm.get("depo_date"):
@@ -1308,12 +1281,11 @@ class TranscribeTab(ctk.CTkFrame):
 
             self._extract_status_label.configure(
                 text=(
-                    f"Reloaded {len(terms)}/100 keyterms from job_config.json  "
-                    f"({len(self._confirmed_spellings)} spellings)"
+                    f"Reloaded case settings from job_config.json"
+                    + (f"  ({len(self._confirmed_spellings)} spellings)" if self._confirmed_spellings else "")
                 ),
                 text_color="#44AA66",
             )
-            self._update_keyterms_count()
             self._pdf_already_loaded = True
 
         if not self._pdf_already_loaded:
@@ -1339,21 +1311,6 @@ class TranscribeTab(ctk.CTkFrame):
                     logger.warning("[Auto-Detect] Could not read reporter notes: %s", exc)
             else:
                 logger.info("[Auto-Detect] No reporter notes found in source_docs.")
-
-    def _update_keyterms_count(self):
-        raw = self._keyterms_box.get("1.0", "end").strip()
-        count = len([line for line in raw.splitlines() if line.strip()])
-        suffix = " + notes" if self._reporter_notes_text.strip() else ""
-        self._keyterms_count_label.configure(text=f"{count}/{MAX_KEYTERMS}{suffix}")
-
-    def _append_keyterms(self, terms: list[str]):
-        self._keyterms_box.configure(state="normal")
-        existing = self._keyterms_box.get("1.0", "end").strip()
-        if existing:
-            self._keyterms_box.insert("end", "\n")
-        self._keyterms_box.insert("end", "\n".join(terms))
-        self._keyterms_box.configure(state="disabled")
-        self._update_keyterms_count()
 
     def _build_case_data_from_ufm_fields(self, ufm_fields: dict, witness_fallback: str = "") -> dict:
         """Convert flat saved UFM fields back into the intake-shaped data the review dialog expects."""
@@ -1507,14 +1464,6 @@ class TranscribeTab(ctk.CTkFrame):
             app.transcript_tab.load_transcript(self._last_transcript_path)
             app.tab_view.set("Transcript")
 
-    def _update_keyterms_display(self, terms: list[str]):
-        """Render a restored keyterm list into the textbox."""
-        self._keyterms_box.configure(state="normal")
-        self._keyterms_box.delete("1.0", "end")
-        if terms:
-            self._keyterms_box.insert("1.0", "\n".join(terms))
-        self._keyterms_box.configure(state="disabled")
-
     # ── Load Existing Transcript ─────────────────────────────────────────────────
 
     def _browse_existing_transcript(self):
@@ -1525,7 +1474,6 @@ class TranscribeTab(ctk.CTkFrame):
           {base}\\{YYYY}\\{Mon}\\{CauseNumber}\\{last_first}\\   ← SELECT THIS
               Deepgram\\       ← transcripts (.txt) live here
               source_docs\\    ← NOD PDFs live here
-              keyterms.json
 
         After selecting the folder, automatically finds the most recently
         modified .txt transcript in the Deepgram\\ subfolder and loads it
@@ -1549,7 +1497,6 @@ class TranscribeTab(ctk.CTkFrame):
         Discovery order:
           1. Find the most recent .txt in Deepgram\\  → pass to _load_existing_case()
           2. Find any PDFs in source_docs\\           → trigger PDF intake
-          3. Load keyterms.json if present           → restore keyterms
 
         Shows an error dialog if no Deepgram\\ subfolder or no .txt exists.
         """
@@ -1604,32 +1551,10 @@ class TranscribeTab(ctk.CTkFrame):
                 except Exception as exc:
                     logger.warning("[LoadProject] PDF load failed: %s", exc)
 
-        # ── 4. Restore keyterms from job_config.json ──────────────────────────
+        # ── 4. Restore saved transcription settings ───────────────────────────
         from core.job_config_manager import load_job_config
         job_config_data = load_job_config(folder)
-        terms = job_config_data.get("deepgram_keyterms", [])
-        utt_split = job_config_data.get("utt_split")
-        if isinstance(utt_split, (int, float)):
-            self._utt_split_var.set(float(utt_split))
-            self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
-        if terms:
-            self._current_keyterms = terms
-            self._update_keyterms_display(terms)
-            self._update_keyterms_count()
-            logger.info("[LoadProject] Restored %d keyterms from job_config.json", len(terms))
-        elif os.path.isfile(os.path.join(folder, "keyterms.json")):
-            # Legacy fallback — read keyterms.json if job_config.json has none
-            try:
-                with open(os.path.join(folder, "keyterms.json"), "r", encoding="utf-8") as fh:
-                    kt_data = json.load(fh)
-                terms = kt_data.get("keyterms") or kt_data.get("final_keyterms") or kt_data.get("terms") or []
-                if terms:
-                    self._current_keyterms = terms
-                    self._update_keyterms_display(terms)
-                    self._update_keyterms_count()
-                    logger.info("[LoadProject] Restored %d keyterms from legacy keyterms.json", len(terms))
-            except Exception as exc:
-                logger.warning("[LoadProject] Legacy keyterms.json load failed: %s", exc)
+        self._apply_saved_transcription_settings(job_config_data)
 
         # ── 5. Update path entry to show folder (not just the .txt file) ──────
         self._load_path_entry.configure(state="normal")
@@ -1670,14 +1595,11 @@ class TranscribeTab(ctk.CTkFrame):
 
         # Load job_config.json from source_docs/ (sibling of Deepgram/)
         case_folder = str(Path(deepgram_dir).parent)
+        job_config_data = {}
         try:
             from core.job_config_manager import load_job_config
             job_config_data = load_job_config(case_folder)
             ufm_fields_data = job_config_data.get("ufm_fields", {})
-            utt_split = job_config_data.get("utt_split")
-            if isinstance(utt_split, (int, float)):
-                self._utt_split_var.set(float(utt_split))
-                self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
             if not ufm_fields_data:
                 logger.info("[LoadCase] No ufm_fields in job_config.json — UFM review disabled")
         except Exception as exc:
@@ -1687,6 +1609,7 @@ class TranscribeTab(ctk.CTkFrame):
             depo_date = ufm_fields_data["depo_date"]
 
         self._reset_case_state()
+        self._apply_saved_transcription_settings(job_config_data)
 
         if cause_number:
             self._cause_var.set(cause_number)
@@ -1781,31 +1704,35 @@ class TranscribeTab(ctk.CTkFrame):
         self.start_transcription()
 
     def _handle_pdf_upload(self, pdf_path: str | None = None, auto_detected: bool = False):
-        """Load one PDF and extract both case fields and keyterms."""
-        filepath = pdf_path or filedialog.askopenfilename(
-            title="Select Deposition PDF",
-            filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")],
-        )
-        if not filepath:
-            return
-
-        self._last_pdf_path = filepath
-        self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
-        self._extract_status_label.configure(text="Extracting case info and keyterms\u2026", text_color="white")
-
-        def _run():
-            from core.pdf_extractor import extract_case_info_from_pdf
-
-            results = extract_case_info_from_pdf(
-                filepath,
-                progress_callback=lambda msg: self.after(0, self._append_transcript_log, msg),
+        """Load one PDF and extract case fields and confirmed spellings."""
+        try:
+            filepath = pdf_path or filedialog.askopenfilename(
+                title="Select Deposition PDF",
+                filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")],
             )
-            self.after(0, self._apply_pdf_results, results, auto_detected)
+            if not filepath:
+                return
 
-        threading.Thread(target=_run, daemon=True).start()
+            self._last_pdf_path = filepath
+            self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
+            self._extract_status_label.configure(text="Extracting case info\u2026", text_color="white")
+
+            def _run():
+                from core.pdf_extractor import extract_case_info_from_pdf
+
+                results = extract_case_info_from_pdf(
+                    filepath,
+                    progress_callback=lambda msg: self.after(0, self._append_transcript_log, msg),
+                )
+                self.after(0, self._apply_pdf_results, results, auto_detected)
+
+            threading.Thread(target=_run, daemon=True).start()
+        except Exception as exc:
+            logger.exception("[TranscribeTab] PDF upload failed")
+            messagebox.showerror("PDF Load Error", str(exc))
 
     def _apply_pdf_results(self, results: dict, auto_detected: bool = False):
-        """Populate fields and keyterms from one PDF extraction result."""
+        """Populate fields and confirmed spellings from one PDF extraction result."""
 
         self._upload_pdf_btn.configure(
             state="normal",
@@ -1888,39 +1815,17 @@ class TranscribeTab(ctk.CTkFrame):
                 "discrepancies": [],
             }
             self._review_btn.configure(state="normal")
-
-        if intake_result and intake_result.all_proper_nouns:
-            from core.keyterm_extractor import merge_from_intake
-
-            self._last_intake_result = intake_result
-            reporter_terms: list[str] = []
-            if self._reporter_notes_text:
-                reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
-
-            final_keyterms, intake_count, reporter_count = merge_from_intake(
-                intake=intake_result,
-                reporter_terms=reporter_terms,
-                limit=MAX_KEYTERMS,
-            )
-            self._current_keyterms = final_keyterms or None
             self._confirmed_spellings = dict(intake_result.confirmed_spellings)
-            self._keyterms_box.configure(state="normal")
-            self._keyterms_box.delete("1.0", "end")
-            self._keyterms_box.insert("1.0", "\n".join(final_keyterms))
-            self._keyterms_box.configure(state="disabled")
-            self._update_keyterms_count()
             self._extract_status_label.configure(
                 text=(
-                    f"Keyterms ready: {len(final_keyterms)}/100  "
-                    f"{intake_count} from PDF"
-                    + (f", {reporter_count} from reporter notes" if reporter_count else "")
+                    f"Case data extracted"
                     + (f"  ({len(self._confirmed_spellings)} spellings)" if self._confirmed_spellings else "")
                 ),
-                text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
+                text_color="#44FF44",
             )
             self._append_transcript_log(
-                f"Prepared {len(final_keyterms)} keyterms from PDF"
-                + (f" + {reporter_count} reporter-note terms" if reporter_count else "")
+                "Case data extracted from PDF"
+                + (f" with {len(self._confirmed_spellings)} confirmed spellings" if self._confirmed_spellings else "")
             )
             if self._current_case_path:
                 self._create_case_folders_now()
@@ -1931,13 +1836,12 @@ class TranscribeTab(ctk.CTkFrame):
                     self._current_case_path,
                     ufm_fields=ufm_fields,
                     confirmed_spellings=dict(intake_result.confirmed_spellings),
-                    deepgram_keyterms=final_keyterms,
                 )
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
 
         sources = [cause_src, witness_src, date_src]
         filled = sum(1 for s in sources if s != "failed")
-        if not (intake_result and intake_result.all_proper_nouns):
+        if not intake_result:
             self._extract_status_label.configure(
                 text=f"Extracted {filled}/3 fields from PDF.",
                 text_color="#44FF44" if filled == 3 else "#CCAA44",
@@ -1956,46 +1860,13 @@ class TranscribeTab(ctk.CTkFrame):
             text=btn_text,
             fg_color="#2A6F3A",
         )
-
-        # Re-merge keyterms if PDF was already processed this session
-        if self._last_intake_result is not None:
-            from core.keyterm_extractor import extract_keyterms_from_text, merge_from_intake
-            from core.job_config_manager import merge_and_save
-
-            reporter_terms = extract_keyterms_from_text(self._reporter_notes_text)
-            final_keyterms, intake_count, reporter_count = merge_from_intake(
-                intake=self._last_intake_result,
-                reporter_terms=reporter_terms,
-                limit=MAX_KEYTERMS,
-            )
-            self._current_keyterms = final_keyterms or None
-            self._keyterms_box.configure(state="normal")
-            self._keyterms_box.delete("1.0", "end")
-            self._keyterms_box.insert("1.0", "\n".join(final_keyterms))
-            self._keyterms_box.configure(state="disabled")
-            self._update_keyterms_count()
-
-            if self._current_case_path:
-                merge_and_save(self._current_case_path, deepgram_keyterms=final_keyterms)
-                logger.info("[ReporterNotes] Merged %d keyterms saved to job_config.json", len(final_keyterms))
-
-            self._extract_status_label.configure(
-                text=(
-                    f"Keyterms updated: {len(final_keyterms)}/100  "
-                    f"{intake_count} from PDF, {reporter_count} from reporter notes"
-                    + (f"  ({len(self._confirmed_spellings)} spellings)" if self._confirmed_spellings else "")
-                ),
-                text_color="#44FF44",
-            )
-        else:
-            self._update_keyterms_count()
-            self._extract_status_label.configure(
-                text=(
-                    f"Reporter notes {'auto-detected' if auto_detected else 'loaded'}: "
-                    f"{os.path.basename(filepath)}"
-                ),
-                text_color="#44FF44",
-            )
+        self._extract_status_label.configure(
+            text=(
+                f"Reporter notes {'auto-detected' if auto_detected else 'loaded'}: "
+                f"{os.path.basename(filepath)}"
+            ),
+            text_color="#44FF44",
+        )
 
         self._append_transcript_log(
             f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {filepath}"
@@ -2018,85 +1889,66 @@ class TranscribeTab(ctk.CTkFrame):
                 text="Load Failed",
                 fg_color="#8B0000",
             )
-            self._update_keyterms_count()
             messagebox.showerror("Reporter Notes Error", str(exc))
 
     # ── Transcription Flow ───────────────────────────────────────────────────
 
     def start_transcription(self):
         """Public entry point called by TranscriptTab."""
+        try:
+            if self._correction_mode:
+                messagebox.showinfo(
+                    "Correction Mode Active",
+                    "A transcript is loaded for correction.\n"
+                    "Click '✕ Clear' in the Load panel to start a new transcription.",
+                )
+                return
 
-        if self._correction_mode:
-            messagebox.showinfo(
-                "Correction Mode Active",
-                "A transcript is loaded for correction.\n"
-                "Click '✕ Clear' in the Load panel to start a new transcription.",
-            )
-            return
+            # Validate file
+            if not self._selected_file or not os.path.isfile(self._selected_file):
+                messagebox.showerror("No file selected", "Please select an audio or video file first.")
+                return
 
-        # Validate file
-        if not self._selected_file or not os.path.isfile(self._selected_file):
-            messagebox.showerror("No file selected", "Please select an audio or video file first.")
-            return
+            if self._model_var.get() not in {"nova-3", "nova-3-medical"}:
+                messagebox.showerror("Model Missing", "Please select a transcription model before continuing.")
+                return
 
-        self._auto_detect_source_docs()
+            self._auto_detect_source_docs()
 
-        # Validate API key
-        from config import DEEPGRAM_API_KEY
+            # Validate API key
+            from config import DEEPGRAM_API_KEY
 
-        if not DEEPGRAM_API_KEY or not DEEPGRAM_API_KEY.strip():
-            messagebox.showerror(
-                "API Key Missing",
-                "DEEPGRAM_API_KEY is not set.\nAdd it to your .env file and restart.",
-            )
-            return
+            if not DEEPGRAM_API_KEY or not DEEPGRAM_API_KEY.strip():
+                messagebox.showerror(
+                    "API Key Missing",
+                    "DEEPGRAM_API_KEY is not set.\nAdd it to your .env file and restart.",
+                )
+                return
 
-        # Build final keyterms from primary textbox terms plus optional reporter notes.
-        raw_kt = self._keyterms_box.get("1.0", "end").strip()
-        raw_pdf_keyterms = [line.strip() for line in raw_kt.splitlines() if line.strip()]
+            self._append_transcript_log("Transcription started")
+            self._append_transcript_log("Processing audio...")
+            self._extract_status_label.configure(text="Transcription started.", text_color="#44FF44")
 
-        raw_reporter_keyterms: list[str] = []
-        if self._reporter_notes_text.strip():
-            raw_reporter_keyterms = extract_keyterms_from_text(self._reporter_notes_text)
-            self._append_transcript_log(
-                f"Extracted {len(raw_reporter_keyterms)} raw reporter-note keyterms"
-            )
+            # Disable button
+            self._running = True
+            transcript_tab = self.winfo_toplevel().transcript_tab
+            self._open_folder_btn.configure(state="disabled")
+            self._open_transcript_btn.configure(state="disabled")
+            self._set_create_buttons(state="disabled", text="Transcribing...")
+            transcript_tab._open_folder_btn.configure(state="disabled")
+            transcript_tab._open_transcript_btn.configure(state="disabled")
+            transcript_tab.set_transcription_running()
 
-        final_keyterms, clean_primary, reporter_fill = merge_keyterms(
-            pdf_terms=raw_pdf_keyterms,
-            reporter_terms=raw_reporter_keyterms,
-            limit=MAX_KEYTERMS,
-        )
-        self._current_keyterms = final_keyterms or None
+            self.winfo_toplevel().tab_view.set("Transcript")
 
-        self._append_transcript_log(
-            f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
-            f"({min(len(clean_primary), MAX_KEYTERMS)} primary, {len(reporter_fill)} reporter)"
-        )
-        self._extract_status_label.configure(
-            text=(
-                f"Keyterms ready: {len(final_keyterms)}/{MAX_KEYTERMS} "
-                f"{min(len(clean_primary), MAX_KEYTERMS)} from PDF/manual"
-                + (f", {len(reporter_fill)} from reporter notes" if raw_reporter_keyterms else "")
-            ),
-            text_color="#44FF44" if len(final_keyterms) >= 10 else "#CCAA44",
-        )
-
-        # Disable button
-        self._running = True
-        transcript_tab = self.winfo_toplevel().transcript_tab
-        self._open_folder_btn.configure(state="disabled")
-        self._open_transcript_btn.configure(state="disabled")
-        self._set_create_buttons(state="disabled", text="Transcribing...")
-        transcript_tab._open_folder_btn.configure(state="disabled")
-        transcript_tab._open_transcript_btn.configure(state="disabled")
-        transcript_tab.set_transcription_running()
-
-        self.winfo_toplevel().tab_view.set("Transcript")
-
-        # Launch background thread
-        thread = threading.Thread(target=self._run_job, daemon=True)
-        thread.start()
+            # Launch background thread
+            thread = threading.Thread(target=self._run_job, daemon=True)
+            thread.start()
+        except Exception as exc:
+            logger.exception("[TranscribeTab] start_transcription failed")
+            self._running = False
+            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            messagebox.showerror("Transcription Error", str(exc))
 
     def _run_job(self):
         from core.job_runner import run_transcription_job
@@ -2113,7 +1965,6 @@ class TranscribeTab(ctk.CTkFrame):
             last_name=self._lastname_var.get(),
             first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
-            keyterms=self._current_keyterms,
             confirmed_spellings=self._confirmed_spellings,
             ufm_fields=self._ufm_fields or None,
             progress_callback=self._on_progress,
@@ -2165,6 +2016,7 @@ class TranscribeTab(ctk.CTkFrame):
             # Enable review button if case data has been extracted
             if self._extracted_case_data:
                 self._review_btn.configure(state="normal")
+            self._append_transcript_log("Transcription complete")
         else:
             error_msg = result.get("error", "Unknown error")
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
