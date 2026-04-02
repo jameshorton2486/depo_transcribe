@@ -1,35 +1,51 @@
 # Golden Transcript Tests
 
-Each golden test is a triplet of files:
+The active golden system uses committed fixture folders under:
 
-| File | Purpose |
-|---|---|
-| `{name}_input.docx` | Deepgram-format DOCX used as pipeline input |
-| `{name}_job_config.json` | Saved JobConfig with `speaker_map_verified=True` |
-| `{name}_expected.txt` | Expected block-by-block output (`BLOCKTYPE: text`) |
+`spec_engine/tests/golden/{case_name}/`
 
-## How to add a new golden test
+Each case folder contains:
 
-1. Run Spec Process on the deposition normally and verify the output is correct.
-2. Copy the source DOCX to `spec_engine/tests/golden/{name}_input.docx`.
-3. Copy the saved job config to `{name}_job_config.json`.
-4. Generate the expected output:
+| File | Required | Purpose |
+|---|---|---|
+| `input.txt` | yes | Raw transcript input in `Speaker N:` format |
+| `job_config.json` | yes | Full saved case config with `ufm_fields.speaker_map_verified=true` |
+| `expected.txt` | yes | Human-verified corrected transcript output |
+| `deepgram.json` | optional | Word-level Deepgram payload used by the correction runner |
+
+## What the golden test locks
+
+For every committed case, the test asserts that:
+
+1. the fixture files are complete and non-empty
+2. `speaker_map_verified` is `true`
+3. the correction pipeline succeeds
+4. `corrected_text` matches `expected.txt`
+5. the written `_corrected.txt` file on disk matches `corrected_text`
+
+This is the regression contract for the legal transcript pipeline.
+
+## How to add a new golden case
+
+1. Run the full correction pipeline on a real case and verify the output manually.
+2. Create a new folder: `spec_engine/tests/golden/{case_name}/`
+3. Copy in:
+   - `input.txt`
+   - `job_config.json`
+   - `expected.txt`
+   - `deepgram.json` if available
+4. Ensure `job_config.json` includes:
+   - `ufm_fields`
+   - `confirmed_spellings` as needed
+   - `ufm_fields.speaker_map_verified = true`
+5. Run:
 
 ```powershell
-.venv\Scripts\python.exe tools\generate_golden_expected.py `
-    spec_engine\tests\golden\{name}_input.docx `
-    spec_engine\tests\golden\{name}_job_config.json `
-    spec_engine\tests\golden\{name}_expected.txt
+.venv\Scripts\python.exe -m pytest spec_engine/tests/test_golden.py -v
 ```
 
-5. Review `{name}_expected.txt`.
-6. Commit all three files together.
+6. Review any diff output carefully before committing.
 
-## First golden test
+## Current committed cases
 
-Suggested first fixture:
-- `coger_input.docx`
-- `coger_job_config.json`
-- `coger_expected.txt`
-
-Until those files exist, the golden test skips automatically.
+- `case_001`

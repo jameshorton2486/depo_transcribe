@@ -1,14 +1,18 @@
 """
 Golden transcript regression tests.
 
-Two test types:
-  1. spec_engine/processor tests  — parse a .docx, run process_blocks(),
-     compare block-level output with expected.txt
-     (original system — files in golden/  named  {case}_input.docx etc.)
+The active golden contract is the correction_runner fixture system:
+  spec_engine/tests/golden/{case_name}/
+      input.txt
+      job_config.json
+      expected.txt
+      deepgram.json   (optional but preferred)
 
-  2. correction_runner tests      — set up a real Deepgram folder structure,
-     run run_correction_job(), compare corrected_text with expected.txt
-     (new system — files in golden/{case_name}/  subfolders)
+Each fixture is a committed, human-verified transcript contract. Tests fail
+loudly if runtime output changes.
+
+The legacy docx-based `test_coger_golden()` entry point is retained so older
+Phase 6 verification checks still import and skip cleanly.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
+REQUIRED_CASE_FILES = ("input.txt", "job_config.json", "expected.txt")
 
 
 # ── Type 1: spec_engine/processor tests (original) ───────────────────────────
@@ -65,6 +70,41 @@ def test_golden_dir_exists():
 
 # ── Type 2: correction_runner integration tests ───────────────────────────────
 
+def _discover_correction_cases() -> list[str]:
+    if not GOLDEN_DIR.exists():
+        return []
+    return sorted(
+        path.name
+        for path in GOLDEN_DIR.iterdir()
+        if path.is_dir() and all((path / filename).exists() for filename in REQUIRED_CASE_FILES)
+    )
+
+
+def _validate_correction_fixture(case_name: str) -> None:
+    case_dir = GOLDEN_DIR / case_name
+    missing = [name for name in REQUIRED_CASE_FILES if not (case_dir / name).exists()]
+    assert not missing, f"Golden case '{case_name}' missing required files: {missing}"
+
+    input_text = (case_dir / "input.txt").read_text(encoding="utf-8").strip()
+    expected_text = (case_dir / "expected.txt").read_text(encoding="utf-8").strip()
+    assert input_text, f"Golden case '{case_name}' has empty input.txt"
+    assert expected_text, f"Golden case '{case_name}' has empty expected.txt"
+
+    job_config = json.loads((case_dir / "job_config.json").read_text(encoding="utf-8"))
+    assert isinstance(job_config, dict), f"Golden case '{case_name}' job_config.json must be an object"
+    ufm = job_config.get("ufm_fields", {})
+    assert isinstance(ufm, dict), f"Golden case '{case_name}' ufm_fields must be an object"
+    assert ufm.get("speaker_map_verified") is True, (
+        f"Golden case '{case_name}' must have speaker_map_verified=true"
+    )
+
+    deepgram_json = case_dir / "deepgram.json"
+    if deepgram_json.exists():
+        payload = json.loads(deepgram_json.read_text(encoding="utf-8"))
+        assert isinstance(payload.get("utterances", []), list), (
+            f"Golden case '{case_name}' deepgram.json must contain an utterances list"
+        )
+
 def _run_correction_golden(case_name: str, tmp_path: Path):
     """
     End-to-end golden test for the correction_runner pipeline.
@@ -78,6 +118,7 @@ def _run_correction_golden(case_name: str, tmp_path: Path):
     On failure, prints a unified diff so the exact regression is visible.
     """
     case_dir = GOLDEN_DIR / case_name
+    _validate_correction_fixture(case_name)
 
     required = [case_dir / "input.txt", case_dir / "job_config.json", case_dir / "expected.txt"]
     if not all(p.exists() for p in required):
@@ -115,6 +156,14 @@ def _run_correction_golden(case_name: str, tmp_path: Path):
 
     actual   = (results.get("corrected_text") or "").strip()
     expected = (case_dir / "expected.txt").read_text(encoding="utf-8").strip()
+    corrected_path = results.get("corrected_path")
+    assert corrected_path and Path(corrected_path).exists(), (
+        f"Correction pipeline did not write corrected_path for '{case_name}'"
+    )
+    written = Path(corrected_path).read_text(encoding="utf-8").strip()
+    assert written == actual, (
+        f"Golden case '{case_name}' returned corrected_text that does not match the written file."
+    )
 
     if actual == expected:
         return  # ✓ PASS
@@ -130,11 +179,15 @@ def _run_correction_golden(case_name: str, tmp_path: Path):
     )
 
 
-@pytest.mark.parametrize("case_name", ["case_001"])
+def test_correction_golden_cases_exist():
+    assert _discover_correction_cases(), (
+        "No committed golden correction cases found in spec_engine/tests/golden/"
+    )
+
+
+@pytest.mark.parametrize("case_name", _discover_correction_cases())
 def test_correction_golden(case_name: str, tmp_path: Path):
     """
-    Parametrized correction_runner golden tests.
-    Add new case names to the list above as cases are committed.
+    Parametrized correction_runner golden tests discovered from fixture folders.
     """
     _run_correction_golden(case_name, tmp_path)
-
