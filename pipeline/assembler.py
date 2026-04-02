@@ -54,6 +54,83 @@ def _attach_speaker_labels(
     return labeled
 
 
+def _build_speaker_remap(
+    prev_utterances: List[Dict],
+    next_utterances: List[Dict],
+    overlap_start: float,
+    offset: float,
+) -> Dict[int, int]:
+    """
+    Map next-chunk speaker IDs onto the already-assembled speaker IDs.
+
+    Uses the overlap window between adjacent chunks to find the most likely
+    speaker correspondence by temporal overlap. Returns an empty dict when
+    no confident mapping can be made, allowing speaker IDs to pass through
+    unchanged for that chunk.
+    """
+    prev_overlap = [
+        u for u in prev_utterances
+        if float(u.get("end", 0.0) or 0.0) >= overlap_start
+    ]
+    next_overlap = [
+        u for u in next_utterances
+        if (float(u.get("start", 0.0) or 0.0) + offset) <= (overlap_start + CHUNK_OVERLAP_SECONDS)
+        and (float(u.get("end", 0.0) or 0.0) + offset) >= overlap_start
+    ]
+
+    if not prev_overlap or not next_overlap:
+        _logger.debug(
+            "[ASSEMBLE] No overlap utterances found for speaker remap (prev=%d next=%d)",
+            len(prev_overlap),
+            len(next_overlap),
+        )
+        return {}
+
+    remap: Dict[int, int] = {}
+    used_global_speakers: set[int] = set()
+
+    for next_utt in next_overlap:
+        next_speaker = next_utt.get("speaker")
+        if next_speaker is None:
+            continue
+        next_speaker_id = int(next_speaker)
+        if next_speaker_id in remap:
+            continue
+
+        next_start = float(next_utt.get("start", 0.0) or 0.0) + offset
+        next_end = float(next_utt.get("end", 0.0) or 0.0) + offset
+
+        best_overlap = 0.0
+        best_global_speaker: int | None = None
+
+        for prev_utt in prev_overlap:
+            prev_speaker = prev_utt.get("speaker")
+            if prev_speaker is None:
+                continue
+            prev_speaker_id = int(prev_speaker)
+            if prev_speaker_id in used_global_speakers:
+                continue
+
+            prev_start = float(prev_utt.get("start", 0.0) or 0.0)
+            prev_end = float(prev_utt.get("end", 0.0) or 0.0)
+            overlap = max(0.0, min(next_end, prev_end) - max(next_start, prev_start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_global_speaker = prev_speaker_id
+
+        if best_global_speaker is not None and best_overlap > 0.1:
+            remap[next_speaker_id] = best_global_speaker
+            used_global_speakers.add(best_global_speaker)
+            _logger.debug(
+                "[ASSEMBLE] Speaker remap: chunk_speaker=%d -> global_speaker=%d (overlap=%.2fs)",
+                next_speaker_id,
+                best_global_speaker,
+                best_overlap,
+            )
+
+    return remap
+
+
 def build_transcript_text(
     utterances: List[Dict],
     speaker_map: Dict[int, str] | None = None,
@@ -118,6 +195,8 @@ def reassemble_chunks(
             for w in result["words"]
         ]
 
+        utterance_boundary: float | None = None
+
         if i > 0 and all_words:
             last_ts = all_words[-1]["end"]
             last_word_text = (all_words[-1].get("word") or "").lower().strip()
@@ -137,14 +216,53 @@ def reassemble_chunks(
                 deduplicated = [w for w in adjusted_words if w["start"] > cutoff]
 
             all_words.extend(deduplicated)
+            if deduplicated:
+                utterance_boundary = deduplicated[0]["start"]
         else:
             all_words.extend(adjusted_words)
 
+        speaker_remap: Dict[int, int] = {}
+        if i > 0 and all_utterances:
+            overlap_start = max(0.0, chunk_start_offsets[i] - CHUNK_OVERLAP_SECONDS)
+            speaker_remap = _build_speaker_remap(
+                prev_utterances=all_utterances,
+                next_utterances=result["utterances"],
+                overlap_start=overlap_start,
+                offset=offset,
+            )
+            if speaker_remap:
+                _logger.info("[ASSEMBLE] Chunk %d speaker remap: %s", i, speaker_remap)
+
+        if speaker_remap:
+            for word in all_words[-len(adjusted_words):]:
+                speaker = word.get("speaker")
+                if speaker is None:
+                    continue
+                raw_speaker = int(speaker)
+                word["speaker"] = speaker_remap.get(raw_speaker, raw_speaker)
+
         for u in result["utterances"]:
+            u_start = round(float(u.get("start", 0.0) or 0.0) + offset, 3)
+            u_end = round(float(u.get("end", 0.0) or 0.0) + offset, 3)
+
+            if utterance_boundary is not None and u_end <= utterance_boundary:
+                _logger.debug(
+                    "[ASSEMBLE] Dropping overlap utterance: start=%.3f end=%.3f boundary=%.3f",
+                    u_start,
+                    u_end,
+                    utterance_boundary,
+                )
+                continue
+
+            speaker = u.get("speaker")
+            normalized_speaker = int(speaker) if speaker is not None else None
+            if normalized_speaker is not None:
+                normalized_speaker = speaker_remap.get(normalized_speaker, normalized_speaker)
             all_utterances.append({
                 **u,
-                "start": round(u["start"] + offset, 3),
-                "end":   round(u["end"] + offset, 3),
+                "speaker": normalized_speaker,
+                "start": u_start,
+                "end":   u_end,
             })
 
     all_utterances.sort(key=lambda u: u["start"])
