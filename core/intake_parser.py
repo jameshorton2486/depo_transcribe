@@ -407,9 +407,11 @@ def _build_vocabulary_terms(data: dict[str, Any], filtered_terms: list[str]) -> 
 def parse_intake_document(
     filepath: str,
     progress_callback=None,
+    extracted_text: str | None = None,
 ) -> IntakeParsedResult | None:
     """
     Main entry point. Accepts a PDF filepath and returns a typed parse result.
+    If extracted_text is provided, it is used directly and the PDF is not re-read.
     """
 
     def log(msg: str):
@@ -417,21 +419,26 @@ def parse_intake_document(
             progress_callback(msg)
         logger.info(msg)
 
-    log(f"[IntakeParser] Reading PDF: {filepath}")
-    try:
-        import pdfplumber
-
-        text_parts: list[str] = []
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text() or ""
-                if page_text.strip():
-                    text_parts.append(page_text)
-        text = "\n\n".join(text_parts).strip()
+    if extracted_text is not None:
+        log("[IntakeParser] Using pre-extracted text")
+        text = extracted_text.strip()
         text = re.sub(r",\s*\n\s*(Jr\.?|Sr\.?|III|IV)\b", r", \1", text)
-    except Exception as exc:
-        logger.error("[IntakeParser] PDF read failed: %s", exc)
-        return None
+    else:
+        log(f"[IntakeParser] Reading PDF: {filepath}")
+        try:
+            import pdfplumber
+
+            text_parts: list[str] = []
+            with pdfplumber.open(filepath) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text() or ""
+                    if page_text.strip():
+                        text_parts.append(page_text)
+            text = "\n\n".join(text_parts).strip()
+            text = re.sub(r",\s*\n\s*(Jr\.?|Sr\.?|III|IV)\b", r", \1", text)
+        except Exception as exc:
+            logger.error("[IntakeParser] PDF read failed: %s", exc)
+            return None
 
     if len(text) < 50:
         log("[IntakeParser] PDF appears to be scanned  AI extraction skipped.")

@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -9,6 +10,7 @@ from core.intake_parser import (
     _strip_markdown_fences,
     filter_keyterms,
     hard_filter_keyterms,
+    parse_intake_document,
 )
 
 
@@ -149,3 +151,32 @@ def test_normalize_confirmed_spellings_keeps_unknown_target_when_needed():
         ["Picasso"],
     )
     assert result["Macao"] == "Macao"
+
+
+def test_parse_intake_document_uses_preextracted_text_without_pdf_read(monkeypatch):
+    def _fail_open(_path):
+        raise AssertionError("pdfplumber should not be used when extracted_text is supplied")
+
+    class _FakeMessages:
+        @staticmethod
+        def create(**kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text='{"cause_number":"2025-CI-19595","court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}')])
+
+    class _FakeAnthropic:
+        def __init__(self, api_key=None):
+            self.messages = _FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "pdfplumber", SimpleNamespace(open=_fail_open))
+    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+
+    result = parse_intake_document(
+        "ignored.pdf",
+        extracted_text=(
+            "Cause No. 2025-CI-19595\n"
+            "Notice of Deposition of Matthew Coger.\n"
+            "This packet contains enough text to avoid scanned-PDF fallback."
+        ),
+    )
+
+    assert result and result.cause_number == "2025-CI-19595"

@@ -14,8 +14,7 @@ FILE BEHAVIOR
 -------------
 - Always overwrite on save — never create timestamped duplicates.
 - source_docs/ is created automatically if it does not exist.
-- save_job_config() stamps "version" and enforces keyterm quality on
-  every write, so callers do not need to do this themselves.
+- save_job_config() stamps "version" on every write.
 
 EXPECTED STRUCTURE
 ------------------
@@ -31,12 +30,7 @@ EXPECTED STRUCTURE
     "confirmed_spellings": {
         "Koger":  "Coger",
         "Cojer":  "Coger"
-    },
-    "deepgram_keyterms": [
-        "Matthew Coger",
-        "SA Legal Solutions",
-        ...
-    ]
+    }
 }
 """
 
@@ -51,8 +45,6 @@ from core.config import (
     JOB_CONFIG_DIR,
     JOB_CONFIG_FILENAME,
     JOB_CONFIG_VERSION,
-    MAX_KEYTERMS,
-    MIN_TERM_LENGTH,
 )
 
 logger = get_logger(__name__)
@@ -90,6 +82,9 @@ def load_job_config(case_root: str) -> dict[str, Any]:
         logger.error("[JobConfig] Failed to load %s: %s", path, exc)
         return {}
 
+    # Legacy compatibility: older configs may still contain keyterm payloads.
+    data.pop("deepgram_keyterms", None)
+
     # Version check
     version = data.get("version")
     if version is None:
@@ -101,11 +96,9 @@ def load_job_config(case_root: str) -> dict[str, Any]:
         )
 
     logger.info(
-        "[JobConfig] Loaded: ufm_fields=%d keys  confirmed_spellings=%d  "
-        "deepgram_keyterms=%d  version=%s",
+        "[JobConfig] Loaded: ufm_fields=%d keys  confirmed_spellings=%d  version=%s",
         len(data.get("ufm_fields", {})),
         len(data.get("confirmed_spellings", {})),
-        len(data.get("deepgram_keyterms", [])),
         version,
     )
     return data
@@ -119,8 +112,6 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
 
     Always performed on the data dict before writing:
       - Stamps "version" key
-      - Filters deepgram_keyterms: removes terms shorter than MIN_TERM_LENGTH
-        and caps the list at MAX_KEYTERMS
       - Logs a warning if confirmed_spellings is empty (accuracy risk)
 
     Creates source_docs/ if it does not exist.
@@ -137,20 +128,8 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     # ── Stamp version ─────────────────────────────────────────────────────────
     data["version"] = JOB_CONFIG_VERSION
 
-    # ── Enforce keyterm quality ───────────────────────────────────────────────
-    if "deepgram_keyterms" in data:
-        raw: list = data["deepgram_keyterms"]
-        filtered = [
-            t for t in raw
-            if isinstance(t, str) and len(t.strip()) >= MIN_TERM_LENGTH
-        ]
-        capped = filtered[:MAX_KEYTERMS]
-        data["deepgram_keyterms"] = capped
-        if len(raw) != len(capped):
-            logger.info(
-                "[JobConfig] Keyterms: %d raw → %d after filter/cap",
-                len(raw), len(capped),
-            )
+    # Legacy compatibility: drop keyterms when rewriting old configs.
+    data.pop("deepgram_keyterms", None)
 
     # ── Validate confirmed_spellings ──────────────────────────────────────────
     spellings: dict = data.get("confirmed_spellings", {})
@@ -165,11 +144,10 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     # ── Log summary ───────────────────────────────────────────────────────────
     logger.info(
         "[JobConfig] Saving → %s  "
-        "(ufm_fields=%d  confirmed_spellings=%d  deepgram_keyterms=%d)",
+        "(ufm_fields=%d  confirmed_spellings=%d)",
         path,
         len(data.get("ufm_fields", {})),
         len(spellings),
-        len(data.get("deepgram_keyterms", [])),
     )
 
     # ── Write ─────────────────────────────────────────────────────────────────
@@ -189,9 +167,10 @@ def merge_and_save(case_root: str, **sections: Any) -> Path | None:
     Load the existing job_config.json, merge new sections in, then save.
 
     Accepted keyword arguments:
+        model                 (str)   — selected Deepgram model for this case
+        audio_quality         (str)   — selected preprocessing quality tier
         ufm_fields            (dict)  — UFM page fields
         confirmed_spellings   (dict)  — Deepgram → correct spelling map
-        deepgram_keyterms     (list)  — terms to boost in Deepgram Nova-3
         low_confidence_words  (list)  — words below confidence threshold
         utt_split             (float) — Deepgram utterance split setting
 
@@ -209,6 +188,8 @@ def merge_and_save(case_root: str, **sections: Any) -> Path | None:
     existing = load_job_config(case_root)
 
     for key, value in sections.items():
+        if key == "deepgram_keyterms":
+            continue
         if value is not None:
             existing[key] = value
 

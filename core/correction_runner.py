@@ -244,6 +244,7 @@ def run_correction_job(
     try:
         from spec_engine.block_builder import build_blocks_from_deepgram, build_blocks_from_text
         from spec_engine.processor import process_blocks
+        from spec_engine.run_logger import RunLogger
         from app_logging import start_pipeline_session, end_pipeline_session
 
         session_id = start_pipeline_session(
@@ -258,16 +259,18 @@ def run_correction_job(
             _log(f"Loading Deepgram JSON: {Path(json_path).name}")
             with open(json_path, "r", encoding="utf-8") as fh:
                 deepgram_data = json.load(fh)
-            if "utterances" in deepgram_data:
-                blocks = build_blocks_from_deepgram(deepgram_data)
-            else:
-                _log("JSON has no utterances key — falling back to text parsing")
-                raw_text = Path(transcript_path).read_text(encoding="utf-8")
-                blocks = build_blocks_from_text(raw_text)
+            if "utterances" not in deepgram_data:
+                raise RuntimeError(
+                    "Deepgram JSON missing 'utterances'. Ensure 'utterances=True' is enabled."
+                )
+            blocks = build_blocks_from_deepgram(deepgram_data)
         else:
             _log("No Deepgram JSON found — parsing transcript text directly")
             raw_text = Path(transcript_path).read_text(encoding="utf-8")
             blocks = build_blocks_from_text(raw_text)
+
+        if not blocks:
+            raise RuntimeError("No transcript blocks could be generated.")
 
         _log(f"Loaded {len(blocks)} blocks")
 
@@ -286,8 +289,12 @@ def run_correction_job(
             from spec_engine.models import JobConfig
             job_config = JobConfig()
 
+        if not job_config.speaker_map_verified:
+            raise RuntimeError("Speaker map must be verified before running corrections.")
+
         _log("Running corrections pipeline...")
-        corrected_blocks = process_blocks(blocks, job_config)
+        with RunLogger(cause_number=job_config.cause_number or Path(transcript_path).stem) as run_logger:
+            corrected_blocks = process_blocks(blocks, job_config, run_logger=run_logger)
         _log(f"Pipeline complete: {len(corrected_blocks)} blocks processed")
 
         all_corrections = _serialize_corrections(corrected_blocks)

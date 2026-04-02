@@ -28,12 +28,14 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
     try:
         from core.intake_parser import parse_intake_document
 
-        intake = parse_intake_document(text)
-        keyterms = list(intake.get("allProperNouns", []))
-        reasons = intake.get("keyterms", [])
+        intake = parse_intake_document("", extracted_text=text)
+        if intake is None:
+            return []
+        keyterms = list(intake.all_proper_nouns)
+        reasons = intake.vocabulary_terms
         if reasons:
             preview = "; ".join(
-                f"{item.get('term')}: {item.get('reason')}"
+                f"{item.term}: {item.reason}"
                 for item in reasons[:5]
             )
             _log(f"AI intake keyterms: {preview}")
@@ -94,12 +96,12 @@ def extract_from_filename(filename: str) -> dict:
 # ── Step 1: PDF text extraction ──────────────────────────────────────────────
 
 def extract_pdf_text(filepath: str) -> str:
-    """Extract text from pages 1-3 of a PDF using pdfplumber."""
+    """Extract text from pages 1-5 of a PDF using pdfplumber."""
     import pdfplumber
 
     text = ""
     with pdfplumber.open(filepath) as pdf:
-        for page in pdf.pages[:3]:
+        for page in pdf.pages[:5]:
             page_text = page.extract_text()
             if page_text:
                 text += page_text + "\n"
@@ -281,7 +283,11 @@ def extract_case_info_from_pdf(
     date = extract_date(text)
     witness_first: tuple[str | None, str] = (None, "failed")
 
-    intake_result = parse_intake_document(filepath, progress_callback)
+    intake_result = parse_intake_document(
+        filepath,
+        progress_callback,
+        extracted_text=text,
+    )
     if intake_result:
         if cause[1] == "failed" and intake_result.cause_number:
             cause = (intake_result.cause_number, "ai")
