@@ -113,28 +113,30 @@ def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
 
     for block in blocks:
         text = block.text
-        found = None
+        match = None
         for pattern in OBJECTION_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
-                found = pattern
+            found_match = re.search(pattern, text, re.IGNORECASE)
+            if found_match:
+                match = found_match
                 break
-        if not found and CORRECTED_OBJECTION_FORM_RE.search(text):
-            found = CORRECTED_OBJECTION_FORM_RE
+        if not match:
+            corrected_match = CORRECTED_OBJECTION_FORM_RE.search(text)
+            if corrected_match:
+                match = corrected_match
 
-        if not found:
+        if not match:
             new_blocks.append(block)
             continue
 
-        if hasattr(found, "sub"):
-            cleaned = found.sub("", text).strip(" .")
-        else:
-            cleaned = re.sub(found, "", text, flags=re.IGNORECASE).strip(" .")
+        objection_text = match.group(0).strip()
+        cleaned = (text[:match.start()] + text[match.end():]).strip(" .")
         if cleaned:
             kept = Block(
                 raw_text=block.raw_text,
                 text=cleaned + ("" if cleaned.endswith((".", "?", "!")) else "."),
                 speaker_id=block.speaker_id,
                 speaker_name=block.speaker_name,
+                speaker_role=block.speaker_role,
                 block_type=block.block_type,
                 words=list(block.words),
                 flags=list(block.flags),
@@ -146,10 +148,11 @@ def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
             Block(
                 speaker_id=None,
                 raw_text=text,
-                text="Objection. Form.",
+                text=objection_text,
                 speaker_name=objection_speaker,
+                speaker_role="OPPOSING_COUNSEL",
                 block_type=BlockType.SPEAKER,
-                meta={"source": "objection_extraction"},
+                meta={"source": "objection_extraction", "is_objection": True},
             )
         )
 

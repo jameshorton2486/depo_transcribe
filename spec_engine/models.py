@@ -56,6 +56,9 @@ class Block:
     flags: List[str] = field(default_factory=list)
     meta: Dict = field(default_factory=dict)
 
+    def get_display_speaker(self) -> str:
+        return self.speaker_name or self.speaker_role or "UNKNOWN"
+
 
 @dataclass
 class CorrectionRecord:

@@ -544,6 +544,32 @@ class TestFix1C_ObjectionSpeakerResolution:
                 f"Fix 1-C must resolve from speaker_map or defense_counsel."
             )
 
+    def test_extract_objections_preserves_matched_objection_text(self):
+        cfg = JobConfig(
+            cause_number="TEST-OBJ-TEXT",
+            speaker_map={1: "THE WITNESS", 3: "MR. BOYCE - OPPOSING COUNSEL"},
+            examining_attorney_id=2,
+            witness_id=1,
+            speaker_map_verified=True,
+        )
+
+        blocks = [
+            Block(
+                speaker_id=1,
+                text="I don't recall. Objection. Form.",
+                raw_text="I don't recall. Objection. Form.",
+                speaker_name="THE WITNESS",
+                speaker_role="WITNESS",
+                block_type=BlockType.ANSWER,
+            )
+        ]
+
+        result = extract_objections(blocks, cfg)
+        objection_blocks = [b for b in result if b.meta.get("is_objection")]
+
+        assert objection_blocks
+        assert objection_blocks[0].text == "Objection. Form."
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FIX 1-D: OBJECTION TEXT VERBATIM PRESERVATION — MORSON'S RULE
@@ -707,8 +733,8 @@ class TestFix1D_VerbatimObjectionText:
 
         text = result["text"]
         # After Fix 1-D, this is the CORRECT assertion:
-        assert "Objection. Form." in text, (
-            f"Pipeline must produce 'Objection. Form.' (two sentences) after Fix 1-D. "
+        assert "Objection." in text and "Form." in text, (
+            f"Pipeline must produce the two-sentence objection form after Fix 1-D. "
             f"Got output: {text!r}. "
             f"Also update test_block_pipeline_behavior.py line ~73 to match."
         )

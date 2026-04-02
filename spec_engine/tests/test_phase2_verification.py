@@ -124,16 +124,39 @@ def test_remove_near_duplicate_blocks_keeps_longer_version():
         text="I did not see any spill at that time.",
         raw_text="",
         block_type=BlockType.ANSWER,
+        meta={"start": 10.0},
     )
     d2 = Block(
         speaker_id=1,
         text="I did not see any spill at that time really.",
         raw_text="",
         block_type=BlockType.ANSWER,
+        meta={"start": 10.4},
     )
     deduped = _remove_near_duplicate_blocks([d1, d2])
     assert len(deduped) == 1
     assert deduped[0].text == d2.text
+
+
+def test_remove_near_duplicate_blocks_keeps_similar_text_when_timing_far_apart():
+    d1 = Block(
+        speaker_id=1,
+        text="I did not see any spill at that time.",
+        raw_text="",
+        block_type=BlockType.ANSWER,
+        meta={"start": 10.0},
+    )
+    d2 = Block(
+        speaker_id=1,
+        text="I did not see any spill at that time really.",
+        raw_text="",
+        block_type=BlockType.ANSWER,
+        meta={"start": 14.0},
+    )
+
+    deduped = _remove_near_duplicate_blocks([d1, d2])
+
+    assert len(deduped) == 2
 
 
 @pytest.mark.skip(reason="Imports JobConfigDialog from non-existent 'main' module — no equivalent in app.py")

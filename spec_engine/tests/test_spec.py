@@ -518,6 +518,13 @@ def test_strip_preserves_qa_content():
     assert "Q.  Where do you live?" in result
 
 
+def test_strip_to_ascii_expands_tabs_consistently():
+    raw = " 1 \tQ.\tDid you see the accident?"
+    result = strip_to_ascii(raw)
+    assert "\t" not in result
+    assert "Q." in result
+
+
 def test_export_ascii_writes_file():
     """export_ascii writes a .txt file to disk."""
     raw = " 1 Q.  Test question.\n 2 A.  Test answer."
@@ -1202,8 +1209,10 @@ def test_speaker_mapper_no_default_persistence_bucket():
 def test_speaker_resolver_normalizes_ids_and_roles():
     from spec_engine.speaker_resolver import (
         ROLE_EXAMINING_ATTORNEY,
+        ROLE_OPPOSING_COUNSEL,
         ROLE_WITNESS,
         normalize_speaker_id,
+        normalize_speaker_role,
         resolve_speaker,
     )
 
@@ -1226,6 +1235,9 @@ def test_speaker_resolver_normalizes_ids_and_roles():
     assert sid2 == 1
     assert role2 == ROLE_WITNESS
     assert name2 == "THE WITNESS"
+
+    assert normalize_speaker_role("EXAMINING ATTORNEY") == ROLE_EXAMINING_ATTORNEY
+    assert normalize_speaker_role("MR. BOYCE - OPPOSING COUNSEL") == ROLE_OPPOSING_COUNSEL
 
 
 @pytest.mark.skip(reason="ai_tools module not yet implemented — planned feature")

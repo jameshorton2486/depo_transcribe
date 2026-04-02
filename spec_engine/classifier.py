@@ -347,7 +347,23 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
             block.block_type = BlockType.QUESTION
         elif any(lower.startswith(token) for token in EMBEDDED_ANSWER_STARTERS):
             block.block_type = BlockType.ANSWER
-        elif previous_type == BlockType.QUESTION:
+        elif (
+            previous_type == BlockType.QUESTION
+            and resolved_role not in (
+                ROLE_ATTORNEY,
+                ROLE_EXAMINING_ATTORNEY,
+                ROLE_OPPOSING_COUNSEL,
+                ROLE_REPORTER,
+                ROLE_VIDEOGRAPHER,
+                ROLE_INTERPRETER,
+            )
+            and not any(
+                marker in role for marker in (
+                    "ATTORNEY", "COUNSEL", "MR.", "MS.", "MRS.", "DR.",
+                    "REPORTER", "VIDEOGRAPHER", "INTERPRETER",
+                )
+            )
+        ):
             block.block_type = BlockType.ANSWER
         else:
             if "VIDEOGRAPHER" in role:

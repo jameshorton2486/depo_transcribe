@@ -18,9 +18,15 @@ def build_blocks_from_deepgram(deepgram_json: Dict[str, Any]) -> List[Block]:
     """
     Convert Deepgram utterances into structured blocks.
 
-    If utterances are missing, fall back to a single transcript block so the
+    If utterances are present but empty, fall back to a single transcript block so the
     caller gets a clear, structured object instead of a silent empty pipeline.
     """
+    if "utterances" not in deepgram_json:
+        raise ValueError(
+            "Deepgram response missing 'utterances'. "
+            "Ensure 'utterances=True' is enabled in API options."
+        )
+
     utterances = deepgram_json.get("utterances") or []
     blocks: List[Block] = []
 
@@ -28,16 +34,19 @@ def build_blocks_from_deepgram(deepgram_json: Dict[str, Any]) -> List[Block]:
         transcript = (utterance.get("transcript") or "").strip()
         if not transcript:
             continue
+        speaker = utterance.get("speaker")
         blocks.append(
             Block(
                 raw_text=utterance.get("transcript", ""),
                 text=transcript,
-                speaker_id=normalize_speaker_id(utterance.get("speaker", 0)),
+                speaker_id=None if speaker is None else normalize_speaker_id(speaker),
                 words=[
                     Word(
                         text=w.get("word", "") or "",
-                        start=w.get("start"),
-                        end=w.get("end"),
+                        start=w.get("start") if w.get("start") is not None else 0.0,
+                        end=w.get("end") if w.get("end") is not None else (
+                            w.get("start") if w.get("start") is not None else 0.0
+                        ),
                         confidence=w.get("confidence"),
                         speaker=w.get("speaker"),
                     )

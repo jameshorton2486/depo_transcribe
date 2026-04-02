@@ -5,11 +5,18 @@ Tests for spec_engine/ai_corrector.py
 All offline — no real API calls made.
 Run: python -m pytest spec_engine/tests/test_ai_corrector.py -v
 """
+import sys
+from types import SimpleNamespace
+
 import pytest
 from spec_engine.ai_corrector import (
+    TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
+    _protect_verbatim,
+    _restore_verbatim,
     _split_into_chunks,
     _renumber_scopist_flags,
     _build_user_prompt,
+    run_ai_correction,
 )
 
 
@@ -103,3 +110,85 @@ class TestBuildUserPrompt:
     def test_confirmed_spellings_included(self):
         prompt = _build_user_prompt("text", [], {}, {"Cogger": "Coger"})
         assert "Coger" in prompt
+
+
+class TestPromptSafety:
+
+    def test_prompt_forbids_structure_changes(self):
+        assert "Change Q./A. labels" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
+        assert "Modify transcript structure in any way" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
+
+
+class TestVerbatimProtection:
+
+    def test_protect_restore_verbatim_round_trip(self):
+        original = "uh yeah um nope"
+        protected_text, protected = _protect_verbatim(original)
+
+        assert "__VERBATIM_0__" in protected_text
+        assert _restore_verbatim(protected_text, protected) == original
+
+
+class TestRunAICorrection:
+
+    def test_no_api_key_returns_original_text(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        text = "Q.\tDid you go there?\nA.\tuh yeah."
+
+        assert run_ai_correction(text, {}) == text
+
+    def test_destructive_ai_output_reverts_to_original_chunk(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    return SimpleNamespace(content=[SimpleNamespace(text="Short.")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tI did go there."
+
+        assert run_ai_correction(text, {}) == text
+
+    def test_structure_changing_ai_output_reverts_to_original_chunk(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    return SimpleNamespace(content=[SimpleNamespace(text="A.\tI did go there.\nQ.\tDid you go there?")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tI did go there."
+
+        assert run_ai_correction(text, {}) == text
+
+    def test_missing_protected_verbatim_reverts_to_original_chunk(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    return SimpleNamespace(content=[SimpleNamespace(text="Q.\tDid you go there?\nA.\tI did.")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tuh yeah."
+
+        assert run_ai_correction(text, {}) == text

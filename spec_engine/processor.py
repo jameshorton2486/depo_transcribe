@@ -40,13 +40,22 @@ def process_blocks(
         _log.log_step("Corrections complete")
 
     blocks = map_speakers(blocks, job_config)
+    assert all(
+        getattr(block, "speaker_role", None) is not None
+        and getattr(block, "speaker_name", None) is not None
+        for block in blocks
+        if getattr(block, "speaker_id", None) is not None
+    ), "Speaker mapping incomplete"
 
     if _log:
+        _log.snapshot("02a_blocks_speaker_mapped", blocks)
         _log.log_step("Speaker mapping complete")
 
     blocks = classify_blocks(blocks, job_config)
+    assert all(hasattr(block, "block_type") for block in blocks), "Classification failed"
 
     if _log:
+        _log.snapshot("03a_blocks_classified", blocks)
         _log.snapshot("03_blocks_classified", blocks)
         q_count = sum(1 for block in blocks if getattr(block.block_type, "value", "") == "Q")
         a_count = sum(1 for block in blocks if getattr(block.block_type, "value", "") == "A")
@@ -55,6 +64,7 @@ def process_blocks(
     blocks = fix_qa_structure(blocks, job_config=job_config)
 
     if _log:
+        _log.snapshot("04a_blocks_qa_fixed", blocks)
         _log.snapshot("04_blocks_qa_fixed", blocks)
         _log.log_step("Q/A structure complete")
 

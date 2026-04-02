@@ -158,6 +158,8 @@ def _validate_rule(rule: dict) -> tuple[bool, str]:
             return False, "regex_replace.pattern must be a non-empty string"
         if not isinstance(replacement, str):
             return False, "regex_replace.replacement must be a string"
+        if pattern.strip() in {".*", ".+", r"\w+"}:
+            return False, "regex_replace.pattern is too broad"
         try:
             compiled = re.compile(pattern)
         except re.error as exc:
@@ -173,7 +175,7 @@ def _validate_rule(rule: dict) -> tuple[bool, str]:
     return False, "unknown rule type"
 
 
-def apply_user_rules(text: str, block_index: int = 0) -> tuple[str, list]:
+def apply_user_rules(text: str, block_index: int = 0, state=None) -> tuple[str, list]:
     from .models import CorrectionRecord
 
     records: list[CorrectionRecord] = []
@@ -183,28 +185,43 @@ def apply_user_rules(text: str, block_index: int = 0) -> tuple[str, list]:
         before = current_text
         try:
             if rule.get("type") == "exact_replace":
-                current_text = current_text.replace(
+                new_text = current_text.replace(
                     str(rule["incorrect"]),
                     str(rule["correct"]),
                 )
             elif rule.get("type") == "regex_replace":
-                current_text = re.sub(
+                new_text = re.sub(
                     str(rule["pattern"]),
                     str(rule["replacement"]),
                     current_text,
                 )
+            else:
+                continue
         except Exception as exc:
             logger.warning("user_rule_store: failed rule %s: %s", rule.get("id", "?"), exc)
             continue
 
-        if current_text != before:
+        if state is not None:
+            from .corrections import safe_apply
+
+            current_text = safe_apply(
+                current_text,
+                new_text,
+                f"user_rule:{rule.get('id', '?')}",
+                state,
+                records,
+                block_index,
+                protected_after=str(rule.get("correct") or rule.get("replacement") or "").strip() or None,
+            )
+        elif new_text != before:
             logger.debug("user_rule_store: applied %s to block %d", rule.get("id", "?"), block_index)
             records.append(CorrectionRecord(
                 original=before,
-                corrected=current_text,
+                corrected=new_text,
                 pattern=f"user_rule:{rule.get('id', '?')}",
                 block_index=block_index,
             ))
+            current_text = new_text
 
     return current_text, records
 

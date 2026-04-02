@@ -18,6 +18,7 @@ COLOR USAGE (Spec Section 5.4):
 """
 
 import docx.enum.text
+import re
 import textwrap
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
@@ -118,8 +119,9 @@ def _wrap_lines(text: str, width: int) -> list[str]:
 
 
 def _split_speaker_text(text: str) -> tuple[str, str]:
-    if ":  " in text:
-        label, content = text.split(":  ", 1)
+    match = re.split(r":\s+", text, maxsplit=1)
+    if len(match) == 2:
+        label, content = match
         return label + ":", content
     if ":" in text:
         label, content = text.split(":", 1)

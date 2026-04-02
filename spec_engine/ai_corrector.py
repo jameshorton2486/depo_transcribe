@@ -8,20 +8,14 @@ corrections in corrections.py. It handles cases that require reading
 context — things Python regex cannot do safely.
 
 Rules handled here (per Morson's English Guide and Depo-Pro spec):
-  Rule 5   — Speaker Q/A structure consistency
   Rule 6   — Proper noun correction (from provided list)
   Rule 7   — Homophone correction (100% context certainty only)
   Rule 9   — [VERIFY: ...] flags for uncertain corrections
-  Rule 12  — Speaker label resolution (Speaker 0/1/2/3 → names)
-  Rule 13  — THE REPORTER / THE INTERPRETER label standards
   Rule 14  — Ellipsis preservation (. . . / ... / ....)
   Rule 15  — Percent / height context-dependent cases
-  Rule 17  — As-read parentheticals
-  Rule 18  — Objection fragment format
-  Rule 19  — CROSS-EXAMINATION headers (hyphenated)
   Rule 21  — [SCOPIST: FLAG N:] for unverifiable garbles
-  Rule 22  — Interpreter block extraction
   Rule 23  — Verbatim affirmation/negation (Yeah/Nope kept)
+  Rule 24  — Post-record spelling retroactive correction
 
 VERBATIM MANDATE (absolute, no exceptions):
   uh, um, ah, uh-huh, uh-uh, yeah, yep, yup, nope, nah, gonna, wanna
@@ -40,6 +34,61 @@ from app_logging import get_logger
 from config import ANTHROPIC_API_KEY as _CONFIG_API_KEY
 
 logger = get_logger(__name__)
+
+VERBATIM_TOKEN_RE = re.compile(
+    r'\b(?:uh-huh|uh-uh|uh|um|ah|yeah|yep|yup|nope|nah|gonna|wanna|gotta)\b',
+    re.IGNORECASE,
+)
+SCOPIST_FLAG_RE = re.compile(r'\[SCOPIST: FLAG \d+:')
+
+
+def _protect_verbatim(text: str) -> tuple[str, dict[str, str]]:
+    """Replace verbatim-protected tokens with placeholders before AI."""
+    protected: dict[str, str] = {}
+    counter = [0]
+
+    def _replace(match: re.Match) -> str:
+        key = f"__VERBATIM_{counter[0]}__"
+        protected[key] = match.group(0)
+        counter[0] += 1
+        return key
+
+    return VERBATIM_TOKEN_RE.sub(_replace, text), protected
+
+
+def _restore_verbatim(text: str, protected: dict[str, str]) -> str:
+    for key, value in protected.items():
+        text = text.replace(key, value)
+    return text
+
+
+def _all_protected_tokens_preserved(text: str, protected: dict[str, str]) -> bool:
+    return all(key in text for key in protected)
+
+
+def _line_signature(line: str) -> str:
+    stripped = line.lstrip('\t ')
+    if not stripped:
+        return 'BLANK'
+    if stripped.startswith('Q.'):
+        return 'Q'
+    if stripped.startswith('A.'):
+        return 'A'
+    if re.match(r"^[A-Z][A-Z .'\-]+:\s*", stripped):
+        return 'SP'
+    return 'TEXT'
+
+
+def _preserves_structure(original: str, candidate: str) -> bool:
+    original_lines = original.splitlines()
+    candidate_lines = candidate.splitlines()
+    if len(original_lines) != len(candidate_lines):
+        return False
+    return [
+        _line_signature(line) for line in original_lines
+    ] == [
+        _line_signature(line) for line in candidate_lines
+    ]
 
 
 # ── System prompt ─────────────────────────────────────────────────────────────
@@ -60,13 +109,19 @@ These words and sounds are NEVER changed, removed, or normalized:
   stutters: b-b-bank  — stutter within a word, hyphen, no space
   false starts: word -- — preserve exactly as spoken
 
-## RULE 5 — SPEAKER STRUCTURE
-Q. lines are asked by examining attorneys.
-A. lines are given by the witness.
-SP lines (MR. X:, MS. X:, THE REPORTER:, THE VIDEOGRAPHER:) are colloquy.
+## STRUCTURE PROTECTION RULE (ABSOLUTE)
+You MUST NOT:
+  - Change Q./A. labels
+  - Move text between speakers
+  - Insert or remove speaker lines
+  - Extract objections into new lines
+  - Modify transcript structure in any way
 
-If a block is misclassified (e.g., the witness's answer is on a Q. line),
-correct the label. Never invent testimony.
+Structure is handled by the deterministic pipeline before AI processing.
+You may ONLY:
+  - Correct individual words or short phrases already present
+  - Add [VERIFY: ...] when uncertainty remains
+  - Add [SCOPIST: FLAG N: ...] when certainty is impossible
 
 ## RULE 6 — PROPER NOUN CORRECTION
 Correct only to names in the provided proper_nouns list.
@@ -86,24 +141,6 @@ Use [VERIFY: brief description] for uncertain corrections.
 Use [VERIFY: proper noun — not in source list] for unknown names.
 Do NOT use VERIFY for common words you are confident about.
 
-## RULE 12 — SPEAKER LABEL RESOLUTION
-Replace generic "Speaker 0:", "Speaker 1:", etc. with the actual
-speaker labels from the provided speaker_map.
-
-Format for colloquy (SP lines):
-  MR. GARCIA:   (examining attorney)
-  MS. DURBIN:   (opposing counsel)
-  THE WITNESS:  (when witness speaks outside Q/A structure)
-  THE REPORTER: (court reporter)
-  THE VIDEOGRAPHER:
-  THE INTERPRETER:
-
-All SP labels must be ALL-CAPS followed by a colon and two spaces.
-
-## RULE 13 — REPORTER / INTERPRETER LABELS
-Always: THE REPORTER:  (not "THE COURT REPORTER:", not "REPORTER:")
-Always: THE INTERPRETER:  (not "INTERPRETER:", not "(Interpreter:)")
-
 ## RULE 14 — ELLIPSIS PRESERVATION
 Morson's Rules 270–273:
   . . .   — three spaced periods (trailing off / internal omission)
@@ -119,30 +156,6 @@ Heights: "5.1" in medical context likely means 5'1" → correct to 5'1"
 
 Dollar amounts: "$4.50 per week" for a surgery claim → likely $450
                 Flag with: [VERIFY: dollar amount — verify from audio]
-
-## RULE 17 — AS-READ PARENTHETICALS
-When an attorney reads aloud from a document, set the reading off:
-  Q. I'm going to read from page 3.
-  (Reading:)
-  "The claimant suffered injuries..."
-  (End of reading.)
-Do not insert these unless the transcript clearly shows a reading.
-
-## RULE 18 — OBJECTION FORMAT
-Objections mid-question must be extracted to their own SP line:
-  Before: Q. Did you--Objection, form. Did you see the accident?
-  After:  Q. Did you --
-          MR. DAVIS:  Objection.  Form.
-          Q. (BY MR. GARCIA:)  Did you see the accident?
-
-Objection punctuation: "Objection." with period.
-Form objection: "Objection.  Form."  (two spaces between)
-
-## RULE 19 — CROSS-EXAMINATION HEADERS
-Always hyphenated:
-  CROSS-EXAMINATION  (never "CROSS EXAMINATION")
-  REDIRECT EXAMINATION
-  RECROSS-EXAMINATION
 
 ## RULE 21 — SCOPIST FLAGS [SCOPIST: FLAG N: description]
 Insert a scopist flag when you detect an error you CANNOT correct
@@ -164,22 +177,6 @@ DO NOT:
   - Flag common words that are clearly correct
   - Replace the word — insert flag NEXT TO the original text
   - Use any other flag format
-
-## RULE 22 — INTERPRETER BLOCK EXTRACTION
-When an interpreter speaks mid-answer, extract to its own SP block:
-
-Before:
-  A. Yes -- continuación -- I was there.
-
-After:
-  A. Yes --
-
-  THE INTERPRETER:  (Translation in progress.)
-
-  A. I was there.
-
-If the interpreter's words are unclear → THE INTERPRETER:  [inaudible]
-Use THE INTERPRETER: — not INTERPRETER: or (Interpreter:)
 
 ## RULE 23 — VERBATIM AFFIRMATION / NEGATION PRESERVATION
 These must be kept EXACTLY as spoken. Never normalize:
@@ -296,23 +293,19 @@ def run_ai_correction(
     Returns:
         Corrected transcript text string.
 
-    Raises:
-        RuntimeError if API key is missing.
-        Exception propagated from the Anthropic client on API failure.
+    Returns original transcript text unchanged when AI is unavailable.
     """
-    import anthropic
-
     api_key = (_CONFIG_API_KEY or os.environ.get('ANTHROPIC_API_KEY', '')).strip()
     if not api_key:
-        raise RuntimeError(
-            'ANTHROPIC_API_KEY is not set. '
-            'Add it to your .env file or set it as an environment variable.'
-        )
+        logger.info('[AICorrector] AI disabled — no API key found')
+        return transcript_text
 
     def _log(msg: str):
         logger.info('[AICorrector] %s', msg)
         if progress_callback:
             progress_callback(msg)
+
+    import anthropic
 
     if hasattr(job_config, 'all_proper_nouns'):
         proper_nouns = list(getattr(job_config, 'all_proper_nouns', []) or [])
@@ -343,18 +336,18 @@ def run_ai_correction(
             job_config.get('post_record_spellings', []) or []
         )
 
-    MAX_CHARS = 18000
+    MAX_CHARS = 8000
     chunks = _split_into_chunks(transcript_text, MAX_CHARS)
     _log(f'Split transcript into {len(chunks)} chunk(s) for AI correction')
 
     client = anthropic.Anthropic(api_key=api_key)
     results = []
-    flag_offset = 0
+    model_name = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-4-6').strip() or 'claude-sonnet-4-6'
 
     for i, chunk in enumerate(chunks):
         _log(f'AI correcting chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)…')
 
-        chunk_prompt = chunk
+        chunk_prompt, protected = _protect_verbatim(chunk)
 
         user_prompt = _build_user_prompt(
             chunk_prompt,
@@ -365,21 +358,37 @@ def run_ai_correction(
         )
 
         message = client.messages.create(
-            model='claude-sonnet-4-6',
+            model=model_name,
             max_tokens=5500,
             system=TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
             messages=[{'role': 'user', 'content': user_prompt}],
         )
-        corrected_chunk = message.content[0].text.strip()
-        results.append(corrected_chunk)
+        corrected_protected_chunk = message.content[0].text.strip()
 
-        flag_count = len(re.findall(r'\[SCOPIST: FLAG \d+:', corrected_chunk))
-        flag_offset += flag_count
+        if not _all_protected_tokens_preserved(corrected_protected_chunk, protected):
+            _log('AI output removed verbatim-protected tokens — reverting to original chunk')
+            results.append(chunk)
+            continue
+
+        corrected_chunk = _restore_verbatim(corrected_protected_chunk, protected)
+
+        if len(corrected_chunk) < len(chunk) * 0.9:
+            _log('AI output too destructive — reverting to original chunk')
+            results.append(chunk)
+            continue
+
+        if not _preserves_structure(chunk, corrected_chunk):
+            _log('AI output changed transcript structure — reverting to original chunk')
+            results.append(chunk)
+            continue
+
+        results.append(corrected_chunk)
 
     assembled = '\n\n'.join(results)
     assembled = _renumber_scopist_flags(assembled)
 
-    _log(f'AI correction complete — {flag_offset} scopist flags generated')
+    total_flags = len(SCOPIST_FLAG_RE.findall(assembled))
+    _log(f'AI correction complete — {total_flags} scopist flags generated')
     return assembled
 
 

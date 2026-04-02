@@ -202,7 +202,14 @@ def _remove_near_duplicate_blocks(blocks: List[Block]) -> List[Block]:
 
         union = prev_words | curr_words
         similarity = len(prev_words & curr_words) / len(union) if union else 0.0
-        if similarity >= 0.85:
+        prev_start = (prev.meta or {}).get("start")
+        curr_start = (block.meta or {}).get("start")
+        try:
+            time_diff = abs(float(curr_start) - float(prev_start))
+        except (TypeError, ValueError):
+            time_diff = None
+
+        if similarity >= 0.85 and time_diff is not None and time_diff < 1.0:
             if len(block.text or "") > len(prev.text or ""):
                 result[-1] = block
         else:

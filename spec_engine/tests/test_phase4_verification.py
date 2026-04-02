@@ -305,29 +305,29 @@ class TestFix4C_ChunkBoundaryDeduplication:
 
 
 class TestFix4D_MapSpeakersInDocumentBuilder:
-    def test_map_speakers_imported_in_document_builder(self):
+    def test_process_blocks_imported_in_document_builder(self):
         from spec_engine.document_builder import process_transcript
         import spec_engine.document_builder as db
 
-        assert hasattr(db, "map_speakers") or "map_speakers" in dir(db)
+        assert hasattr(db, "process_blocks") or "process_blocks" in dir(db)
 
-    def test_map_speakers_call_in_process_transcript_source(self):
+    def test_process_blocks_call_in_process_transcript_source(self):
         import inspect
         from spec_engine.document_builder import process_transcript
 
         src = inspect.getsource(process_transcript)
-        assert "map_speakers" in src
+        assert "process_blocks" in src
 
-    def test_map_speakers_called_before_classify_block(self):
+    def test_process_blocks_called_before_classify_block(self):
         import inspect
         from spec_engine.document_builder import process_transcript
 
         src = inspect.getsource(process_transcript)
-        map_pos = src.find("map_speakers(")
+        process_pos = src.find("process_blocks(")
         classify_pos = src.find("classify_block(")
-        assert map_pos != -1
+        assert process_pos != -1
         assert classify_pos != -1
-        assert map_pos < classify_pos
+        assert process_pos < classify_pos
 
     def test_map_speakers_populates_speaker_role(self):
         from spec_engine.speaker_mapper import map_speakers
@@ -426,12 +426,12 @@ class TestPhase4ExitGate:
             os.unlink(path)
         assert len(blocks) > 0
 
-    def test_map_speakers_in_document_builder_source(self):
+    def test_process_blocks_in_document_builder_source(self):
         import inspect
         from spec_engine.document_builder import process_transcript
 
         src = inspect.getsource(process_transcript)
-        assert "map_speakers(" in src
+        assert "process_blocks(" in src
 
     def test_phases_1_through_3_not_broken(self):
         from spec_engine.classifier import classify_blocks

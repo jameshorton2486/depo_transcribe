@@ -22,8 +22,8 @@ from docx import Document
 from .models import Block
 
 
-SPEAKER_LABEL_RE = re.compile(r'^Speaker\s+(\d{1,2}):\s*$', re.IGNORECASE)
-SPEAKER_INLINE_RE = re.compile(r'^Speaker\s+(\d{1,2}):\s+(.+)$', re.IGNORECASE)
+SPEAKER_LABEL_RE = re.compile(r'^speaker\s+(\d+)\s*:\s*$', re.IGNORECASE)
+SPEAKER_INLINE_RE = re.compile(r'^speaker\s+(\d+)\s*:\s*(.+)$', re.IGNORECASE)
 FORMAT_DEEPGRAM = 'deepgram'
 FORMAT_PLAIN_QA = 'plain_qa'
 FORMAT_UNKNOWN  = 'unknown'
@@ -51,6 +51,8 @@ def parse_blocks(docx_path: str) -> List[Block]:
     blocks: List[Block] = []
     current_speaker_id: Optional[int] = None
     current_fragments: List[str] = []
+    saw_speaker_label = False
+    preamble_lines: List[str] = []
 
     def flush_block() -> None:
         nonlocal current_speaker_id, current_fragments
@@ -61,7 +63,7 @@ def parse_blocks(docx_path: str) -> List[Block]:
                 blocks.append(Block(
                     speaker_id=current_speaker_id,
                     text=text,
-                    raw_text=text,
+                    raw_text=raw_text,
                 ))
         current_fragments = []
 
@@ -70,12 +72,14 @@ def parse_blocks(docx_path: str) -> List[Block]:
 
         match = SPEAKER_LABEL_RE.match(line.strip())
         if match:
+            saw_speaker_label = True
             flush_block()
             current_speaker_id = int(match.group(1))
             continue
 
         inline_match = SPEAKER_INLINE_RE.match(line.strip())
         if inline_match:
+            saw_speaker_label = True
             flush_block()
             current_speaker_id = int(inline_match.group(1))
             current_fragments.append(inline_match.group(2))
@@ -83,8 +87,13 @@ def parse_blocks(docx_path: str) -> List[Block]:
 
         if current_speaker_id is not None:
             current_fragments.append(line)
+        elif line.strip():
+            preamble_lines.append(line.strip())
 
     flush_block()
+    if saw_speaker_label and preamble_lines:
+        sample = preamble_lines[0][:50]
+        raise ValueError(f"Text found before any speaker label: '{sample}'")
     return blocks
 
 

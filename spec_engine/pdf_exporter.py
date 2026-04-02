@@ -4,6 +4,7 @@ PDF export for Depo-Pro.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -83,6 +84,8 @@ def _try_libreoffice(docx_path: str, pdf_path: str) -> bool:
 
 def _try_reportlab(docx_path: str, pdf_path: str) -> bool:
     """Last-resort plain-text PDF render using ReportLab."""
+    log = logging.getLogger(__name__)
+    log.warning("ReportLab fallback does NOT preserve UFM formatting")
     try:
         from reportlab.lib.enums import TA_LEFT
         from reportlab.lib.pagesizes import letter
@@ -134,8 +137,9 @@ def _try_reportlab(docx_path: str, pdf_path: str) -> bool:
 
 def export_pdf(docx_path: str, pdf_path: str) -> str:
     """Convert DOCX to PDF using the first working strategy."""
-    import logging
-
+    source = Path(docx_path)
+    if not source.exists():
+        raise FileNotFoundError(docx_path)
     dest = Path(pdf_path)
     if dest.suffix.lower() != ".pdf":
         dest = dest.with_suffix(".pdf")

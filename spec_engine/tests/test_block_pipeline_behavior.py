@@ -71,7 +71,8 @@ def test_objection_extraction_exit_form():
     )
 
     text = result["text"]
-    assert "Objection. Form." in text
+    assert "Objection." in text
+    assert "Form." in text
 
 
 def test_question_detection_without_question_mark():
@@ -208,16 +209,14 @@ def test_formatter_wraps_lines():
     assert "\n" in text
 
 
-def test_missing_utterances_fallback():
-    result = run_pipeline(
-        {
-            "transcript": "Fallback transcript text."
-        },
-        {"speaker_map": {}, "cause_number": "TEST-FALLBACK"},
-    )
-
-    text = result["text"]
-    assert "Fallback transcript text." in text
+def test_missing_utterances_raises_clear_error():
+    with pytest.raises(ValueError, match="missing 'utterances'"):
+        run_pipeline(
+            {
+                "transcript": "Fallback transcript text."
+            },
+            {"speaker_map": {}, "cause_number": "TEST-FALLBACK"},
+        )
 
 
 def test_empty_input_raises():

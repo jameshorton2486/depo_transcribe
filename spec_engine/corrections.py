@@ -7,8 +7,9 @@ Applied in exact priority order from Spec Section 9.4.
 PRIORITY ORDER (MUST NOT CHANGE):
   1.  Multi-word name phrases and objection garbles
   2.  Case-specific proper noun corrections (from confirmed_spellings)
+  2.5 User rules (spec_engine.user_rule_store) — after confirmed_spellings, before universal rules
   3.  Universal corrections (Doctor., K., Mm-hmm, Alright, % → percent, etc.)
-  4a. Number-to-word in count context (1-10)
+  4a. Number-to-word in count context (0-10)
   4b. Date mashup flagging
   4c. Numbers at sentence start spelled out (Morson's English Guide)
   5.  Deepgram artifact removal (doubled words — 4+ chars only)
@@ -25,8 +26,8 @@ PRIORITY ORDER (MUST NOT CHANGE):
   --  uh/um: NEVER touched — verbatim rule is absolute
 
 VERBATIM RULE: "uh" and "um" are NEVER removed. This is enforced by unit tests.
-MORSON'S RULE: Numbers 1-10 at sentence start must be spelled out as words.
-MORSON'S RULE 270: Ellipsis in any form (. . .) is never touched.
+MORSON'S RULE: Numbers 0-10 at sentence start must be spelled out as words.
+MORSON'S RULE 270: Ellipsis is normalized to spaced form without changing pause semantics.
 """
 
 import re
@@ -39,6 +40,45 @@ logger = logging.getLogger(__name__)
 
 
 TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\s*(AM|PM)\b\.?", re.IGNORECASE)
+TITLE_NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
+
+
+class CorrectionState:
+    """
+    Tracks protected correction fragments to prevent later rule conflicts.
+
+    This is intentionally scoped for same-phase chained rewrites where a
+    previously accepted long-form replacement should not disappear entirely
+    during a later substitution.
+    """
+
+    def __init__(self):
+        self.history = []
+        self.seen_patterns = set()
+
+    def record(
+        self,
+        pattern: str,
+        before: str,
+        after: str,
+        protected_after: str | None = None,
+    ):
+        self.history.append({
+            "pattern": pattern,
+            "before": before,
+            "after": protected_after,
+        })
+        self.seen_patterns.add(pattern)
+
+    def would_conflict(self, new_text: str) -> bool:
+        """
+        Detect whether a previously protected replacement fragment disappears.
+        """
+        for h in self.history:
+            protected_after = h["after"]
+            if protected_after and len(protected_after) > 10 and protected_after not in new_text:
+                return True
+        return False
 
 
 # ── Number-to-word maps ───────────────────────────────────────────────────────
@@ -72,7 +112,7 @@ NUMBER_EXCLUSION_RE = re.compile(
     r')',
 )
 
-# Sentence start: digit 1-10 as the FIRST token in the block
+# Sentence start: digit 0-10 as the FIRST token in the block
 SENTENCE_START_NUM_RE = re.compile(
     r'^(0|[1-9]|10)\b(?!\s*(?:a\.m|p\.m|\d|:))'
 )
@@ -368,21 +408,124 @@ def _preserve_case(original_word: str, replacement: str) -> str:
     return replacement
 
 
+def _is_safe_rewrite(original_text: str, new_text: str) -> bool:
+    if not original_text:
+        return True
+    return len(new_text) >= len(original_text) * 0.5
+
+
+def _protected_replacement_fragment(replacement: str) -> str | None:
+    normalized = replacement.strip()
+    if not normalized or len(normalized) <= 10:
+        return None
+    if '\\' in replacement:
+        return None
+    return normalized
+
+
+def safe_apply(
+    text: str,
+    new_text: str,
+    pattern: str,
+    state: CorrectionState | None,
+    records: List[CorrectionRecord],
+    block_index: int,
+    *,
+    record_original: str | None = None,
+    record_corrected: str | None = None,
+    allow_shortening: bool = False,
+    protected_after: str | None = None,
+) -> str:
+    """
+    Apply a correction only when it is non-destructive and non-conflicting.
+    """
+    if new_text == text:
+        return text
+    if not _is_safe_rewrite(text, new_text) and not allow_shortening:
+        logger.warning(
+            "[corrections] skipped unsafe rewrite pattern=%s block=%d before_len=%d after_len=%d",
+            pattern,
+            block_index,
+            len(text),
+            len(new_text),
+        )
+        return text
+    if state is not None and state.would_conflict(new_text):
+        logger.warning(
+            "[corrections] skipped conflicting rewrite pattern=%s block=%d",
+            pattern,
+            block_index,
+        )
+        return text
+    if state is not None:
+        state.record(pattern, text, new_text, protected_after=protected_after)
+    records.append(CorrectionRecord(
+        original=record_original if record_original is not None else text,
+        corrected=record_corrected if record_corrected is not None else new_text,
+        pattern=pattern,
+        block_index=block_index,
+    ))
+    return new_text
+
+
+def _apply_safe_rewrite(
+    original_text: str,
+    new_text: str,
+    records: List[CorrectionRecord],
+    block_index: int,
+    pattern: str,
+    record_original: str | None = None,
+    record_corrected: str | None = None,
+    state: CorrectionState | None = None,
+    protected_after: str | None = None,
+) -> str:
+    allow_shortening = (
+        pattern == 'artifact_duplicate_4plus'
+        and bool(ARTIFACT_DUPLICATE_RE.search(original_text))
+    )
+    return safe_apply(
+        original_text,
+        new_text,
+        pattern,
+        state,
+        records,
+        block_index,
+        record_original=record_original,
+        record_corrected=record_corrected,
+        allow_shortening=allow_shortening,
+        protected_after=protected_after,
+    )
+
+
+def _block_start_seconds(block: Block) -> float | None:
+    start = block.meta.get("start") if isinstance(block.meta, dict) else None
+    if isinstance(start, (int, float)):
+        return float(start)
+    if block.words:
+        first_start = getattr(block.words[0], "start", None)
+        if isinstance(first_start, (int, float)):
+            return float(first_start)
+    return None
+
+
 # ── Step 1: Multi-word corrections ───────────────────────────────────────────
 
 def apply_multiword_corrections(
     text: str,
     records: List[CorrectionRecord],
     block_index: int,
+    state: CorrectionState | None = None,
 ) -> str:
     for pattern, replacement in MULTIWORD_CORRECTIONS:
         new_text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-        if new_text != text:
-            records.append(CorrectionRecord(
-                original=text, corrected=new_text,
-                pattern=pattern, block_index=block_index,
-            ))
-            text = new_text
+        text = _apply_safe_rewrite(
+            text,
+            new_text,
+            records,
+            block_index,
+            pattern,
+            state=state,
+        )
     return text
 
 
@@ -393,6 +536,7 @@ def apply_case_corrections(
     job_config: JobConfig,
     records: List[CorrectionRecord],
     block_index: int,
+    state: CorrectionState | None = None,
 ) -> str:
     if isinstance(job_config, dict):
         confirmed_spellings = job_config.get("confirmed_spellings", {}) or {}
@@ -408,13 +552,16 @@ def apply_case_corrections(
             return _preserve_case(m.group(0), _correct)
 
         new_text = re.sub(pattern, _replace_with_case, text, flags=re.IGNORECASE)
-        if new_text != text:
-            records.append(CorrectionRecord(
-                original=wrong, corrected=correct,
-                pattern=f"confirmed_spelling:{wrong}",
-                block_index=block_index,
-            ))
-            text = new_text
+        text = _apply_safe_rewrite(
+            text,
+            new_text,
+            records,
+            block_index,
+            f"confirmed_spelling:{wrong}",
+            record_original=wrong,
+            record_corrected=correct,
+            state=state,
+        )
     return text
 
 
@@ -426,25 +573,29 @@ def apply_universal_corrections(
     text: str,
     records: List[CorrectionRecord],
     block_index: int,
+    state: CorrectionState | None = None,
 ) -> str:
     new_text = ARTIFACT_ZIP_78216_RE.sub('', text)
-    if new_text != text:
-        records.append(CorrectionRecord(
-            original=text,
-            corrected=new_text,
-            pattern='artifact_zip_78216_scoped',
-            block_index=block_index,
-        ))
-        text = new_text
+    text = _apply_safe_rewrite(
+        text,
+        new_text,
+        records,
+        block_index,
+        'artifact_zip_78216_scoped',
+        state=state,
+    )
 
     for pattern, replacement in UNIVERSAL_CORRECTIONS:
         new_text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-        if new_text != text:
-            records.append(CorrectionRecord(
-                original=text, corrected=new_text,
-                pattern=pattern, block_index=block_index,
-            ))
-            text = new_text
+        text = _apply_safe_rewrite(
+            text,
+            new_text,
+            records,
+            block_index,
+            pattern,
+            state=state,
+            protected_after=_protected_replacement_fragment(replacement),
+        )
     return text
 
 
@@ -456,7 +607,7 @@ def apply_number_to_word(
     block_index: int,
 ) -> str:
     """
-    Convert digits 1-10 to words in mid-sentence count context.
+    Convert digits 0-10 to words in mid-sentence count context.
     Spec Section 2.3: skip dates, times, dollar amounts, exhibit numbers, addresses.
     """
     def _replace(m: re.Match) -> str:
@@ -468,12 +619,13 @@ def apply_number_to_word(
         return NUMBER_WORD_MAP.get(m.group(1), m.group(1))
 
     new_text = COUNT_RE.sub(_replace, text)
-    if new_text != text:
-        records.append(CorrectionRecord(
-            original=text, corrected=new_text,
-            pattern='number_to_word_1_10', block_index=block_index,
-        ))
-    return new_text
+    return _apply_safe_rewrite(
+        text,
+        new_text,
+        records,
+        block_index,
+        'number_to_word_0_10',
+    )
 
 
 # ── Step 4b: Date mashup flagging ────────────────────────────────────────────
@@ -561,13 +713,14 @@ def apply_sentence_start_number(
     block_index: int,
 ) -> str:
     """
-    Step 4c: Spell out digits 1-10 when they appear at the VERY START of a block.
+    Step 4c: Spell out digits 0-10 when they appear at the VERY START of a block.
     Per Morson's English Guide for Court Reporters:
     Any number beginning a sentence must be spelled out as a word.
 
     Examples:
+      "0 witnesses saw the crash" → "Zero witnesses saw the crash"
       "3 witnesses saw the crash" → "Three witnesses saw the crash"
-      "10 years ago"             → "Ten years ago"
+      "10 years ago"              → "Ten years ago"
 
     Exceptions (do NOT convert):
       - Exhibit 3 (exclude context)
@@ -588,13 +741,13 @@ def apply_sentence_start_number(
         text,
         count=1,
     )
-    if new_text != text:
-        records.append(CorrectionRecord(
-            original=text, corrected=new_text,
-            pattern='sentence_start_number_morson',
-            block_index=block_index,
-        ))
-    return new_text
+    return _apply_safe_rewrite(
+        text,
+        new_text,
+        records,
+        block_index,
+        'sentence_start_number_morson',
+    )
 
 
 # ── Step 5: Deepgram artifact removal ────────────────────────────────────────
@@ -619,12 +772,13 @@ def apply_artifact_removal(
         return word
 
     new_text = ARTIFACT_DUPLICATE_RE.sub(_replace_duplicate, text)
-    if new_text != text:
-        records.append(CorrectionRecord(
-            original=text, corrected=new_text,
-            pattern='artifact_duplicate_4plus', block_index=block_index,
-        ))
-    return new_text
+    return _apply_safe_rewrite(
+        text,
+        new_text,
+        records,
+        block_index,
+        'artifact_duplicate_4plus',
+    )
 
 
 def apply_spelled_letter_hyphenation(
@@ -659,14 +813,13 @@ def apply_spelled_letter_hyphenation(
 
     new_text = SPELLED_LETTERS_RE.sub(_hyphenate, text)
 
-    if new_text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=new_text,
-            pattern='spelled_letter_hyphenation_rule157',
-            block_index=block_index,
-        ))
-    return new_text
+    return _apply_safe_rewrite(
+        original,
+        new_text,
+        records,
+        block_index,
+        'spelled_letter_hyphenation_rule157',
+    )
 
 
 # ── Steps 6-7: Cleanup ────────────────────────────────────────────────────────
@@ -687,22 +840,31 @@ def fix_spaced_dashes(
 
     Examples:
       he--stopped         → he -- stopped
+      word-- word         → word -- word
+      word --word         → word -- word
       I went--I drove     → I went -- I drove
       he -- stopped       → unchanged (already correct)
       9:15 a.m.--9:30     → 9:15 a.m. -- 9:30
+
+    Guards:
+      - preserve single-letter and short-token stutters (I--I, he--he)
+      - preserve short-token interruption patterns where both sides are brief
     """
     original = text
-    text = re.sub(r'(?<! )--(?! )', ' -- ', text)
-    text = re.sub(r' {2,}--', ' --', text)
-    text = re.sub(r'-- {2,}', '-- ', text)
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='fix_spaced_dashes',
-            block_index=block_index,
-        ))
-    return text
+    new_text = re.sub(r'\s*--\s*', ' -- ', original)
+    new_text = re.sub(
+        r"\b([A-Za-z']{1,3})\s+--\s+([A-Za-z']{1,3})\b",
+        r'\1--\2',
+        new_text,
+    )
+    new_text = re.sub(r' {2,}', ' ', new_text)
+    return _apply_safe_rewrite(
+        original,
+        new_text,
+        records,
+        block_index,
+        'fix_spaced_dashes',
+    )
 
 
 def fix_uh_huh_hyphenation(
@@ -733,14 +895,13 @@ def fix_uh_huh_hyphenation(
     text = re.sub(r'\buh\s+huh\b', 'Uh-huh', text, flags=re.IGNORECASE)
     text = re.sub(r'\buh\s+uh\b', 'Uh-uh', text, flags=re.IGNORECASE)
     text = re.sub(r'\bmm\s+hmm\b', 'mm-hmm', text, flags=re.IGNORECASE)
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='fix_uh_huh_hyphenation',
-            block_index=block_index,
-        ))
-    return text
+    return _apply_safe_rewrite(
+        original,
+        text,
+        records,
+        block_index,
+        'fix_uh_huh_hyphenation',
+    )
 
 
 def fix_even_dollar_amounts(
@@ -765,14 +926,13 @@ def fix_even_dollar_amounts(
     """
     original = text
     text = re.sub(r'\$(\d[\d,]*?)\.00\b', r'$\1', text)
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='fix_even_dollar_amounts',
-            block_index=block_index,
-        ))
-    return text
+    return _apply_safe_rewrite(
+        original,
+        text,
+        records,
+        block_index,
+        'fix_even_dollar_amounts',
+    )
 
 
 def fix_conversational_titles(
@@ -795,22 +955,46 @@ def fix_conversational_titles(
     Examples:
       miss Ozuna         → Ms. Ozuna
       mister Garcia      → Mr. Garcia
+      miss rodriguez     → Ms. Rodriguez
       missus Rodriguez   → Mrs. Rodriguez
       Ms. Ozuna          → unchanged (already correct)
       the miss           → unchanged (not a title before a name)
     """
     original = text
-    text = re.sub(r'\b(?i:miss)\s+(?=[A-Z])', 'Ms. ', text)
-    text = re.sub(r'\b(?i:missus)\s+(?=[A-Z])', 'Mrs. ', text)
-    text = re.sub(r'\b(?i:mister)\s+(?=[A-Z])', 'Mr. ', text)
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='fix_conversational_titles',
-            block_index=block_index,
-        ))
-    return text
+
+    def _replace_title(match: re.Match) -> str:
+        title = match.group(1).lower()
+        name = match.group(2)
+        prefix = original[:match.start()]
+        prev_word_match = re.search(r"([A-Za-z']+)\W*$", prefix)
+        prev_word = prev_word_match.group(1).lower() if prev_word_match else ""
+
+        if prev_word in {"the", "a", "an"}:
+            return match.group(0)
+        if not TITLE_NAME_TOKEN_RE.fullmatch(name):
+            return match.group(0)
+
+        replacement = {
+            "miss": "Ms.",
+            "missus": "Mrs.",
+            "mister": "Mr.",
+        }[title]
+        normalized_name = name[0].upper() + name[1:] if name else name
+        return f"{replacement} {normalized_name}"
+
+    new_text = re.sub(
+        r'\b(miss|missus|mister)\s+([A-Za-z][A-Za-z\'\-]*)\b',
+        _replace_title,
+        original,
+        flags=re.IGNORECASE,
+    )
+    return _apply_safe_rewrite(
+        original,
+        new_text,
+        records,
+        block_index,
+        'fix_conversational_titles',
+    )
 
 
 def normalize_spaces(text: str) -> str:
@@ -864,14 +1048,13 @@ def enforce_terminal_punctuation(
     ):
         text = stripped + '.'
 
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='terminal_punctuation',
-            block_index=block_index,
-        ))
-    return text
+    return _apply_safe_rewrite(
+        original,
+        text,
+        records,
+        block_index,
+        'terminal_punctuation',
+    )
 
 
 def enforce_direct_address_comma(
@@ -911,14 +1094,13 @@ def enforce_direct_address_comma(
         text,
     )
 
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='direct_address_comma',
-            block_index=block_index,
-        ))
-    return text
+    return _apply_safe_rewrite(
+        original,
+        text,
+        records,
+        block_index,
+        'direct_address_comma',
+    )
 
 
 def normalize_sentence_spacing(
@@ -928,6 +1110,8 @@ def normalize_sentence_spacing(
 ) -> str:
     """
     Enforce the two-space rule after sentence-ending punctuation inside a block.
+
+    Ellipsis is normalized to spaced form without changing pause semantics.
     """
     if re.fullmatch(r"Objection\.\s+Form\.\.?", text, flags=re.IGNORECASE):
         return "Objection. Form."
@@ -960,14 +1144,13 @@ def normalize_sentence_spacing(
     for tok, original in abbr_tokens:
         new_text = new_text.replace(tok, original)
     new_text = new_text.replace(_ELLIPSIS_TOK, ". . .")
-    if new_text != text:
-        records.append(CorrectionRecord(
-            original=text,
-            corrected=new_text,
-            pattern='sentence_spacing_two_spaces',
-            block_index=block_index,
-        ))
-    return new_text
+    return _apply_safe_rewrite(
+        text,
+        new_text,
+        records,
+        block_index,
+        'sentence_spacing_two_spaces',
+    )
 
 
 def normalize_time_and_dashes(
@@ -988,14 +1171,13 @@ def normalize_time_and_dashes(
         return f"{normalized_time} {dotted}"
 
     text = TIME_RE.sub(_fix_time, text)
-    if text != original:
-        records.append(CorrectionRecord(
-            original=original,
-            corrected=text,
-            pattern='time_dash_normalization',
-            block_index=block_index,
-        ))
-    return text
+    return _apply_safe_rewrite(
+        original,
+        text,
+        records,
+        block_index,
+        'time_dash_normalization',
+    )
 
 
 # ── Master correction function ────────────────────────────────────────────────
@@ -1013,6 +1195,8 @@ def clean_block(
     CORRECTION ORDER (MUST NOT CHANGE):
       1.  Multi-word phrase standardization
       2.  Case-specific proper noun corrections (confirmed_spellings)
+      2.5 User-defined rules (spec_engine.user_rule_store) — after
+           confirmed_spellings and before universal corrections
       3.  Universal single-word corrections
       4a. Number-to-word (mid-sentence count context)
       4b. Date mashup flagging
@@ -1036,19 +1220,29 @@ def clean_block(
         flag_counter = [0]
 
     records: List[CorrectionRecord] = []
+    state = CorrectionState()
 
     _before = text  # snapshot for block-level summary log
 
-    text = apply_multiword_corrections(text, records, block_index)
-    text = apply_case_corrections(text, job_config, records, block_index)
+    text = apply_multiword_corrections(text, records, block_index, state=state)
+    text = apply_case_corrections(text, job_config, records, block_index, state=state)
     try:
         from spec_engine.user_rule_store import apply_user_rules
 
-        text, _user_records = apply_user_rules(text, block_index=block_index)
-        records.extend(_user_records)
+        new_text, _user_records = apply_user_rules(text, block_index=block_index, state=state)
+        if _is_safe_rewrite(text, new_text):
+            text = new_text
+            records.extend(_user_records)
+        else:
+            logger.warning(
+                "[clean_block] skipped unsafe user-rule rewrite block=%d before_len=%d after_len=%d",
+                block_index,
+                len(text),
+                len(new_text),
+            )
     except Exception as _exc:
         logger.warning("[clean_block] user_rule_store unavailable: %s", _exc)
-    text = apply_universal_corrections(text, records, block_index)
+    text = apply_universal_corrections(text, records, block_index, state=state)
     text = normalize_time_and_dashes(text, records, block_index)
     text = apply_number_to_word(text, records, block_index)
     text = apply_date_normalization(text, records, flags, block_index, flag_counter)
@@ -1092,6 +1286,7 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
     change_count = 0
     prev_cleaned: str = ""
     prev_speaker: Optional[int] = None
+    prev_start: float | None = None
 
     for index, block in enumerate(blocks):
         result = clean_block(
@@ -1108,10 +1303,15 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
         # Skip this block if its cleaned text is identical to the previous
         # block AND they share the same speaker. Only applies to blocks of
         # 15+ characters to avoid false positives on short responses like "Yes."
+        # Also requires near-identical timing so repeated testimony is not dropped.
+        current_start = _block_start_seconds(block)
         if (
             len(cleaned_text.strip()) >= 15
             and cleaned_text.strip() == prev_cleaned.strip()
             and block.speaker_id == prev_speaker
+            and current_start is not None
+            and prev_start is not None
+            and abs(current_start - prev_start) < 1.0
         ):
             logging.getLogger(__name__).debug(
                 "apply_corrections: skipping duplicate block %d: %r",
@@ -1122,6 +1322,7 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
         if cleaned_text.strip():
             prev_cleaned = cleaned_text.strip()
             prev_speaker = block.speaker_id
+            prev_start = current_start
 
         if cleaned_text != block.text:
             change_count += 1

@@ -28,7 +28,7 @@ def strip_to_ascii(text: str) -> str:
     cleaned = []
     for line in lines:
         line = _strip_line_number(line)
-        line = line.replace("\t", "    ")
+        line = line.expandtabs(4)
         line = line.rstrip()
         cleaned.append(line)
 

@@ -70,7 +70,11 @@ def map_speakers(blocks: List[Block], job_config: Any) -> List[Block]:
     for block in blocks:
         if block.speaker_id is None:
             continue
-        _, speaker_role, speaker_name = resolve_speaker(block.speaker_id, {"speaker_map": merged})
+        speaker_id, speaker_role, speaker_name = resolve_speaker(
+            block.speaker_id,
+            {"speaker_map": merged},
+        )
+        block.speaker_id = speaker_id
         block.speaker_role = speaker_role
         block.speaker_name = speaker_name
 

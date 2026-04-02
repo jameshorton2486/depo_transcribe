@@ -23,10 +23,18 @@ def test_process_blocks_preserves_spec_engine_pipeline_order(monkeypatch):
         return _inner
 
     monkeypatch.setattr(processor_module, "apply_corrections", _mark("apply_corrections"))
-    monkeypatch.setattr(processor_module, "map_speakers", _mark("map_speakers"))
     monkeypatch.setattr(processor_module, "classify_blocks", _mark("classify_blocks"))
     monkeypatch.setattr(processor_module, "fix_qa_structure", _mark("fix_qa_structure"))
     monkeypatch.setattr(processor_module, "extract_objections", _mark("extract_objections"))
+
+    def _map(current_blocks, *args, **kwargs):
+        calls.append("map_speakers")
+        for block in current_blocks:
+            block.speaker_role = "WITNESS"
+            block.speaker_name = "THE WITNESS"
+        return current_blocks
+
+    monkeypatch.setattr(processor_module, "map_speakers", _map)
 
     class _Validation:
         errors = []
@@ -51,6 +59,60 @@ def test_process_blocks_preserves_spec_engine_pipeline_order(monkeypatch):
     ]
 
 
+def test_process_blocks_logs_additional_stage_snapshots(monkeypatch):
+    from spec_engine import processor as processor_module
+
+    blocks = [Block(speaker_id=1, text="Test.", raw_text="")]
+    cfg = {"speaker_map": {1: "THE WITNESS"}, "speaker_map_verified": True}
+    snapshot_names = []
+
+    monkeypatch.setattr(processor_module, "apply_corrections", lambda current_blocks, *_args, **_kwargs: current_blocks)
+    monkeypatch.setattr(processor_module, "fix_qa_structure", lambda current_blocks, *_args, **_kwargs: current_blocks)
+    monkeypatch.setattr(processor_module, "extract_objections", lambda current_blocks, *_args, **_kwargs: current_blocks)
+
+    def _map(current_blocks, *_args, **_kwargs):
+        for block in current_blocks:
+            block.speaker_role = "WITNESS"
+            block.speaker_name = "THE WITNESS"
+        return current_blocks
+
+    def _classify(current_blocks, *_args, **_kwargs):
+        for block in current_blocks:
+            block.block_type = BlockType.ANSWER
+        return current_blocks
+
+    class _Validation:
+        errors = []
+        warnings = []
+
+    class _Run:
+        def snapshot(self, name, current_blocks):
+            snapshot_names.append(name)
+
+        def log_step(self, *args, **kwargs):
+            pass
+
+        def log_corrections_from_blocks(self, current_blocks):
+            pass
+
+        def write_validation(self, validation):
+            pass
+
+    monkeypatch.setattr(processor_module, "map_speakers", _map)
+    monkeypatch.setattr(processor_module, "classify_blocks", _classify)
+    monkeypatch.setattr(
+        processor_module,
+        "validate_blocks",
+        lambda current_blocks, speaker_map_verified=False: _Validation(),
+    )
+
+    processor_module.process_blocks(blocks, cfg, run_logger=_Run())
+
+    assert "02a_blocks_speaker_mapped" in snapshot_names
+    assert "03a_blocks_classified" in snapshot_names
+    assert "04a_blocks_qa_fixed" in snapshot_names
+
+
 def test_process_blocks_reclassifies_after_objection_extraction(monkeypatch):
     from spec_engine import processor as processor_module
 
@@ -59,9 +121,16 @@ def test_process_blocks_reclassifies_after_objection_extraction(monkeypatch):
     cfg = {"speaker_map": {3: "MR. BOYCE"}, "speaker_map_verified": True}
 
     monkeypatch.setattr(processor_module, "apply_corrections", lambda current_blocks, *_args, **_kwargs: current_blocks)
-    monkeypatch.setattr(processor_module, "map_speakers", lambda current_blocks, *_args, **_kwargs: current_blocks)
     monkeypatch.setattr(processor_module, "fix_qa_structure", lambda current_blocks, *_args, **_kwargs: current_blocks)
     monkeypatch.setattr(processor_module, "extract_objections", lambda current_blocks, *_args, **_kwargs: current_blocks)
+
+    def _map(current_blocks, *_args, **_kwargs):
+        for block in current_blocks:
+            block.speaker_role = "OPPOSING_COUNSEL"
+            block.speaker_name = "MR. BOYCE"
+        return current_blocks
+
+    monkeypatch.setattr(processor_module, "map_speakers", _map)
 
     def _classify(current_blocks, *_args, **_kwargs):
         classify_calls.append(len(classify_calls))

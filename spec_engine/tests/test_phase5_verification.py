@@ -140,6 +140,14 @@ class TestFix5C_EmitSpLineSingleSpace:
             bold_runs = [r.text for r in doc.paragraphs[0].runs if r.bold]
             assert bold_runs
 
+    def test_split_speaker_text_handles_extra_spaces_after_colon(self):
+        from spec_engine.emitter import _split_speaker_text
+
+        label, content = _split_speaker_text("MR. BOYCE:   Objection. Form.")
+
+        assert label == "MR. BOYCE:"
+        assert content == "Objection. Form."
+
 
 class TestFix5D_SharedTabStopHelper:
     def test_standard_tabs_constant_exists(self):

@@ -2,7 +2,7 @@
 document_builder.py
 
 Full pipeline orchestrator (Spec Section 9.2).
-Runs all 8 steps: parse → load_config → clean → classify → emit →
+Runs all 8 steps: parse → load_config → process_blocks → classify → emit →
 corrections_log → caption → certificate.
 
 Also handles:
@@ -21,7 +21,6 @@ import re
 from app_logging import get_logger
 
 from .classifier import ClassifierState, classify_block, fix_trailing_okay_in_answer
-from .corrections import clean_block
 from .emitter import (
     QAPairTracker, LineNumberTracker,
     add_page_break, create_document, emit_line, emit_line_numbered,
@@ -43,7 +42,7 @@ from .pages.title_page import write_title_page
 from .pages.witness_index import write_witness_index
 from .parser import parse_blocks, show_speaker_preview
 from .speaker_mapper import map_speakers
-from .speaker_resolver import normalize_speaker_id
+from .processor import process_blocks
 from .validator import ValidationResult
 
 LOGGER = get_logger(__name__)
@@ -176,12 +175,6 @@ def process_transcript(
         run_logger.snapshot("01_docbuilder_blocks_raw", blocks)
         run_logger.log_step("Deepgram parse complete", block_count=len(blocks))
 
-    for block in blocks:
-        try:
-            block.speaker_id = normalize_speaker_id(block.speaker_id)
-        except ValueError:
-            pass
-
     log(f"  Parsed {len(blocks)} speaker blocks")
     preview = show_speaker_preview(blocks)
     log(preview)
@@ -190,17 +183,14 @@ def process_transcript(
         cache_blocks(blocks, job_config)
         log(f"  Blocks cached to {_cache_path(job_config)}")
 
-    # ── Steps 3-5: Clean, classify, emit ─────────────────────────────────────
-    blocks = map_speakers(blocks, job_config)
-    log(f"  Speaker roles mapped ({len(blocks)} blocks)")
-    if run_logger:
-        run_logger.snapshot("02_docbuilder_blocks_mapped", blocks)
-        run_logger.log_step("Speaker mapping complete", block_count=len(blocks))
-    log("Step 2: Cleaning, classifying, and emitting...")
+    # ── Steps 2-5: Shared spec_engine pipeline, then DOCX emission ───────────
+    log("Step 2: Running shared block pipeline...")
+    blocks = process_blocks(blocks, job_config, run_logger=run_logger)
+    log(f"  Block pipeline complete ({len(blocks)} blocks)")
+    log("Step 3: Classifying and emitting...")
 
     all_corrections: List[CorrectionRecord] = []
     state = ClassifierState()
-    flag_counter = [0]  # Mutable for passing into clean_block
     qa_tracker = QAPairTracker()
     line_tracker = LineNumberTracker(start_page=6)
     use_line_numbers = True   # Set False to disable line numbering
@@ -221,17 +211,7 @@ def process_transcript(
     body_lines: List[tuple] = []   # (LineType, text)
 
     for i, block in enumerate(blocks):
-        # Step 3: Clean
-        result = clean_block(
-            block.text,
-            job_config,
-            block_index=i,
-            flags=state.flags,
-            flag_counter=flag_counter,
-        )
-        cleaned_text = result[0]
-        corrections = result[1]
-        block.text = cleaned_text
+        corrections = list(block.meta.get("corrections") or [])
         all_corrections.extend(corrections)
         if run_logger:
             for record in corrections:
@@ -242,7 +222,7 @@ def process_transcript(
                     rule=getattr(record, "pattern", ""),
                 )
 
-        # Step 4: Classify
+        # Step 4: Classify for emission
         line_results = classify_block(block, job_config, state, block_index=i)
 
         # Collect body lines
