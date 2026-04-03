@@ -10,7 +10,6 @@ from config import DEEPGRAM_API_KEY
 from ui.tab_training import TrainingTab
 from ui.tab_transcript import TranscriptTab
 from ui.tab_transcribe import TranscribeTab
-from ui.tab_corrections import CorrectionsTab
 
 
 class DepoTranscribeApp(ctk.CTk):
@@ -55,7 +54,6 @@ class DepoTranscribeApp(ctk.CTk):
 
         self.tab_view.add("Transcribe")
         self.tab_view.add("Transcript")
-        self.tab_view.add("Corrections")
         self.tab_view.add("Training")
 
         self.transcribe_tab = TranscribeTab(self.tab_view.tab("Transcribe"))
@@ -63,9 +61,6 @@ class DepoTranscribeApp(ctk.CTk):
 
         self.transcript_tab = TranscriptTab(self.tab_view.tab("Transcript"))
         self.transcript_tab.pack(fill="both", expand=True)
-
-        self.corrections_tab = CorrectionsTab(self.tab_view.tab("Corrections"))
-        self.corrections_tab.pack(fill="both", expand=True)
 
         self.training_tab = TrainingTab(self.tab_view.tab("Training"))
         self.training_tab.pack(fill="both", expand=True)
