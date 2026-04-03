@@ -187,6 +187,11 @@ TEXAS_DEPOSITION_SEEDS = {
     "SR22": "SR-22",
     "RS-22": "SR-22",
     "CSR number": "CSR No.",
+    "AGB": "H-E-B",
+    "HEB": "H-E-B",
+    "HEP": "H-E-B",
+    "H E B": "H-E-B",
+    "age b": "H-E-B",
 }
 
 
@@ -849,6 +854,7 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bthis REC\b', 'this wreck'),
         (r'\bRECs\b', 'wrecks'),
         (r'\bremote swearing of any witness\b', 'remote swearing of the witness'),
+        (r'\bremotes for any witness\b', 'remote swearing of the witness'),
         (r'\bremotes or any witness\b', 'remote swearing of the witness'),
         (r'\bnotice and attorney\b', 'noticing attorney'),
         (r'\bnoticing and attorney\b', 'noticing attorney'),
@@ -995,6 +1001,14 @@ def _spoken_year_to_int(year_str: str) -> str | None:
         return '2020'
 
     m = re.match(
+        r'^twenty (eighteen|nineteen)$',
+        y,
+    )
+    if m:
+        suffix = {'eighteen': '18', 'nineteen': '19'}[m.group(1)]
+        return f"20{suffix}"
+
+    m = re.match(
         r'^twenty twenty (one|two|three|four|five|six|seven|eight|nine)$',
         y,
     )
@@ -1067,6 +1081,35 @@ def fix_spoken_dates(text: str) -> str:
         re.IGNORECASE,
     )
 
+    def _fix_standalone_years(segment: str) -> str:
+        context = (
+            r'(?:in|since|from|graduated|accident|occurred|happened|'
+            r'filed|that was|back in|year|until|to|through|started|'
+            r'ended|between|after|before|around)'
+        )
+        year_patterns = [
+            (
+                rf'({context})\s+(twenty\s+twenty(?:\s+(?:one|two|three|four|five|six))?)\b',
+                lambda m: m.group(1) + ' ' + (_spoken_year_to_int(m.group(2)) or m.group(2)),
+            ),
+            (
+                rf'({context})\s+(twenty\s+(?:eighteen|nineteen))\b',
+                lambda m: m.group(1) + ' ' + (_spoken_year_to_int(m.group(2)) or m.group(2)),
+            ),
+            (
+                rf'({context})\s+(nineteen\s+(?:eighty|ninety)(?:\s+\w+)?)\b',
+                lambda m: m.group(1) + ' ' + (_spoken_year_to_int(m.group(2)) or m.group(2)),
+            ),
+            (
+                rf'({context})\s+(two\s+thousand(?:\s+and)?\s+\w+)\b',
+                lambda m: m.group(1) + ' ' + (_spoken_year_to_int(m.group(2)) or m.group(2)),
+            ),
+        ]
+        working = segment
+        for pattern, replacer in year_patterns:
+            working = re.sub(pattern, replacer, working, flags=re.IGNORECASE)
+        return working
+
     def _replace(segment: str) -> str:
         def _repl(m: re.Match) -> str:
             month = _MONTH_TO_NUM.get(m.group(1).lower())
@@ -1077,7 +1120,8 @@ def fix_spoken_dates(text: str) -> str:
                 return m.group(0)
             return f"{month}/{day}/{year}"
 
-        return full_date.sub(_repl, segment)
+        working = full_date.sub(_repl, segment)
+        return _fix_standalone_years(working)
 
     return _apply_outside_protected_segments(text, _replace)
 
