@@ -23,6 +23,31 @@ from core.confidence_docx_exporter import export_confidence_docx
 from core.vlc_player import VLCPlayer
 from core.word_data_loader import get_flagged_summary, get_confidence_tier, load_words_for_transcript
 
+_CONFIDENCE_STOP_WORDS = frozenset({
+    "a", "an", "the",
+    "in", "on", "at", "to", "for", "of", "with", "by", "from",
+    "into", "through", "about", "as", "up", "down", "out",
+    "and", "or", "but", "so", "yet", "nor",
+    "i", "you", "he", "she", "it", "we", "they", "me", "him",
+    "her", "us", "them", "my", "your", "his", "its", "our",
+    "their", "that", "this", "these", "those",
+    "is", "am", "are", "was", "were", "be", "been", "being",
+    "do", "did", "does", "have", "has", "had", "will", "would",
+    "can", "could", "should", "may", "might", "shall",
+    "not", "no", "yes", "just", "also", "very", "well",
+    "now", "then", "here", "there", "too", "so",
+    "mr", "ms", "mrs", "dr", "sir", "ma'am",
+    "okay", "ok", "right", "correct",
+})
+
+CONFIDENCE_AMBER_THRESHOLD = 0.75
+CONFIDENCE_RED_THRESHOLD = 0.50
+
+COLOR_AMBER = "#B8860B"
+COLOR_RED = "#CC2200"
+
+_TRANSCRIPTION_PROGRESS_RE = re.compile(r'chunk\s+(\d+)\s+of\s+(\d+)', re.IGNORECASE)
+
 
 class TranscriptTab(ctk.CTkFrame):
     """Transcript review workspace with audio sync and confidence markup."""
@@ -39,6 +64,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._processed_text: str | None = None
         self._canonical_text: str = ""
         self._word_map: list[dict] = []
+        self._word_timings: list[dict] = []
         self._sync_timer_id: str | None = None
         self._remap_job: str | None = None
         self._edit_mode: bool = False
@@ -61,6 +87,10 @@ class TranscriptTab(ctk.CTkFrame):
         self._low_confidence_words: list[dict] = []
         self._ai_running = False
         self._format_running = False
+        self._transcription_running = False
+        self._bottom_panel_visible = False
+        self._conf_list_visible = False
+        self._speaker_tools_visible = False
 
         self._highlight_var = ctk.BooleanVar(value=True)
         self._build_ui()
@@ -74,15 +104,56 @@ class TranscriptTab(ctk.CTkFrame):
     def _save_target_path(self) -> str | None:
         return self._active_transcript_path()
 
-    def _update_path_label(self) -> None:
-        if self._corrected_path:
-            self._path_label.configure(
-                text=f"Loaded: {self._current_path}  |  Showing processed copy: {self._corrected_path}",
-                text_color="gray",
-            )
+    def _update_audio_state(self, text: str, color: str = "#445566") -> None:
+        self._audio_state_label.configure(text=text, text_color=color)
+
+    def _toggle_bottom_panel(self) -> None:
+        if self._bottom_panel_visible:
+            self._bottom_panel.pack_forget()
+            self._panel_toggle_btn.configure(text="▶  Audio & Review Tools")
+            self._bottom_panel_visible = False
+        else:
+            self._bottom_panel.pack(fill="x", side="bottom", before=self._panel_toggle_btn)
+            self._panel_toggle_btn.configure(text="▼  Audio & Review Tools")
+            self._bottom_panel_visible = True
+
+    def _ensure_bottom_panel_open(self) -> None:
+        if not self._bottom_panel_visible:
+            self._toggle_bottom_panel()
+
+    def _toggle_speaker_tools(self) -> None:
+        if self._speaker_tools_visible:
+            self._edit_toolbar.pack_forget()
+            self._speaker_toggle_btn.configure(text="+ Insert Speaker Break")
+            self._speaker_tools_visible = False
+        else:
+            self._edit_toolbar.pack(fill="x", padx=8, pady=(0, 4), after=self._speaker_toggle_btn)
+            self._speaker_toggle_btn.configure(text="− Insert Speaker Break")
+            self._speaker_tools_visible = True
+
+    def _toggle_conf_list(self) -> None:
+        if not self._low_confidence_words:
+            self._conf_toggle_btn.configure(text="▶  0 low-confidence words")
             return
-        if self._current_path:
-            self._path_label.configure(text=f"Loaded: {self._current_path}", text_color="gray")
+        if self._conf_list_visible:
+            self._low_conf_frame.pack_forget()
+            self._conf_list_visible = False
+            self._conf_toggle_btn.configure(text=f"▶  {len(self._low_confidence_words)} low-confidence words")
+        else:
+            self._low_conf_frame.pack(fill="x", padx=8, pady=(0, 2), after=self._conf_toggle_btn)
+            self._conf_list_visible = True
+            self._conf_toggle_btn.configure(text=f"▼  {len(self._low_confidence_words)} low-confidence words")
+
+    def _update_path_label(self) -> None:
+        target = self._corrected_path or self._current_path
+        if not target:
+            self._path_label.configure(text="No file loaded", text_color="#445566")
+            return
+        name = os.path.basename(target)
+        if len(name) > 70:
+            name = name[:67] + "..."
+        prefix = "Processed" if self._corrected_path else "Loaded"
+        self._path_label.configure(text=f"{prefix}: {name}", text_color="#445566")
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -113,16 +184,7 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._run_corrections_btn.pack(side="right", padx=(4, 0))
 
-        self._format_btn = ctk.CTkButton(
-            header,
-            text="Format Transcript",
-            width=145,
-            fg_color="#0F5A6A",
-            hover_color="#0A3A4A",
-            state="disabled",
-            command=self._start_format_transcript,
-        )
-        self._format_btn.pack(side="right", padx=(4, 0))
+        self._format_btn = None
 
         self._fnr_toggle_btn = ctk.CTkButton(
             header,
@@ -154,29 +216,63 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._save_btn.pack(side="right", padx=(4, 0))
 
-        self._status_label = ctk.CTkLabel(
-            self,
-            text="Ready",
-            font=ctk.CTkFont(size=13),
-            text_color="gray",
-            anchor="w",
-        )
-        self._status_label.pack(fill="x", padx=14, pady=(0, 2))
-
-        divider_top = ctk.CTkFrame(self, height=1, fg_color="#293243")
-        divider_top.pack(fill="x", padx=14, pady=(0, 3))
+        self._status_bar = ctk.CTkFrame(self, height=24, fg_color="#0A1520", corner_radius=0)
+        self._status_bar.pack(fill="x", padx=0, pady=(0, 2))
+        self._status_bar.pack_propagate(False)
 
         self._path_label = ctk.CTkLabel(
-            self,
-            text="No transcript loaded.",
-            font=ctk.CTkFont(size=13),
-            text_color="gray",
+            self._status_bar,
+            text="No file loaded",
+            font=ctk.CTkFont(size=11),
+            text_color="#445566",
             anchor="w",
         )
-        self._path_label.pack(fill="x", padx=14, pady=(0, 2))
+        self._path_label.pack(side="left", padx=8)
 
-        player_row = ctk.CTkFrame(self, fg_color="transparent")
-        player_row.pack(fill="x", padx=14, pady=(0, 2))
+        self._status_label = ctk.CTkLabel(
+            self._status_bar,
+            text="Ready",
+            font=ctk.CTkFont(size=11),
+            text_color="#7D8FA3",
+            anchor="w",
+        )
+        self._status_label.pack(side="left", fill="x", expand=True, padx=(8, 8))
+
+        self._audio_state_label = ctk.CTkLabel(
+            self._status_bar,
+            text="Audio stopped",
+            font=ctk.CTkFont(size=11),
+            text_color="#445566",
+            anchor="e",
+        )
+        self._audio_state_label.pack(side="right", padx=8)
+
+        self._progress_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self._progress_bar = ctk.CTkProgressBar(
+            self._progress_frame,
+            width=400,
+            height=16,
+            corner_radius=4,
+            fg_color="#1A2A3A",
+            progress_color="#1558C0",
+        )
+        self._progress_bar.pack(side="left", padx=(0, 10))
+        self._progress_bar.set(0)
+        self._progress_label = ctk.CTkLabel(
+            self._progress_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color="#AABBCC",
+            anchor="w",
+        )
+        self._progress_label.pack(side="left", fill="x", expand=True)
+        self._progress_frame.pack(fill="x", padx=14, pady=(0, 2))
+        self._progress_frame.pack_forget()
+
+        self._bottom_panel = ctk.CTkFrame(self, fg_color="#0F1A24", corner_radius=0)
+
+        player_row = ctk.CTkFrame(self._bottom_panel, fg_color="transparent")
+        player_row.pack(fill="x", padx=8, pady=(6, 2))
 
         self._play_btn = ctk.CTkButton(player_row, text="Play", width=72, command=self._play_audio)
         self._play_btn.pack(side="left", padx=(0, 4))
@@ -241,8 +337,8 @@ class TranscriptTab(ctk.CTkFrame):
         self._load_audio_btn.pack(side="right")
 
         # ── Waveform scrubber ────────────────────────────────────────────────
-        self._waveform_frame = ctk.CTkFrame(self, fg_color="#0D1420", corner_radius=4)
-        self._waveform_frame.pack(fill="x", padx=14, pady=(0, 2))
+        self._waveform_frame = ctk.CTkFrame(self._bottom_panel, fg_color="#0D1420", corner_radius=4)
+        self._waveform_frame.pack(fill="x", padx=8, pady=(0, 2))
         self._waveform_frame.pack_forget()   # hidden until audio is loaded
 
         self._waveform_canvas = tk.Canvas(
@@ -257,12 +353,34 @@ class TranscriptTab(ctk.CTkFrame):
         self._waveform_canvas.bind("<Configure>", self._on_waveform_resize)
         # ────────────────────────────────────────────────────────────────────
 
-        conf_row = ctk.CTkFrame(self, fg_color="transparent")
+        shortcut_row = ctk.CTkFrame(self._bottom_panel, fg_color="transparent", height=24)
+        shortcut_row.pack(fill="x", padx=8, pady=(0, 2))
+        ctk.CTkLabel(
+            shortcut_row,
+            text="Ctrl+Click = seek to word  ·  Space = play/pause  ·  Esc = stop  ·  ← → = ±2s",
+            font=ctk.CTkFont(size=11),
+            text_color="#445566",
+            anchor="w",
+        ).pack(side="left")
+
+        self._speaker_toggle_btn = ctk.CTkButton(
+            self._bottom_panel,
+            text="+ Insert Speaker Break",
+            height=24,
+            fg_color="transparent",
+            hover_color="#1A2A3A",
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+            command=self._toggle_speaker_tools,
+        )
+        self._speaker_toggle_btn.pack(fill="x", padx=8, pady=(0, 2))
+
+        conf_row = ctk.CTkFrame(self._bottom_panel, fg_color="transparent")
 
         self._conf_label = ctk.CTkLabel(
             conf_row,
             text="Confidence: no word-level data loaded",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=11),
             text_color="gray",
             anchor="w",
         )
@@ -270,17 +388,17 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._highlight_toggle = ctk.CTkCheckBox(
             conf_row,
-            text="Highlight low-confidence words",
+            text="Highlight",
             variable=self._highlight_var,
             command=self._refresh_confidence_highlights,
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=11),
         )
         self._highlight_toggle.pack(side="right")
 
         self._confirm_btn = ctk.CTkButton(
             conf_row,
-            text="Confirm Word",
-            width=112,
+            text="Confirm",
+            width=88,
             fg_color="#1A6B3A",
             hover_color="#145230",
             command=self._confirm_current_word,
@@ -289,8 +407,8 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._next_flagged_btn = ctk.CTkButton(
             conf_row,
-            text="Next ➡",
-            width=84,
+            text="Next →",
+            width=78,
             fg_color="transparent",
             border_width=1,
             border_color="#334",
@@ -301,8 +419,8 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._prev_flagged_btn = ctk.CTkButton(
             conf_row,
-            text="⬅ Previous",
-            width=96,
+            text="← Prev",
+            width=78,
             fg_color="transparent",
             border_width=1,
             border_color="#334",
@@ -311,10 +429,20 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._prev_flagged_btn.pack(side="right", padx=(0, 6))
 
-        divider_bottom = ctk.CTkFrame(self, height=1, fg_color="#293243")
-
         self._low_conf_pady = (0, 3)
-        self._low_conf_frame = ctk.CTkFrame(self, fg_color="#101826")
+        self._conf_toggle_btn = ctk.CTkButton(
+            self._bottom_panel,
+            text="▶ 0 low-confidence words",
+            height=24,
+            fg_color="transparent",
+            hover_color="#1A2A3A",
+            font=ctk.CTkFont(size=11),
+            anchor="w",
+            command=self._toggle_conf_list,
+        )
+        self._conf_toggle_btn.pack(fill="x", padx=8, pady=(0, 2))
+
+        self._low_conf_frame = ctk.CTkFrame(self._bottom_panel, fg_color="#101826")
 
         low_conf_header = ctk.CTkFrame(self._low_conf_frame, fg_color="transparent")
         low_conf_header.pack(fill="x", padx=8, pady=(6, 2))
@@ -322,7 +450,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._low_conf_title = ctk.CTkLabel(
             low_conf_header,
             text="Low-Confidence Review: no transcript loaded",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
             text_color="#CCAA44",
             anchor="w",
         )
@@ -330,8 +458,8 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._low_conf_box = ctk.CTkTextbox(
             self._low_conf_frame,
-            height=56,
-            font=ctk.CTkFont(family="Courier New", size=13),
+            height=80,
+            font=ctk.CTkFont(family="Courier New", size=12),
             state="disabled",
         )
         self._low_conf_box.pack(fill="x", padx=8, pady=(0, 4))
@@ -398,7 +526,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._fnr_current_pos = "1.0"
 
         # ── Speaker break toolbar (always visible) ───────────────────────────
-        self._edit_toolbar = ctk.CTkFrame(self, fg_color="#0D1B2A", corner_radius=4)
+        self._edit_toolbar = ctk.CTkFrame(self._bottom_panel, fg_color="#0D1B2A", corner_radius=4)
 
         edit_tb_inner = ctk.CTkFrame(self._edit_toolbar, fg_color="transparent")
         edit_tb_inner.pack(fill="x", padx=8, pady=4)
@@ -429,21 +557,18 @@ class TranscriptTab(ctk.CTkFrame):
             text_color="#445566",
         ).pack(side="left", padx=(12, 0))
 
-        self._edit_toolbar.pack(fill="x", padx=14, pady=(0, 4))
-
-        conf_row.pack(fill="x", padx=14, pady=(0, 2))
-        divider_bottom.pack(fill="x", padx=14, pady=(0, 3))
+        conf_row.pack(fill="x", padx=8, pady=(0, 2))
 
         self._log_box = ctk.CTkTextbox(
-            self,
+            self._bottom_panel,
             height=24,
             font=ctk.CTkFont(family="Courier New", size=13),
             state="disabled",
         )
-        self._log_box.pack(side="bottom", fill="x", padx=14, pady=(0, 3))
+        self._log_box.pack(fill="x", padx=8, pady=(0, 3))
 
-        action_row = ctk.CTkFrame(self, fg_color="transparent")
-        action_row.pack(side="bottom", fill="x", padx=14, pady=(0, 4))
+        action_row = ctk.CTkFrame(self._bottom_panel, fg_color="transparent")
+        action_row.pack(fill="x", padx=8, pady=(0, 4))
 
         self._open_folder_btn = ctk.CTkButton(
             action_row,
@@ -492,77 +617,30 @@ class TranscriptTab(ctk.CTkFrame):
         self._textbox._textbox.bind("<<Modified>>", self._on_textbox_modified)
         self._textbox._textbox.bind("<Button-1>", self._on_textbox_click)
         self._textbox._textbox.bind("<Double-Button-1>", self._on_textbox_double_click)
+        self._textbox._textbox.bind("<Control-Button-1>", self._on_ctrl_click_seek)
+        self._textbox._textbox.bind("<space>", self._on_space_play_pause)
+        self._textbox._textbox.bind("<Escape>", self._on_escape_stop)
+        self._textbox._textbox.bind("<Left>", self._on_skip_back)
+        self._textbox._textbox.bind("<Right>", self._on_skip_forward)
         self._textbox._textbox.bind("<Control-z>", lambda _: self._textbox._textbox.edit_undo() or "break")
         self._textbox._textbox.bind("<Control-Z>", lambda _: self._textbox._textbox.edit_undo() or "break")
         self._textbox._textbox.bind("<Control-y>", lambda _: self._textbox._textbox.edit_redo() or "break")
         self.winfo_toplevel().bind("<Control-h>", lambda _: self._toggle_find_replace())
         self.winfo_toplevel().bind("<Escape>", lambda _: self._close_find_replace())
+        self._textbox._textbox.bind("<Button-3>", self._show_context_menu)
+        self._textbox.bind("<Button-3>", self._show_context_menu, add=True)
 
-        # ── Right-click context menu ──────────────────────────────────────
-        def _make_context_menu(event):
-            widget = self._textbox._textbox
-            try:
-                inner_x = event.x_root - widget.winfo_rootx()
-                inner_y = event.y_root - widget.winfo_rooty()
-                click_index = widget.index(f"@{inner_x},{inner_y}")
-                char_offset = self._index_to_char_offset(click_index)
-            except Exception as exc:
-                print(f"[RightClick] coord error: {exc}")
-                return
-
-            clicked_item = None
-            if self._word_map:
-                best_dist = float("inf")
-                for item in self._word_map:
-                    if item["char_start"] < 0:
-                        continue
-                    if item["char_start"] <= char_offset <= item["char_end"]:
-                        clicked_item = item
-                        break
-                    dist = min(
-                        abs(char_offset - item["char_start"]),
-                        abs(char_offset - item["char_end"])
-                    )
-                    if dist < best_dist:
-                        best_dist = dist
-                        clicked_item = item
-
-            menu = tk.Menu(widget, tearoff=0, font=("Segoe UI", 12))
-
-            if clicked_item:
-                _word = clicked_item["word"]
-                _item = dict(clicked_item)
-
-                menu.add_command(
-                    label=f'Replace  "{_word}"…',
-                    command=lambda: self._ctx_replace_one(_item),
-                )
-                menu.add_command(
-                    label=f'Replace ALL  "{_word}"…',
-                    command=lambda: self._ctx_replace_all(_word),
-                )
-                menu.add_separator()
-                menu.add_command(
-                    label=f'Seek audio →  "{_word}"',
-                    command=lambda: self._on_word_clicked(float(_item["start"])),
-                )
-                menu.add_separator()
-
-            menu.add_command(label="Find & Replace  (Ctrl+H)", command=self._toggle_find_replace)
-
-            try:
-                menu.tk_popup(event.x_root, event.y_root)
-            except Exception as exc:
-                print(f"[RightClick] popup error: {exc}")
-            finally:
-                menu.grab_release()
-
-        def _show_context_menu(event):
-            _make_context_menu(event)
-            return "break"
-
-        self._textbox._textbox.bind("<Button-3>", _show_context_menu)
-        self._textbox.bind("<Button-3>", _show_context_menu, add=True)
+        self._panel_toggle_btn = ctk.CTkButton(
+            self,
+            text="▶  Audio & Review Tools",
+            height=28,
+            fg_color="#1A2A3A",
+            hover_color="#1E3A5F",
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            command=self._toggle_bottom_panel,
+        )
+        self._panel_toggle_btn.pack(fill="x", padx=0, pady=0, side="bottom")
 
     def _init_player(self):
         def worker():
@@ -576,11 +654,13 @@ class TranscriptTab(ctk.CTkFrame):
         self._player_ready = True
         if player.is_available:
             self._audio_label.configure(text="VLC ready", text_color="#7DD8E8")
+            self._update_audio_state("Audio ready", "#7DD8E8")
         else:
             self._audio_label.configure(
                 text="VLC unavailable (install python-vlc to enable playback)",
                 text_color="#CC8844",
             )
+            self._update_audio_state("Audio unavailable", "#CC8844")
         if self._audio_path:
             self.set_audio_file(self._audio_path)
 
@@ -589,15 +669,169 @@ class TranscriptTab(ctk.CTkFrame):
         self._log_box.insert("end", msg + "\n")
         self._log_box.see("end")
         self._log_box.configure(state="disabled")
+        self._update_progress_from_message(msg)
 
     def set_status(self, text: str, color: str = "gray"):
         self._status_label.configure(text=text, text_color=color)
+        self._update_progress_from_message(text)
+
+    @staticmethod
+    def _normalize_confidence_token(token: str) -> str:
+        return token.strip().lower().rstrip(".,;:?!")
+
+    def _is_confidence_stop_word(self, token: str) -> bool:
+        return self._normalize_confidence_token(token) in _CONFIDENCE_STOP_WORDS
+
+    def _show_progress(self) -> None:
+        if not self._progress_frame.winfo_ismapped():
+            self._progress_frame.pack(fill="x", padx=14, pady=(0, 2), before=self._textbox)
+
+    def _hide_progress(self) -> None:
+        if self._progress_frame.winfo_ismapped():
+            self._progress_frame.pack_forget()
+
+    def _update_progress_from_message(self, message: str) -> None:
+        if not self._transcription_running:
+            return
+        if not message:
+            return
+        match = _TRANSCRIPTION_PROGRESS_RE.search(message)
+        if match:
+            chunk_num = int(match.group(1))
+            total_chunks = max(1, int(match.group(2)))
+            percent = max(0.0, min(1.0, chunk_num / total_chunks))
+            self._show_progress()
+            self._progress_bar.set(percent)
+            self._progress_label.configure(
+                text=f"Transcribing... chunk {chunk_num} of {total_chunks} ({int(percent * 100)}%)"
+            )
+            return
+        lowered = message.lower()
+        if any(token in lowered for token in ("transcription started", "processing audio", "splitting into chunks", "normalizing audio", "validating audio")):
+            self._show_progress()
+            if "processing audio" in lowered:
+                self._progress_bar.set(0.05)
+            self._progress_label.configure(text=message)
+        elif "transcription complete" in lowered or "complete ✓" in lowered:
+            self._progress_bar.set(1.0)
+            self._progress_label.configure(text=message)
+        elif "failed" in lowered or lowered.startswith("error:"):
+            self._progress_label.configure(text=message)
+
+    def _iter_pending_confidence_items(self):
+        for idx, item in enumerate(self._word_map):
+            if item["char_start"] < 0:
+                continue
+            if self.review_state.get(idx, "pending") != "pending":
+                continue
+            if self._is_confidence_stop_word(str(item.get("word", ""))):
+                continue
+            confidence = float(item.get("confidence", 1.0) or 1.0)
+            yield idx, item, confidence
+
+    def _word_item_at_event(self, event):
+        if not self._word_map:
+            return None, -1
+        try:
+            click_index = self._textbox._textbox.index(f"@{event.x},{event.y}")
+        except Exception:
+            return None, -1
+        char_offset = self._index_to_char_offset(click_index)
+        best = None
+        best_idx = -1
+        best_dist = float("inf")
+        for idx, item in enumerate(self._word_map):
+            if item["char_start"] < 0:
+                continue
+            if item["char_start"] <= char_offset <= item["char_end"]:
+                return item, idx
+            dist = min(abs(char_offset - item["char_start"]), abs(char_offset - item["char_end"]))
+            if dist < best_dist:
+                best_dist = dist
+                best = item
+                best_idx = idx
+        return best, best_idx
+
+    def _flash_word_item(self, item: dict) -> None:
+        if item["char_start"] < 0:
+            return
+        widget = self._textbox._textbox
+        widget.tag_config("seek_flash", background="#355C7D", foreground="white")
+        start_idx = f"1.0+{item['char_start']}c"
+        end_idx = f"1.0+{item['char_end']}c"
+        widget.tag_remove("seek_flash", "1.0", "end")
+        widget.tag_add("seek_flash", start_idx, end_idx)
+        self.after(400, lambda: widget.tag_remove("seek_flash", "1.0", "end"))
+
+    def _seek_audio(self, timestamp: float) -> bool:
+        if self._player and self._player.jump_to(timestamp):
+            self._schedule_position_update()
+            self._start_sync_timer()
+            return True
+        return False
+
+    def _is_audio_playing(self) -> bool:
+        return bool(self._player and self._player.is_loaded and self._player.is_playing)
+
+    def _show_context_menu(self, event):
+        widget = self._textbox._textbox
+        selected = ""
+        try:
+            selected = widget.get("sel.first", "sel.last").strip()
+        except Exception:
+            selected = ""
+
+        clicked_item, _ = self._word_item_at_event(event)
+        menu = tk.Menu(widget, tearoff=0)
+
+        target_text = selected or (str(clicked_item.get("word", "")).strip() if clicked_item else "")
+        if target_text:
+            menu.add_command(
+                label=f'Correct "{target_text[:30]}"...',
+                command=lambda text=target_text: self._open_correction_dialog(text),
+            )
+            menu.add_separator()
+
+        if clicked_item:
+            item_copy = dict(clicked_item)
+            word = str(clicked_item.get("word", "")).strip()
+            menu.add_command(
+                label=f'Replace "{word}"…',
+                command=lambda: self._ctx_replace_one(item_copy),
+            )
+            menu.add_command(
+                label=f'Replace ALL "{word}"…',
+                command=lambda: self._ctx_replace_all(word),
+            )
+            menu.add_command(
+                label=f'Seek audio → "{word}"',
+                command=lambda: self._on_word_clicked(float(item_copy["start"])),
+            )
+            menu.add_separator()
+
+        menu.add_command(label="Find & Replace...", command=self._toggle_find_replace)
+        menu.add_command(label="Copy", command=lambda: self._textbox._textbox.event_generate("<<Copy>>"))
+        menu.add_separator()
+        menu.add_command(label="Run Corrections", command=self._run_corrections_pipeline)
+
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return "break"
+
+    def _open_correction_dialog(self, selected_text: str) -> None:
+        self._toggle_find_replace(prefill=selected_text)
 
     def set_transcription_running(self):
+        self._transcription_running = True
         self._log_box.configure(state="normal")
         self._log_box.delete("1.0", "end")
         self._log_box.configure(state="disabled")
         self.set_status("Transcription running…", "white")
+        self._progress_bar.set(0)
+        self._progress_label.configure(text="Processing audio...")
+        self._show_progress()
         self._open_folder_btn.configure(state="disabled")
         self._open_transcript_btn.configure(state="disabled")
         self._export_review_btn.configure(state="disabled")
@@ -607,20 +841,26 @@ class TranscriptTab(ctk.CTkFrame):
         self._run_corrections_btn.configure(state="disabled")
         self._format_btn.configure(state="disabled")
         self._path_label.configure(text="Processing…", text_color="gray")
+        self._update_audio_state("Audio stopped", "#445566")
 
     def set_transcription_complete(self, transcript_path: str, folder_path: str):
+        self._transcription_running = False
         self._current_folder_path = folder_path
         self.set_status("✓ Transcription complete", "#44FF44")
+        self._hide_progress()
         self._open_folder_btn.configure(state="normal")
         self._open_transcript_btn.configure(state="normal")
         self.load_transcript(transcript_path)
+        self._ensure_bottom_panel_open()
         try:
             self.winfo_toplevel().corrections_tab.set_source(transcript_path)
         except AttributeError:
             pass
 
     def set_transcription_failed(self, error_msg: str):
+        self._transcription_running = False
         self.set_status(f"Failed: {error_msg[:80]}", "#FF4444")
+        self._hide_progress()
 
     def load_transcript(self, filepath: str):
         if not filepath or not os.path.isfile(filepath):
@@ -649,9 +889,10 @@ class TranscriptTab(ctk.CTkFrame):
             self._run_corrections_btn.configure(state="normal")
             self._format_btn.configure(state="normal")
             self.set_status(
-                "Loaded — type to edit · click to seek audio · double-click to correct a word · Ctrl+Z to undo.",
+                "Loaded — type to edit · Ctrl+Click seeks playback · Space toggles audio · Ctrl+Z to undo.",
                 "gray",
             )
+            self._ensure_bottom_panel_open()
             try:
                 self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
             except AttributeError:
@@ -699,40 +940,68 @@ class TranscriptTab(ctk.CTkFrame):
         self._update_low_confidence_panel(low_conf)
 
     def _update_low_confidence_panel(self, words: list[dict]) -> None:
-        self._low_confidence_words = list(words or [])
+        filtered_words = [
+            item for item in list(words or [])
+            if not self._is_confidence_stop_word(str(item.get("word", "") or ""))
+        ]
+        self._low_confidence_words = filtered_words
 
         if not self._low_confidence_words:
             if self._low_conf_frame.winfo_ismapped():
                 self._low_conf_frame.pack_forget()
+            self._conf_list_visible = False
+            self._conf_toggle_btn.configure(text="▶  0 low-confidence words")
+            self._low_conf_title.configure(
+                text="Low-Confidence Review: no transcript loaded",
+                text_color="#CCAA44",
+            )
             self._low_conf_box._textbox.unbind("<Button-1>")
             return
-
-        if not self._low_conf_frame.winfo_ismapped():
-            self._low_conf_frame.pack(
-                fill="x",
-                padx=14,
-                pady=self._low_conf_pady,
-                before=self._textbox,
-            )
+        if self._conf_list_visible and not self._low_conf_frame.winfo_ismapped():
+            self._low_conf_frame.pack(fill="x", padx=8, pady=(0, 2), after=self._conf_toggle_btn)
 
         self._low_conf_box.configure(state="normal")
         self._low_conf_box.delete("1.0", "end")
 
+        critical_words = [
+            item for item in self._low_confidence_words
+            if float(item.get("confidence", 0.0) or 0.0) < CONFIDENCE_RED_THRESHOLD
+        ]
+        amber_words = [
+            item for item in self._low_confidence_words
+            if CONFIDENCE_RED_THRESHOLD <= float(item.get("confidence", 0.0) or 0.0) < CONFIDENCE_AMBER_THRESHOLD
+        ]
+
         self._low_conf_title.configure(
-            text=f"Low-Confidence Review: {len(self._low_confidence_words)} words below threshold",
+            text=(
+                f"Critical (below 50%): {len(critical_words)} words  |  "
+                f"Needs Review (50-75%): {len(amber_words)} words"
+            ),
             text_color="#CCAA44",
         )
-        lines = []
-        for item in self._low_confidence_words[:20]:
+        lines = [f"Critical (below 50%): {len(critical_words)} words"]
+        for item in critical_words[:10]:
             word = str(item.get("word", "") or "")
             confidence = float(item.get("confidence", 0.0) or 0.0)
             start = float(item.get("start", 0.0) or 0.0)
             lines.append(f"{word:20s}  {confidence:.2f}  @ {start:.1f}s")
-        if len(self._low_confidence_words) > 20:
-            lines.append(f"... and {len(self._low_confidence_words) - 20} more")
+        if len(critical_words) > 10:
+            lines.append(f"... and {len(critical_words) - 10} more critical")
+        lines.append("")
+        lines.append(f"Needs Review (50-75%): {len(amber_words)} words")
+        for item in amber_words[:10]:
+            word = str(item.get("word", "") or "")
+            confidence = float(item.get("confidence", 0.0) or 0.0)
+            start = float(item.get("start", 0.0) or 0.0)
+            lines.append(f"{word:20s}  {confidence:.2f}  @ {start:.1f}s")
+        if len(amber_words) > 10:
+            lines.append(f"... and {len(amber_words) - 10} more needs review")
 
         self._low_conf_box.insert("1.0", "\n".join(lines))
         self._low_conf_box.configure(state="disabled")
+        self._conf_toggle_btn.configure(
+            text=f"{'▼' if self._conf_list_visible else '▶'}  {len(self._low_confidence_words)} low-confidence words"
+        )
 
         def _on_panel_click(event, _box=self._low_conf_box, _words=self._low_confidence_words):
             try:
@@ -753,12 +1022,14 @@ class TranscriptTab(ctk.CTkFrame):
             return
         self._restore_review_state(words)
         self._words = words
+        self._word_timings = list(words)
         if words:
             self._build_word_map(words)
             self._render_with_confidence(words)
             self._export_review_btn.configure(state="normal")
         else:
             self._word_map = []
+            self._word_timings = []
             self.review_state = {}
             self._current_review_idx = -1
             self._update_confidence_summary()
@@ -772,19 +1043,19 @@ class TranscriptTab(ctk.CTkFrame):
                 text_color="#9AA3B2",
             )
             return
-        pending = sum(1 for state in self.review_state.values() if state == "pending")
-        critical = sum(
+        pending_items = list(self._iter_pending_confidence_items())
+        critical = sum(1 for _, _, confidence in pending_items if confidence < CONFIDENCE_RED_THRESHOLD)
+        amber = sum(
             1
-            for idx, state in self.review_state.items()
-            if state == "pending" and idx < len(self._words)
-            and float(self._words[idx].get("confidence", 1.0) or 1.0) < 0.80
+            for _, _, confidence in pending_items
+            if CONFIDENCE_RED_THRESHOLD <= confidence < CONFIDENCE_AMBER_THRESHOLD
         )
-        flagged_color = "#FFAA44" if pending else "#44AA44"
+        flagged_color = COLOR_RED if critical else (COLOR_AMBER if amber else "#44AA44")
         self._conf_label.configure(
             text=(
                 f"Review: {len(self._words)} words  |  "
-                f"pending {pending}  |  "
-                f"critical {critical}"
+                f"Critical (below 50%): {critical} words  |  "
+                f"Needs Review (50-75%): {amber} words"
             ),
             text_color=flagged_color,
         )
@@ -813,7 +1084,12 @@ class TranscriptTab(ctk.CTkFrame):
         content_lower = content.lower()
         search_pos = 0
 
-        for raw in words:
+        widget = self._textbox._textbox
+        for tag_name in widget.tag_names():
+            if tag_name.startswith("w"):
+                widget.tag_delete(tag_name)
+
+        for word_index, raw in enumerate(words):
             word_text = str(raw.get("word") or raw.get("text") or "").strip()
             if not word_text:
                 continue
@@ -855,6 +1131,7 @@ class TranscriptTab(ctk.CTkFrame):
                     "confidence": float(raw.get("confidence", 1.0) or 1.0),
                     "char_start": -1,
                     "char_end":   -1,
+                    "word_index": word_index,
                 })
                 continue
 
@@ -865,16 +1142,19 @@ class TranscriptTab(ctk.CTkFrame):
                 "confidence": float(raw.get("confidence", 1.0) or 1.0),
                 "char_start": found_start,
                 "char_end":   found_start + len(word_text),
+                "word_index": word_index,
             })
+            start_tk = f"1.0+{found_start}c"
+            end_tk = f"1.0+{found_start + len(word_text)}c"
+            widget.tag_add(f"w{word_index}", start_tk, end_tk)
             # Single-char tokens from digit-by-digit cause numbers can false-match
             # inside merged corrected strings and push the sequential search too far.
             if len(word_text) > 1:
                 search_pos = found_start + len(word_text)
 
-        widget = self._textbox._textbox
-        widget.tag_config("current_word", background="#2A4A6A", foreground="white")
-        widget.tag_config("conf_low",     foreground="#FF8C00")
-        widget.tag_config("conf_mid",     foreground="#CCCC00")
+        widget.tag_config("current_word", background="#0A3A1A", foreground="#44FF88")
+        widget.tag_config("conf_low", foreground=COLOR_RED)
+        widget.tag_config("conf_mid", foreground=COLOR_AMBER)
         self._apply_confidence_highlights()
 
         self._update_confidence_summary()
@@ -888,17 +1168,12 @@ class TranscriptTab(ctk.CTkFrame):
         widget.tag_remove("conf_mid", "1.0", "end")
         if not self._highlight_var.get():
             return
-        for idx, item in enumerate(self._word_map):
-            if item["char_start"] < 0:
-                continue
-            state = self.review_state.get(idx, "pending")
-            if state != "pending":
-                continue
+        for idx, item, confidence in self._iter_pending_confidence_items():
             start_idx = f"1.0+{item['char_start']}c"
             end_idx = f"1.0+{item['char_end']}c"
-            if item["confidence"] < 0.80:
+            if confidence < CONFIDENCE_RED_THRESHOLD:
                 widget.tag_add("conf_low", start_idx, end_idx)
-            elif item["confidence"] < 0.90:
+            elif confidence < CONFIDENCE_AMBER_THRESHOLD:
                 widget.tag_add("conf_mid", start_idx, end_idx)
 
     def _refresh_confidence_highlights(self) -> None:
@@ -924,7 +1199,7 @@ class TranscriptTab(ctk.CTkFrame):
             if not word_text:
                 continue
             confidence = float(word.get("confidence", 1.0) or 1.0)
-            if confidence < 0.90:
+            if confidence < CONFIDENCE_AMBER_THRESHOLD and not self._is_confidence_stop_word(word_text):
                 self.review_state[idx] = previous.get(self._review_key(word), "pending")
 
     def get_next_flagged(self, current_idx: int) -> int | None:
@@ -1041,14 +1316,17 @@ class TranscriptTab(ctk.CTkFrame):
         self._audio_path = audio_path
         if not audio_path or not os.path.isfile(audio_path):
             self._audio_label.configure(text="Audio file not found", text_color="#CC4444")
+            self._update_audio_state("Audio file not found", "#CC4444")
             return
 
         name = os.path.basename(audio_path)
         if not self._player_ready:
             self._audio_label.configure(text=f"Pending VLC init: {name}", text_color="#7DD8E8")
+            self._update_audio_state("Waiting for audio player", "#7DD8E8")
             return
         if not self._player or not self._player.is_available:
             self._audio_label.configure(text=f"Audio unavailable: {name}", text_color="#CC8844")
+            self._update_audio_state("Audio unavailable", "#CC8844")
             return
 
         def worker():
@@ -1062,50 +1340,64 @@ class TranscriptTab(ctk.CTkFrame):
             return
         if ok:
             self._audio_label.configure(text=os.path.basename(audio_path), text_color="#7DD8E8")
+            self._update_audio_state("Audio loaded", "#7DD8E8")
             self._schedule_position_update()
             self._load_waveform(audio_path)
+            self._ensure_bottom_panel_open()
         else:
             self._audio_label.configure(text=f"Could not load audio: {os.path.basename(audio_path)}", text_color="#CC4444")
+            self._update_audio_state("Audio load failed", "#CC4444")
 
     def _on_word_clicked(self, start_time: float):
-        if self._player and self._player.jump_to(start_time):
+        if self._seek_audio(start_time):
             self.set_status(f"Jumped to {self._format_seconds(start_time)}", "#7DD8E8")
-            self._schedule_position_update()
-            self._start_sync_timer()
 
     def _on_textbox_click(self, event) -> None:
-        if not self._word_map:
-            return
-        try:
-            click_index = self._textbox._textbox.index(f"@{event.x},{event.y}")
-        except Exception:
-            return
-        char_offset = self._index_to_char_offset(click_index)
-        best = None
-        best_dist = float("inf")
-        for item in self._word_map:
-            if item["char_start"] < 0:
-                continue
-            if item["char_start"] <= char_offset <= item["char_end"]:
-                best = item
-                break
-            dist = min(abs(char_offset - item["char_start"]), abs(char_offset - item["char_end"]))
-            if dist < best_dist:
-                best_dist = dist
-                best = item
-        if best:
-            try:
-                self._current_review_idx = self._word_map.index(best)
-            except ValueError:
-                pass
-            self._on_word_clicked(float(best["start"]))
+        item, idx = self._word_item_at_event(event)
+        if idx >= 0:
+            self._current_review_idx = idx
+        if self._is_audio_playing():
+            self._pause_audio()
 
     def _on_textbox_double_click(self, event) -> str:
-        """Double-click a word to open an inline correction popup."""
-        if not self._word_map:
+        return "break"
+
+    def _on_ctrl_click_seek(self, event) -> str:
+        item, idx = self._word_item_at_event(event)
+        if not item:
             return "break"
-        # Defer so tkinter finishes its own double-click event chain first
-        self.after(10, lambda: self._show_word_correction_popup(event.x, event.y))
+        if idx >= 0:
+            self._current_review_idx = idx
+        if self._seek_audio(float(item["start"])):
+            self._flash_word_item(item)
+            self._play_audio()
+        return "break"
+
+    def _on_space_play_pause(self, _event) -> str:
+        if not self._player:
+            return "break"
+        if self._is_audio_playing():
+            self._pause_audio()
+        else:
+            self._play_audio()
+        return "break"
+
+    def _on_escape_stop(self, _event) -> str:
+        self._stop_audio()
+        return "break"
+
+    def _on_skip_back(self, _event) -> str:
+        if self._player and self._player.is_loaded:
+            target = max(0.0, self._player.position_seconds - 2.0)
+            if self._seek_audio(target):
+                self._schedule_position_update()
+        return "break"
+
+    def _on_skip_forward(self, _event) -> str:
+        if self._player and self._player.is_loaded:
+            target = max(0.0, self._player.position_seconds + 2.0)
+            if self._seek_audio(target):
+                self._schedule_position_update()
         return "break"
 
     def _show_word_correction_popup(self, click_x: int, click_y: int) -> None:
@@ -1446,25 +1738,35 @@ class TranscriptTab(ctk.CTkFrame):
 
     # ── Find & Replace ────────────────────────────────────────────────────
 
-    def _toggle_find_replace(self) -> None:
+    def _toggle_find_replace(self, prefill: str | None = None) -> None:
         """Show or hide the Find & Replace bar."""
         if self._fnr_bar.winfo_ismapped():
-            self._close_find_replace()
+            if prefill is None:
+                self._close_find_replace()
+                return
         else:
             self._fnr_bar.pack(fill="x", padx=0, pady=0, before=self._textbox)
-            self._find_entry.focus()
-            self._find_entry.select_range(0, "end")
             self._fnr_toggle_btn.configure(
                 fg_color="#1558C0", border_color="#1558C0", text_color="white"
             )
-            try:
-                sel = self._textbox._textbox.get("sel.first", "sel.last")
-                if sel.strip():
-                    self._find_entry.delete(0, "end")
-                    self._find_entry.insert(0, sel.strip())
-                    self._fnr_update_count()
-            except Exception:
-                pass
+
+        self._find_entry.focus()
+        self._find_entry.select_range(0, "end")
+        if prefill is not None:
+            self._find_entry.delete(0, "end")
+            self._find_entry.insert(0, prefill)
+            self._find_entry.select_range(0, "end")
+            self._fnr_update_count()
+            return
+
+        try:
+            sel = self._textbox._textbox.get("sel.first", "sel.last")
+            if sel.strip():
+                self._find_entry.delete(0, "end")
+                self._find_entry.insert(0, sel.strip())
+                self._fnr_update_count()
+        except Exception:
+            pass
 
     def _close_find_replace(self) -> None:
         """Hide the Find & Replace bar and clear highlights."""
@@ -1799,6 +2101,7 @@ class TranscriptTab(ctk.CTkFrame):
     def _play_audio(self):
         if self._player and self._player.play():
             self.set_status("Playing audio", "#7DD8E8")
+            self._update_audio_state("Audio playing", "#7DD8E8")
             self._schedule_position_update()
             self._start_sync_timer()
 
@@ -1808,6 +2111,7 @@ class TranscriptTab(ctk.CTkFrame):
             self._stop_sync_timer()
             self._textbox._textbox.tag_remove("current_word", "1.0", "end")
             self.set_status("Audio paused", "#AAAAAA")
+            self._update_audio_state("Audio paused", "#AAAAAA")
 
     def _stop_audio(self):
         if self._player and self._player.is_loaded:
@@ -1816,6 +2120,7 @@ class TranscriptTab(ctk.CTkFrame):
             self._textbox._textbox.tag_remove("current_word", "1.0", "end")
             self._current_word_idx = -1
             self.set_status("Audio stopped", "#AAAAAA")
+            self._update_audio_state("Audio stopped", "#AAAAAA")
             self._position_label.configure(text="00:00 / 00:00")
 
     def _start_sync_timer(self) -> None:
