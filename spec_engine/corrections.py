@@ -59,6 +59,26 @@ _LETTER_GROUPS = {
     "l t": "LT",
 }
 
+_MONTH_TO_NUM = {
+    "january": "01", "february": "02", "march": "03",
+    "april": "04", "may": "05", "june": "06",
+    "july": "07", "august": "08", "september": "09",
+    "october": "10", "november": "11", "december": "12",
+}
+
+_ORDINAL_DAY = {
+    "first": "01", "second": "02", "third": "03", "fourth": "04",
+    "fifth": "05", "sixth": "06", "seventh": "07", "eighth": "08",
+    "ninth": "09", "tenth": "10", "eleventh": "11", "twelfth": "12",
+    "thirteenth": "13", "fourteenth": "14", "fifteenth": "15",
+    "sixteenth": "16", "seventeenth": "17", "eighteenth": "18",
+    "nineteenth": "19", "twentieth": "20", "twenty first": "21",
+    "twenty second": "22", "twenty third": "23", "twenty fourth": "24",
+    "twenty fifth": "25", "twenty sixth": "26", "twenty seventh": "27",
+    "twenty eighth": "28", "twenty ninth": "29", "thirtieth": "30",
+    "thirty first": "31",
+}
+
 
 class CorrectionState:
     """
@@ -963,6 +983,155 @@ def _collapse_spoken_digits(token_sequence: str) -> str:
     return "".join(result).strip()
 
 
+def _spoken_year_to_int(year_str: str) -> str | None:
+    """
+    Convert a spoken year phrase into a four-digit year string when unambiguous.
+    """
+    y = re.sub(r'\s+', ' ', year_str.lower().replace('-', ' ')).strip()
+
+    if y == 'twenty twenty':
+        return '2020'
+
+    m = re.match(
+        r'^twenty twenty (one|two|three|four|five|six|seven|eight|nine)$',
+        y,
+    )
+    if m:
+        suffix = {
+            'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+        }[m.group(1)]
+        return f"202{suffix}"
+
+    if y in {'twenty twenty four', 'twenty twenty-five', 'twenty twenty five'}:
+        return '2025' if 'five' in y else '2024'
+    if y in {'twenty twenty six', 'twenty twenty-six'}:
+        return '2026'
+
+    m = re.match(
+        r'^nineteen (eighty|ninety)(?: (one|two|three|four|five|six|seven|eight|nine|ten))?$',
+        y,
+    )
+    if m:
+        decade = {'eighty': '8', 'ninety': '9'}[m.group(1)]
+        ones = {
+            None: '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+            'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+            'ten': '0',
+        }[m.group(2)]
+        return f"19{decade}{ones}"
+
+    m = re.match(
+        r'^two thousand(?: and)?(?: (one|two|three|four|five|six|seven|eight|nine|'
+        r'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|'
+        r'eighteen|nineteen|twenty))?$',
+        y,
+    )
+    if m:
+        suffix = {
+            None: '00', 'one': '01', 'two': '02', 'three': '03', 'four': '04',
+            'five': '05', 'six': '06', 'seven': '07', 'eight': '08', 'nine': '09',
+            'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+            'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+            'eighteen': '18', 'nineteen': '19', 'twenty': '20',
+        }[m.group(1)]
+        return f"20{suffix}"
+
+    return None
+
+
+def fix_spoken_dates(text: str) -> str:
+    """
+    Convert spoken Month-Day-Year phrases to MM/DD/YYYY when the year is clear.
+    """
+    month_pattern = '|'.join(_MONTH_TO_NUM.keys())
+    ordinal_pattern = (
+        r'thirty\s+first|twenty\s+ninth|twenty\s+eighth|twenty\s+seventh|'
+        r'twenty\s+sixth|twenty\s+fifth|twenty\s+fourth|twenty\s+third|'
+        r'twenty\s+second|twenty\s+first|thirtieth|twentieth|nineteenth|'
+        r'eighteenth|seventeenth|sixteenth|fifteenth|fourteenth|thirteenth|'
+        r'twelfth|eleventh|tenth|ninth|eighth|seventh|sixth|fifth|fourth|'
+        r'third|second|first'
+    )
+    year_pattern = (
+        r'twenty\s+twenty(?:\s+(?:one|two|three|four|five|six|seven|eight|nine))?|'
+        r'nineteen\s+(?:eighty|ninety)(?:\s+(?:one|two|three|four|five|six|seven|eight|nine|ten))?|'
+        r'two\s+thousand(?:\s+and)?(?:\s+(?:one|two|three|four|five|six|seven|eight|nine|'
+        r'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|'
+        r'nineteen|twenty))?'
+    )
+    full_date = re.compile(
+        rf'\b({month_pattern})\s+({ordinal_pattern})\s+({year_pattern})\b',
+        re.IGNORECASE,
+    )
+
+    def _replace(segment: str) -> str:
+        def _repl(m: re.Match) -> str:
+            month = _MONTH_TO_NUM.get(m.group(1).lower())
+            day_key = re.sub(r'\s+', ' ', m.group(2).lower().replace('-', ' ')).strip()
+            day = _ORDINAL_DAY.get(day_key)
+            year = _spoken_year_to_int(m.group(3))
+            if not month or not day or not year:
+                return m.group(0)
+            return f"{month}/{day}/{year}"
+
+        return full_date.sub(_repl, segment)
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def fix_spoken_times(text: str) -> str:
+    """
+    Convert spoken time phrases into legal transcript time format.
+    """
+    hour_words = {
+        'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+        'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+        'eleven': 11, 'twelve': 12,
+    }
+    minute_words = {
+        'o five': '05', 'oh five': '05', 'o clock': '00',
+        'o one': '01', 'o two': '02', 'o three': '03', 'o four': '04',
+        'o six': '06', 'o seven': '07', 'o eight': '08', 'o nine': '09',
+        'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+        'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+        'eighteen': '18', 'nineteen': '19', 'twenty': '20',
+        'twenty one': '21', 'twenty two': '22', 'twenty three': '23',
+        'twenty four': '24', 'twenty five': '25', 'twenty six': '26',
+        'twenty seven': '27', 'twenty eight': '28', 'twenty nine': '29',
+        'thirty': '30', 'thirty one': '31', 'thirty two': '32',
+        'thirty three': '33', 'thirty four': '34', 'thirty five': '35',
+        'thirty six': '36', 'thirty seven': '37', 'thirty eight': '38',
+        'thirty nine': '39', 'forty': '40', 'forty five': '45',
+        'fifty': '50', 'fifty five': '55', 'zero zero': '00', 'double zero': '00',
+    }
+    hour_pat = '|'.join(hour_words.keys())
+    minute_pat = '|'.join(re.escape(k) for k in sorted(minute_words.keys(), key=len, reverse=True))
+    compact_numeric = re.compile(r'\b(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]\.?\b')
+    spoken_time = re.compile(
+        rf'\b({hour_pat})\s+({minute_pat})\s*([Aa]\.?[Mm]\.?|[Pp]\.?[Mm]\.?)\b',
+        re.IGNORECASE,
+    )
+
+    def _replace(segment: str) -> str:
+        working = compact_numeric.sub(
+            lambda m: f"{int(m.group(1))}:{m.group(2)} {'a' if m.group(3).lower() == 'a' else 'p'}.m.",
+            segment,
+        )
+
+        def _spoken_repl(m: re.Match) -> str:
+            hour = hour_words.get(m.group(1).lower())
+            minute = minute_words.get(m.group(2).lower().strip())
+            ampm = 'a.m.' if m.group(3).lower().startswith('a') else 'p.m.'
+            if hour is None or minute is None:
+                return m.group(0)
+            return f"{hour}:{minute} {ampm}"
+
+        return spoken_time.sub(_spoken_repl, working)
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
 def fix_cause_number_digits(text: str) -> str:
     """
     Collapse spoken digit sequences that follow cause number prefixes.
@@ -1665,8 +1834,9 @@ def clean_block(
     CORRECTION ORDER (MUST NOT CHANGE):
       1.  Multi-word phrase standardization
       2.  Phase 7 deterministic legal rules (depot/deposition, Cause Number prefix)
-      2.1 Spoken digit collapse (cause numbers, CSR numbers, addresses)
-      2.2 Universal legal phrase corrections
+      2.1 Spoken date/time normalization
+      2.2 Spoken digit collapse (cause numbers, CSR numbers, addresses)
+      2.3 Universal legal phrase corrections
       2.5 Case-specific proper noun corrections (confirmed_spellings)
       2.6 Texas deposition seed fallback corrections
       2.7 User-defined rules (spec_engine.user_rule_store) — after
@@ -1720,6 +1890,22 @@ def clean_block(
         records,
         block_index,
         'fix_cause_number_prefix',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_spoken_dates(text),
+        records,
+        block_index,
+        'fix_spoken_dates',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_spoken_times(text),
+        records,
+        block_index,
+        'fix_spoken_times',
         state=state,
     )
     text = _apply_safe_rewrite(
