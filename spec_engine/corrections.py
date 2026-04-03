@@ -152,10 +152,19 @@ TEXAS_DEPOSITION_SEEDS = {
     "Bear County": "Bexar County",
     "Baer County": "Bexar County",
     "Bayer County": "Bexar County",
+    "Web County": "Webb County",
+    "Webb County": "Webb County",
     "Royces County": "Nueces County",
     "Racist County": "Nueces County",
     "Royce County": "Nueces County",
+    "Nuisance County": "Nueces County",
+    "Lewis County": "Llano County",
+    "plaintiff intervener": "plaintiff-intervenor",
+    "plaintiff intervenor": "plaintiff-intervenor",
+    "private driveway": "private driveway",
+    "right of way": "right-of-way",
     "SR 22": "SR-22",
+    "SR22": "SR-22",
     "RS-22": "SR-22",
     "CSR number": "CSR No.",
 }
@@ -787,6 +796,25 @@ def _preserve_phrase_case(original_text: str, replacement: str) -> str:
     return replacement
 
 
+def _fix_eod_to_eld(text: str) -> str:
+    """
+    Replace EOD with ELD (Electronic Logging Device) in trucking context only.
+
+    This avoids false positives for unrelated meanings like "end of day" while
+    still correcting a common trucking/deposition ASR mishearing.
+    """
+    trucking_context = re.compile(
+        r'\b(electronic|logging|logs|ELD|driver|truck|trucking|'
+        r'GPS|satellite|install|technician|device)\b',
+        re.IGNORECASE,
+    )
+
+    if not trucking_context.search(text):
+        return text
+
+    return re.sub(r'\bEOD\b', 'ELD', text)
+
+
 def fix_universal_legal_phrases(text: str) -> str:
     """
     Replace common Deepgram mishearings of universal legal deposition phrases.
@@ -795,14 +823,24 @@ def fix_universal_legal_phrases(text: str) -> str:
     deposition vocabulary fixes that should run before case-specific spellings.
     """
     replacements = [
+        (r'\ba REC\b', 'a wreck'),
+        (r'\bthe REC\b', 'the wreck'),
+        (r'\bthat REC\b', 'that wreck'),
+        (r'\bthis REC\b', 'this wreck'),
+        (r'\bRECs\b', 'wrecks'),
         (r'\bremote swearing of any witness\b', 'remote swearing of the witness'),
         (r'\bremotes or any witness\b', 'remote swearing of the witness'),
         (r'\bnotice and attorney\b', 'noticing attorney'),
         (r'\bnoticing and attorney\b', 'noticing attorney'),
         (r'\bfly down a sheriff\b', 'flag down a sheriff'),
         (r'\bfly down an officer\b', 'flag down an officer'),
+        (r'\bcity elevator truck\b', 'city utility truck'),
+        (r'\bcity levator truck\b', 'city utility truck'),
+        (r'\breserve\s+for\s+to\s*more\s*ol\b', 'reserve for trial'),
         (r'\breserve for tometrol\b', 'reserve for trial'),
-        (r'\breserve for tomorrow\b(?=\s+at trial\b|\s*[.?!,;:]?\s*$)', 'reserve for trial'),
+        (r'\breserve for Tometrol\b', 'reserve for trial'),
+        (r'\breserve for tomorrow\b', 'reserve for trial'),
+        (r'\bbeginning of the deposition from\b', 'beginning of the deposition of'),
         (r'\bmope deposition\b', 'remote deposition'),
         (r'\belectronic books\b', 'electronic logs'),
         (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),
@@ -815,26 +853,41 @@ def fix_universal_legal_phrases(text: str) -> str:
         for pattern, replacement in replacements:
             working = re.sub(
                 pattern,
-                lambda m, _replacement=replacement: _preserve_phrase_case(m.group(0), _replacement),
+                lambda m, _replacement=replacement: (
+                    _replacement
+                    if "wreck" in _replacement
+                    else _preserve_phrase_case(m.group(0), _replacement)
+                ),
                 working,
                 flags=re.IGNORECASE,
             )
+        return _fix_eod_to_eld(working)
 
-        traffic_context = (
-            'ticket' in working.lower()
-            or 'traffic' in working.lower()
-            or 'officer' in working.lower()
-            or 'pulled over' in working.lower()
-            or 'citation' in working.lower()
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def fix_traffic_citation_mishearing(text: str) -> str:
+    """
+    Replace "sanitation" with "citation" only in traffic/legal contexts.
+
+    This stays separate from the universal legal phrase list because it is
+    context-dependent and should not fire in ordinary sanitation contexts.
+    """
+    traffic_context = re.compile(
+        r'\b(ticket|officer|pulled\s+over|traffic|violation|speeding|'
+        r'DPS|fine|court|charge|police|conviction|cited|license|citation)\b',
+        re.IGNORECASE,
+    )
+
+    def _replace(segment: str) -> str:
+        if not traffic_context.search(segment):
+            return segment
+        return re.sub(
+            r'\bsanitation\b',
+            lambda m: _preserve_phrase_case(m.group(0), 'citation'),
+            segment,
+            flags=re.IGNORECASE,
         )
-        if traffic_context:
-            working = re.sub(
-                r'\bsanitation\b',
-                lambda m: _preserve_phrase_case(m.group(0), 'citation'),
-                working,
-                flags=re.IGNORECASE,
-            )
-        return working
 
     return _apply_outside_protected_segments(text, _replace)
 
@@ -1699,6 +1752,14 @@ def clean_block(
         records,
         block_index,
         'fix_universal_legal_phrases',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_traffic_citation_mishearing(text),
+        records,
+        block_index,
+        'fix_traffic_citation_mishearing',
         state=state,
     )
     text = apply_case_corrections(text, job_config, records, block_index, state=state)
