@@ -9,9 +9,11 @@ PRIORITY ORDER (MUST NOT CHANGE):
   2.  Case-specific proper noun corrections (from confirmed_spellings)
   2.5 User rules (spec_engine.user_rule_store) — after confirmed_spellings, before universal rules
   3.  Universal corrections (Doctor., K., Mm-hmm, Alright, % → percent, etc.)
+  3.5 Phase 7 deterministic legal rules (depot/deposition, Cause Number prefix)
   4a. Number-to-word in count context (0-10)
   4b. Date mashup flagging
   4c. Numbers at sentence start spelled out (Morson's English Guide)
+  4d. Judicial district ordinal normalization
   5.  Deepgram artifact removal (doubled words — 4+ chars only)
   6.  Spaced dashes (word--word → word -- word)           ← NEW
   7.  Uh-huh / Uh-uh hyphenation normalization            ← NEW
@@ -41,6 +43,21 @@ logger = logging.getLogger(__name__)
 
 TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\s*(AM|PM)\b\.?", re.IGNORECASE)
 TITLE_NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
+QUOTED_SEGMENT_RE = re.compile(r'"[^"]*"')
+PARENTHETICAL_BLOCK_RE = re.compile(r'^\s*\({1,2}.*\){1,2}\s*$', re.DOTALL)
+OBJECTION_BLOCK_RE = re.compile(r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Objection\b', re.IGNORECASE)
+
+_WORD_TO_DIGIT = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+}
+
+_LETTER_GROUPS = {
+    "c i": "CI",
+    "c.i.": "CI",
+    "c v": "CV",
+    "l t": "LT",
+}
 
 
 class CorrectionState:
@@ -129,6 +146,18 @@ VERBATIM_PROTECTED = {
 AFFIRMATION_PROTECTED = {
     'correct', 'right', 'exactly', 'absolutely', 'definitely',
     'yeah', 'yep', 'yup', 'nope', 'nah',
+}
+
+TEXAS_DEPOSITION_SEEDS = {
+    "Bear County": "Bexar County",
+    "Baer County": "Bexar County",
+    "Bayer County": "Bexar County",
+    "Royces County": "Nueces County",
+    "Racist County": "Nueces County",
+    "Royce County": "Nueces County",
+    "SR 22": "SR-22",
+    "RS-22": "SR-22",
+    "CSR number": "CSR No.",
 }
 
 
@@ -423,6 +452,44 @@ def _protected_replacement_fragment(replacement: str) -> str | None:
     return normalized
 
 
+def _preserve_match_case(original_text: str, replacement: str) -> str:
+    """Preserve simple ALL-CAPS / Title Case / lowercase patterns for replacements."""
+    if original_text.isupper():
+        return replacement.upper()
+    if original_text[:1].isupper() and original_text[1:].islower():
+        return replacement.capitalize()
+    return replacement
+
+
+def _is_phase7_protected_block(text: str) -> bool:
+    """
+    Return True when Phase 7 deterministic rules must not touch this block.
+
+    These rules must not fire inside objection blocks or parenthetical notations.
+    Quoted spans are protected separately inside _apply_outside_protected_segments().
+    """
+    return bool(OBJECTION_BLOCK_RE.match(text) or PARENTHETICAL_BLOCK_RE.match(text))
+
+
+def _apply_outside_protected_segments(text: str, replacer) -> str:
+    """
+    Apply a block-local replacement function outside quoted speech only.
+
+    Entire objection lines and parenthetical blocks are left unchanged.
+    """
+    if _is_phase7_protected_block(text):
+        return text
+
+    parts: list[str] = []
+    last_end = 0
+    for match in QUOTED_SEGMENT_RE.finditer(text):
+        parts.append(replacer(text[last_end:match.start()]))
+        parts.append(match.group(0))
+        last_end = match.end()
+    parts.append(replacer(text[last_end:]))
+    return ''.join(parts)
+
+
 def safe_apply(
     text: str,
     new_text: str,
@@ -597,6 +664,356 @@ def apply_universal_corrections(
             protected_after=_protected_replacement_fragment(replacement),
         )
     return text
+
+
+def fix_depot_mishearing(text: str) -> str:
+    """
+    Normalize Deepgram's legal false-cognate "depot/depots" to deposition terms.
+
+    This is limited to non-objection, non-parenthetical, non-quoted spans so the
+    verbatim legal record remains intact where these deterministic rules must not fire.
+    """
+    def _replace(segment: str) -> str:
+        return re.sub(
+            r'\bdepots?\b',
+            lambda m: _preserve_match_case(
+                m.group(0),
+                'depositions' if m.group(0).lower() == 'depots' else 'deposition',
+            ),
+            segment,
+            flags=re.IGNORECASE,
+        )
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def fix_cause_number_prefix(text: str) -> str:
+    """
+    Normalize common Deepgram mishearings of "Cause Number".
+
+    This pass intentionally fixes only the prefix phrase. Spoken digit collapse after
+    the prefix is handled separately so this function stays deterministic and bounded.
+    """
+    def _replace(segment: str) -> str:
+        return re.sub(
+            r'\b(?:cop|cost|cause)\s+numbers?\b',
+            'Cause Number',
+            segment,
+            flags=re.IGNORECASE,
+        )
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def _ordinal_suffix(value: int) -> str:
+    if 10 <= value % 100 <= 20:
+        return 'th'
+    if value % 10 == 1:
+        return 'st'
+    if value % 10 == 2:
+        return 'nd'
+    if value % 10 == 3:
+        return 'rd'
+    return 'th'
+
+
+def _spoken_digit_sequence_to_number(value: str) -> str | None:
+    token_map = {
+        'zero': '0', 'oh': '0', 'o': '0',
+        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+    }
+    tokens = [token for token in value.lower().split() if token]
+    if not tokens:
+        return None
+    converted: list[str] = []
+    for token in tokens:
+        if token.isdigit():
+            converted.append(token)
+        elif token in token_map:
+            converted.append(token_map[token])
+        else:
+            return None
+    return ''.join(converted)
+
+
+def fix_judicial_district_ordinal(text: str) -> str:
+    """
+    Normalize Texas judicial district references to ordinal form.
+
+    Handles already-numeric district numbers and spoken digit sequences like
+    "four zero seven Judicial District". Already-correct ordinal forms remain stable.
+    """
+    def _replace(segment: str) -> str:
+        segment = re.sub(
+            r'\bfour\s+hundred\s+eighth\s+Judicial District\b',
+            '408th Judicial District',
+            segment,
+            flags=re.IGNORECASE,
+        )
+
+        segment = re.sub(
+            r'\b(\d+)(?:st|nd|rd|th)?\s+Judicial District\b',
+            lambda m: f"{m.group(1)}{_ordinal_suffix(int(m.group(1)))} Judicial District",
+            segment,
+            flags=re.IGNORECASE,
+        )
+
+        def _replace_spoken(m: re.Match) -> str:
+            number = _spoken_digit_sequence_to_number(m.group(1))
+            if not number:
+                return m.group(0)
+            return f"{number}{_ordinal_suffix(int(number))} Judicial District"
+
+        return re.sub(
+            r'\b((?:zero|oh|o|one|two|three|four|five|six|seven|eight|nine|\d+)'
+            r'(?:\s+(?:zero|oh|o|one|two|three|four|five|six|seven|eight|nine|\d+)){1,5})'
+            r'\s+Judicial District\b',
+            _replace_spoken,
+            segment,
+            flags=re.IGNORECASE,
+        )
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def _preserve_phrase_case(original_text: str, replacement: str) -> str:
+    """Preserve broad phrase casing when replacing multi-word legal phrases."""
+    if original_text.isupper():
+        return replacement.upper()
+    words = [word for word in re.split(r'\s+', original_text.strip()) if word]
+    if words and all(word[:1].isupper() for word in words if word[:1].isalpha()):
+        return replacement.title()
+    return replacement
+
+
+def fix_universal_legal_phrases(text: str) -> str:
+    """
+    Replace common Deepgram mishearings of universal legal deposition phrases.
+
+    These phrases are not case-specific. They are safe, deterministic Texas
+    deposition vocabulary fixes that should run before case-specific spellings.
+    """
+    replacements = [
+        (r'\bremote swearing of any witness\b', 'remote swearing of the witness'),
+        (r'\bremotes or any witness\b', 'remote swearing of the witness'),
+        (r'\bnotice and attorney\b', 'noticing attorney'),
+        (r'\bnoticing and attorney\b', 'noticing attorney'),
+        (r'\bfly down a sheriff\b', 'flag down a sheriff'),
+        (r'\bfly down an officer\b', 'flag down an officer'),
+        (r'\breserve for tometrol\b', 'reserve for trial'),
+        (r'\breserve for tomorrow\b(?=\s+at trial\b|\s*[.?!,;:]?\s*$)', 'reserve for trial'),
+        (r'\bmope deposition\b', 'remote deposition'),
+        (r'\belectronic books\b', 'electronic logs'),
+        (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),
+        (r'\bso help you guide\b', 'so help you God'),
+        (r'\bso help you god\b', 'so help you God'),
+    ]
+
+    def _replace(segment: str) -> str:
+        working = segment
+        for pattern, replacement in replacements:
+            working = re.sub(
+                pattern,
+                lambda m, _replacement=replacement: _preserve_phrase_case(m.group(0), _replacement),
+                working,
+                flags=re.IGNORECASE,
+            )
+
+        traffic_context = (
+            'ticket' in working.lower()
+            or 'traffic' in working.lower()
+            or 'officer' in working.lower()
+            or 'pulled over' in working.lower()
+            or 'citation' in working.lower()
+        )
+        if traffic_context:
+            working = re.sub(
+                r'\bsanitation\b',
+                lambda m: _preserve_phrase_case(m.group(0), 'citation'),
+                working,
+                flags=re.IGNORECASE,
+            )
+        return working
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def apply_texas_deposition_seeds(text: str, confirmed_spellings: dict) -> str:
+    """
+    Apply static Texas deposition vocabulary corrections as a fallback layer.
+
+    Case-specific confirmed_spellings always win. Seeds only fire when the
+    same source phrase is not already handled by the case-specific map.
+    """
+    handled = {str(key).lower() for key in (confirmed_spellings or {}).keys()}
+
+    def _replace(segment: str) -> str:
+        working = segment
+        for wrong, correct in TEXAS_DEPOSITION_SEEDS.items():
+            if wrong.lower() in handled:
+                continue
+            pattern = r'\b' + re.escape(wrong) + r'\b'
+            working = re.sub(
+                pattern,
+                lambda m, _correct=correct: _preserve_phrase_case(m.group(0), _correct),
+                working,
+                flags=re.IGNORECASE,
+            )
+        return working
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def _collapse_spoken_digits(token_sequence: str) -> str:
+    """
+    Convert spoken digit words and letter tokens into a compact token string.
+
+    This is a generic helper for cause numbers, CSR numbers, addresses, and
+    similar Texas deposition numeric identifiers when smart_format is disabled.
+    """
+    tokens = token_sequence.strip().lower().split()
+    result: list[str] = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+
+        if i + 1 < len(tokens):
+            two = token + " " + tokens[i + 1]
+            if two in _LETTER_GROUPS:
+                result.append(_LETTER_GROUPS[two])
+                i += 2
+                continue
+
+        if token in _WORD_TO_DIGIT:
+            result.append(_WORD_TO_DIGIT[token])
+            i += 1
+            continue
+
+        if re.match(r'^[a-z]$', token):
+            result.append(token.upper())
+            i += 1
+            continue
+
+        if token.upper() in _LETTER_GROUPS.values():
+            result.append(token.upper())
+            i += 1
+            continue
+
+        if result and not result[-1].endswith(" "):
+            result.append(" ")
+        result.append(token)
+        if i + 1 < len(tokens):
+            result.append(" ")
+        i += 1
+
+    return "".join(result).strip()
+
+
+def fix_cause_number_digits(text: str) -> str:
+    """
+    Collapse spoken digit sequences that follow cause number prefixes.
+
+    This runs before confirmed_spellings so case-specific NOD values can still
+    normalize the final county-specific format after generic digit collapse.
+    """
+    digit_or_letter = (
+        r'zero|one|two|three|four|five|six|seven|eight|nine|'
+        r'[a-zA-Z]|CI|CV|LT|dash'
+    )
+    pattern = re.compile(
+        rf'(Cause\s+No\.?|Cause\s+Number)\s+((?:(?:{digit_or_letter})(?:\s+|$))+)',
+        re.IGNORECASE,
+    )
+
+    def _replace(segment: str) -> str:
+        def _collapse(match: re.Match) -> str:
+            spoken = match.group(2).strip()
+            collapsed = _collapse_spoken_digits(spoken).replace("dash", "-").replace(" ", "")
+            return f"Cause No. {collapsed}"
+
+        return pattern.sub(_collapse, segment)
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def fix_csr_number_digits(text: str) -> str:
+    """
+    Collapse spoken digit sequences after Texas CSR/reporter license indicators.
+
+    Produces a stable "CSR No. <digits>" form while remaining limited to local
+    Texas/CSR licensing context inside a single utterance block.
+    """
+    digit_words = r'(?:zero|one|two|three|four|five|six|seven|eight|nine)'
+    spoken_seq = rf'((?:{digit_words}\s*){{3,10}})'
+
+    patterns = [
+        (
+            re.compile(
+                rf'licensed\s+in\s+Texas[,\s]+(?:number\s+)?{spoken_seq}',
+                re.IGNORECASE,
+            ),
+            lambda m: f"licensed in Texas, CSR No. {_collapse_spoken_digits(m.group(1))}",
+        ),
+        (
+            re.compile(
+                rf'CSR\s+(?:number\s+|no\.?\s+)?{spoken_seq}',
+                re.IGNORECASE,
+            ),
+            lambda m: f"CSR No. {_collapse_spoken_digits(m.group(1))}",
+        ),
+        (
+            re.compile(
+                rf'Texas\s+number\s+{spoken_seq}',
+                re.IGNORECASE,
+            ),
+            lambda m: f"Texas, CSR No. {_collapse_spoken_digits(m.group(1))}",
+        ),
+    ]
+
+    def _replace(segment: str) -> str:
+        working = segment
+        for pattern, replacer in patterns:
+            working = pattern.sub(replacer, working)
+        return working
+
+    return _apply_outside_protected_segments(text, _replace)
+
+
+def fix_address_digits(text: str) -> str:
+    """
+    Collapse spoken digit sequences in street addresses and trailing zip codes.
+
+    This is limited to address-shaped contexts so ordinary narrative phrases like
+    "one thing led to another" are left untouched.
+    """
+    street_suffixes = (
+        r'Drive|Street|Avenue|Boulevard|Highway|Road|Lane|Court|'
+        r'Place|Way|Circle|Loop|Trail|Parkway|Pike|Freeway|'
+        r'Dr\b|St\b|Ave\b|Blvd\b|Hwy\b|Rd\b|Ln\b|Ct\b|Pl\b'
+    )
+    digit_word = r'(?:zero|one|two|three|four|five|six|seven|eight|nine)'
+    address_pattern = re.compile(
+        rf'\b({digit_word}(?:\s+{digit_word}){{1,4}})\s+'
+        rf'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\s+(?:{street_suffixes}))',
+        re.IGNORECASE,
+    )
+    zip_pattern = re.compile(
+        rf'((?:{digit_word}\s+){{4}}{digit_word})\s*\.?$',
+        re.IGNORECASE,
+    )
+
+    def _replace(segment: str) -> str:
+        working = address_pattern.sub(
+            lambda m: f"{_collapse_spoken_digits(m.group(1))} {m.group(2)}",
+            segment,
+        )
+
+        if re.search(r'\b(?:Texas|TX)\b', working, flags=re.IGNORECASE):
+            working = zip_pattern.sub(lambda m: _collapse_spoken_digits(m.group(1)), working)
+        return working
+
+    return _apply_outside_protected_segments(text, _replace)
 
 
 # ── Step 4a: Number-to-word (mid-sentence count context) ─────────────────────
@@ -1194,13 +1611,18 @@ def clean_block(
 
     CORRECTION ORDER (MUST NOT CHANGE):
       1.  Multi-word phrase standardization
-      2.  Case-specific proper noun corrections (confirmed_spellings)
-      2.5 User-defined rules (spec_engine.user_rule_store) — after
-           confirmed_spellings and before universal corrections
+      2.  Phase 7 deterministic legal rules (depot/deposition, Cause Number prefix)
+      2.1 Spoken digit collapse (cause numbers, CSR numbers, addresses)
+      2.2 Universal legal phrase corrections
+      2.5 Case-specific proper noun corrections (confirmed_spellings)
+      2.6 Texas deposition seed fallback corrections
+      2.7 User-defined rules (spec_engine.user_rule_store) — after
+           confirmed_spellings and seed fallback, before universal corrections
       3.  Universal single-word corrections
       4a. Number-to-word (mid-sentence count context)
       4b. Date mashup flagging
       4c. Sentence-start number spelled out (Morson's English Guide)
+      4d. Judicial district ordinal normalization
       5.  Deepgram duplicate artifact removal (4+ char words only)
       5b. Spelled-letter hyphenation (Morson's Rule 157)
       6.  Spaced dashes (word--word → word -- word)
@@ -1221,11 +1643,73 @@ def clean_block(
 
     records: List[CorrectionRecord] = []
     state = CorrectionState()
+    if isinstance(job_config, dict):
+        confirmed_spellings = job_config.get("confirmed_spellings", {}) or {}
+    else:
+        confirmed_spellings = getattr(job_config, "confirmed_spellings", {}) or {}
+    if not isinstance(confirmed_spellings, dict):
+        confirmed_spellings = {}
 
     _before = text  # snapshot for block-level summary log
 
     text = apply_multiword_corrections(text, records, block_index, state=state)
+    text = _apply_safe_rewrite(
+        text,
+        fix_depot_mishearing(text),
+        records,
+        block_index,
+        'fix_depot_mishearing',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_cause_number_prefix(text),
+        records,
+        block_index,
+        'fix_cause_number_prefix',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_cause_number_digits(text),
+        records,
+        block_index,
+        'fix_cause_number_digits',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_csr_number_digits(text),
+        records,
+        block_index,
+        'fix_csr_number_digits',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_address_digits(text),
+        records,
+        block_index,
+        'fix_address_digits',
+        state=state,
+    )
+    text = _apply_safe_rewrite(
+        text,
+        fix_universal_legal_phrases(text),
+        records,
+        block_index,
+        'fix_universal_legal_phrases',
+        state=state,
+    )
     text = apply_case_corrections(text, job_config, records, block_index, state=state)
+    text = _apply_safe_rewrite(
+        text,
+        apply_texas_deposition_seeds(text, confirmed_spellings),
+        records,
+        block_index,
+        'apply_texas_deposition_seeds',
+        state=state,
+    )
     try:
         from spec_engine.user_rule_store import apply_user_rules
 
@@ -1248,6 +1732,14 @@ def clean_block(
     text = apply_date_normalization(text, records, flags, block_index, flag_counter)
     text = apply_san_name_flag(text, records, flags, block_index, flag_counter)
     text = apply_sentence_start_number(text, records, block_index)
+    text = _apply_safe_rewrite(
+        text,
+        fix_judicial_district_ordinal(text),
+        records,
+        block_index,
+        'fix_judicial_district_ordinal',
+        state=state,
+    )
     text = apply_artifact_removal(text, records, block_index)
     text = apply_spelled_letter_hyphenation(text, records, block_index)
     text = fix_spaced_dashes(text, records, block_index)
