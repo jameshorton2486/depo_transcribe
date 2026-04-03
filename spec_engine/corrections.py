@@ -861,6 +861,8 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\breserve for Tometrol\b', 'reserve for trial'),
         (r'\breserve for tomorrow\b', 'reserve for trial'),
         (r'\bbeginning of the deposition from\b', 'beginning of the deposition of'),
+        (r'\bstipulations for any witness\b', 'stipulations for the witness'),
+        (r'\bMia\s+[Bb]ardell?\b', 'Miah Bardot'),
         (r'\bmope deposition\b', 'remote deposition'),
         (r'\belectronic books\b', 'electronic logs'),
         (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),

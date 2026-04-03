@@ -45,6 +45,15 @@ def test_fix_deposition_from():
     assert "deposition of" in result and "deposition from" not in result
 
 
+def test_fix_stipulations_for_any_witness():
+    result = fix_universal_legal_phrases("Counsel, state the stipulations for any witness.")
+    assert "stipulations for the witness" in result
+
+
+def test_existing_reporter_name_rule_mia_bardell():
+    assert "Miah Bardot" in fix_universal_legal_phrases("I am Mia Bardell, Court Reporter.")
+
+
 def test_fix_eod_to_eld_with_trucking_context():
     result = _fix_eod_to_eld("I install EOD devices for truck drivers")
     assert "ELD" in result and "EOD" not in result
