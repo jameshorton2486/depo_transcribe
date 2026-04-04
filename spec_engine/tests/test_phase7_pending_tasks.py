@@ -109,9 +109,14 @@ def test_process_blocks_logs_additional_stage_snapshots(monkeypatch):
 
     processor_module.process_blocks(blocks, cfg, run_logger=_Run())
 
-    assert "02a_blocks_speaker_mapped" in snapshot_names
-    assert "03a_blocks_classified" in snapshot_names
-    assert "04a_blocks_qa_fixed" in snapshot_names
+    assert snapshot_names == [
+        "01_blocks_raw",
+        "02_blocks_corrected",
+        "02a_blocks_speaker_mapped",
+        "03a_blocks_classified",
+        "04a_blocks_qa_fixed",
+        "05_blocks_final",
+    ]
 
 
 def test_process_blocks_reclassifies_after_objection_extraction(monkeypatch):

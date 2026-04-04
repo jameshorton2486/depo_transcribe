@@ -58,7 +58,6 @@ def process_blocks(
 
     if _log:
         _log.snapshot("03a_blocks_classified", blocks)
-        _log.snapshot("03_blocks_classified", blocks)
         q_count = sum(1 for block in blocks if getattr(block.block_type, "value", "") == "Q")
         a_count = sum(1 for block in blocks if getattr(block.block_type, "value", "") == "A")
         _log.log_step("Classification complete", q=q_count, a=a_count)
@@ -67,7 +66,6 @@ def process_blocks(
 
     if _log:
         _log.snapshot("04a_blocks_qa_fixed", blocks)
-        _log.snapshot("04_blocks_qa_fixed", blocks)
         _log.log_step("Q/A structure complete")
 
     blocks = extract_objections(blocks, job_config)
