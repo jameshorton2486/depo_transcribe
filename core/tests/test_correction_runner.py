@@ -165,7 +165,7 @@ def test_build_job_config_ignores_malformed_speaker_map_keys(caplog):
     )
 
     assert cfg.speaker_map == {1: "THE WITNESS", 2: "THE REPORTER"}
-    assert "Ignored malformed speaker_map keys" in caplog.text
+    assert "Ignoring non-integer speaker_map key" in caplog.text
 
 
 def test_run_correction_job_returns_processed_text_not_raw_text(monkeypatch):
