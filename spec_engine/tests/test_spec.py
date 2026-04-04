@@ -440,6 +440,17 @@ def test_title_page_does_not_render_literal_witness_name_placeholder():
     assert "(WITNESS NAME)" not in all_text
 
 
+def test_title_page_does_not_use_article_before_party_name():
+    cfg = make_full_config()
+    doc = create_document()
+    write_title_page(doc, cfg)
+    all_text = " ".join(
+        cell.text for t in doc.tables for row in t.rows for cell in row.cells
+    )
+    assert f"at the instance of the {cfg.plaintiff_name}" not in all_text
+    assert f"at the instance of {cfg.plaintiff_name}" in all_text
+
+
 def test_caption_contains_sbot():
     """Caption appearances block must show SBOT number."""
     cfg = make_full_config()

@@ -40,7 +40,7 @@ def write_title_page(doc: Document, job_config: JobConfig) -> None:
         f"  {rule}",
         "",
         f"  {depo_label} DEPOSITION OF {jc.witness_name},",
-        f"  produced as a witness at the instance of the {jc.plaintiff_name},",
+        f"  produced as a witness at the instance of {jc.plaintiff_name},",
         "  and duly sworn, was taken in the above-styled",
         f"  and numbered cause on the {jc.depo_date}, from",
         f"  {jc.depo_start_time} to {jc.depo_end_time}{method_note} before",
