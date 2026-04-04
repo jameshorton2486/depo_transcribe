@@ -12,9 +12,9 @@ def test_medical_injection_not_objection():
     assert "injection" in text.lower()
 
 
-def test_curtory_to_perjury():
+def test_curtory_to_cursory():
     text, _, _ = clean_block("Penalty of curtory.", _cfg())
-    assert "perjury" in text.lower()
+    assert "cursory" in text.lower()
 
 
 def test_leaving_not_global():

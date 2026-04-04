@@ -349,7 +349,7 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Mhmm variants → mm-hmm (capitalize_first() handles sentence-start case)
     (r'\b[Mm]hmm\b',  'mm-hmm'),
     (r'\b[Mm]mhm\b',  'mm-hmm'),
-    (r'\bcurtory\b', 'perjury'),
+    (r'\bcurtory\b', 'cursory'),
 
     # Brooke Army Medical Center
     (r'\bBrook\s+Army\b', 'Brooke Army'),
