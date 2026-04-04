@@ -430,6 +430,16 @@ def test_title_page_contains_witness_name():
     assert cfg.witness_name.upper() in all_text
 
 
+def test_title_page_does_not_render_literal_witness_name_placeholder():
+    cfg = make_full_config()
+    doc = create_document()
+    write_title_page(doc, cfg)
+    all_text = " ".join(
+        cell.text for t in doc.tables for row in t.rows for cell in row.cells
+    )
+    assert "(WITNESS NAME)" not in all_text
+
+
 def test_caption_contains_sbot():
     """Caption appearances block must show SBOT number."""
     cfg = make_full_config()

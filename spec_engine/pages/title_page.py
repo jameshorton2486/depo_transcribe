@@ -36,7 +36,6 @@ def write_title_page(doc: Document, job_config: JobConfig) -> None:
         f"  {rule}",
         f"  {depo_label} DEPOSITION OF",
         f"  {jc.witness_name.upper()}",
-        "  (WITNESS NAME)",
         f"  {jc.depo_date}",
         f"  {rule}",
         "",
