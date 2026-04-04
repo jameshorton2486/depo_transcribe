@@ -127,12 +127,12 @@ def map_intake_to_ufm(extracted: dict) -> dict:
         elif "defense" in role or "defendant" in role:
             defense_counsel.append(obj)
 
-    # Fallback: ordering attorney → plaintiff counsel.
+    # Fallback: ordering attorney → defense counsel.
     # In Texas plaintiff depositions the ordering attorney
     # represents the defendant (who notices the deposition).
     # Use ordering attorney as defendant/examining counsel.
-    if not plaintiff_counsel and ord_atty.get("name"):
-        plaintiff_counsel.append({
+    if not defense_counsel and ord_atty.get("name"):
+        defense_counsel.append({
             "name":    ord_atty.get("name", ""),
             "firm":    ord_atty.get("firm", ""),
             "sbot":    "",
