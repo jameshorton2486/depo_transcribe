@@ -25,10 +25,10 @@ def normalize_speaker(speaker: str) -> str:
     if speaker is None:
         return "UNKNOWN"
 
-    if "0" in str(speaker):
+    if str(speaker) == "0":
         return "THE REPORTER"
 
-    if "1" in str(speaker):
+    if str(speaker) == "1":
         return "THE WITNESS"
 
     return f"SPEAKER {speaker}"

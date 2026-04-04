@@ -688,6 +688,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text: str = ""
         self._pdf_keyterms: list[str] = []
         self._confirmed_spellings: dict = {}
+        self._last_pdf_path: str | None = None
+        self._last_reporter_notes_path: str | None = None
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
         self._correction_mode: bool = False
@@ -1178,6 +1180,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text = ""
         self._pdf_keyterms = []
         self._confirmed_spellings = {}
+        self._last_pdf_path = None
+        self._last_reporter_notes_path = None
         self._extracted_case_data = {}
         self._current_case_path = None
         self._last_transcript_path = None
@@ -1260,6 +1264,36 @@ class TranscribeTab(ctk.CTkFrame):
             text_color="gray",
         )
         self._auto_detect_source_docs()
+
+    def _build_keyterms_from_intake(self, intake_result) -> list[str]:
+        """
+        Build persistent Deepgram/UFM keyterms from intake parse data.
+
+        Sources:
+        - intake_result.all_proper_nouns
+        - intake_result.vocabulary_terms[].term
+        - confirmed_spellings values (correct forms)
+
+        Returns a deterministic, deduplicated, capped list.
+        """
+        terms: set[str] = set()
+
+        for t in getattr(intake_result, "all_proper_nouns", []) or []:
+            if isinstance(t, str) and len(t.strip()) >= 3:
+                terms.add(" ".join(t.split()).strip())
+
+        for item in getattr(intake_result, "vocabulary_terms", []) or []:
+            term = getattr(item, "term", None)
+            if isinstance(item, dict):
+                term = item.get("term")
+            if isinstance(term, str) and len(term.strip()) >= 3:
+                terms.add(" ".join(term.split()).strip())
+
+        for correct in (getattr(intake_result, "confirmed_spellings", {}) or {}).values():
+            if isinstance(correct, str) and len(correct.strip()) >= 3:
+                terms.add(" ".join(correct.split()).strip())
+
+        return sorted(terms)[:100]
 
     def _auto_detect_source_docs(self):
         """
@@ -1856,6 +1890,13 @@ class TranscribeTab(ctk.CTkFrame):
             )
             if self._current_case_path:
                 self._create_case_folders_now()
+                if self._last_pdf_path:
+                    try:
+                        persisted_pdf = self._persist_source_doc(self._last_pdf_path)
+                        if persisted_pdf:
+                            self._last_pdf_path = persisted_pdf
+                    except Exception as exc:
+                        logger.warning("[SourceDocs] Could not persist PDF after extraction: %s", exc)
                 from core.job_config_manager import merge_and_save
                 from core.ufm_field_mapper import map_intake_to_ufm
                 ufm_fields = map_intake_to_ufm(self._extracted_case_data)
@@ -1865,6 +1906,7 @@ class TranscribeTab(ctk.CTkFrame):
                     confirmed_spellings=dict(intake_result.confirmed_spellings),
                     deepgram_keyterms=self._pdf_keyterms or None,
                 )
+                logger.info("[UI] Saved %d deepgram_keyterms to job_config", len(self._pdf_keyterms))
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
 
         sources = [cause_src, witness_src, date_src]
@@ -1883,6 +1925,7 @@ class TranscribeTab(ctk.CTkFrame):
         saved_path = filepath if auto_detected else self._persist_source_doc(filepath, preferred_name="reporter_notes.txt")
         with open(saved_path, "r", encoding="utf-8") as handle:
             self._reporter_notes_text = handle.read()
+        self._last_reporter_notes_path = saved_path
 
         btn_text = "Notes Auto-Detected" if auto_detected else "Notes Loaded"
         self._upload_reporter_notes_btn.configure(
@@ -2012,6 +2055,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._create_case_folders_now()
         reporter_terms = extract_keyterms_from_text(self._reporter_notes_text or "")
         final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, reporter_terms)
+        if final_keyterms:
+            self._append_transcript_log(f"Using {len(final_keyterms)} Deepgram keyterms")
 
         run_transcription_job(
             audio_path=self._selected_file,
@@ -2023,6 +2068,7 @@ class TranscribeTab(ctk.CTkFrame):
             last_name=self._lastname_var.get(),
             first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
+            keyterms=final_keyterms or None,
             keyterms=final_keyterms or None,
             confirmed_spellings=self._confirmed_spellings,
             ufm_fields=self._ufm_fields or None,

@@ -247,6 +247,8 @@ def run_correction_job(
         if done_callback:
             done_callback(result)
 
+    session_id = None
+
     try:
         from spec_engine.block_builder import build_blocks_from_deepgram, build_blocks_from_text
         from spec_engine.processor import process_blocks
@@ -362,7 +364,8 @@ def run_correction_job(
         logger.exception("[CorrectionRunner] Failed: %s", exc)
         _log(f"ERROR: {exc}")
         try:
-            end_pipeline_session(session_id, "CORRECTIONS", success=False, error=str(exc)[:120])
+            if session_id is not None:
+                end_pipeline_session(session_id, "CORRECTIONS", success=False, error=str(exc)[:120])
         except Exception:
             pass
         _done({

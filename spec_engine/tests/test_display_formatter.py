@@ -19,6 +19,11 @@ def test_normalize_speaker_maps_reporter_and_witness():
     assert normalize_speaker(1) == "THE WITNESS"
 
 
+def test_normalize_speaker_does_not_use_substring_matching():
+    assert normalize_speaker(10) == "SPEAKER 10"
+    assert normalize_speaker(11) == "SPEAKER 11"
+
+
 def test_format_blocks_applies_question_answer_and_speaker_display():
     blocks = [
         {"speaker": 1, "text": "Where are you located today?"},

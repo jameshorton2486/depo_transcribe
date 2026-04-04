@@ -133,6 +133,41 @@ def test_format_blocks_to_text_delegates_to_emit_blocks(monkeypatch):
     assert captured["blocks"] == sample_blocks
 
 
+def test_build_job_config_maps_court_type_to_job_config_court_type():
+    from core.correction_runner import _build_job_config_from_ufm
+
+    cfg = _build_job_config_from_ufm(
+        {
+            "ufm_fields": {
+                "court_type": "County Court at Law",
+            },
+            "confirmed_spellings": {},
+        }
+    )
+
+    assert cfg.court_type == "County Court at Law"
+
+
+def test_build_job_config_ignores_malformed_speaker_map_keys(caplog):
+    from core.correction_runner import _build_job_config_from_ufm
+
+    cfg = _build_job_config_from_ufm(
+        {
+            "ufm_fields": {
+                "speaker_map": {
+                    "1": "THE WITNESS",
+                    "bad": "MR. SMITH",
+                    "2": "THE REPORTER",
+                },
+            },
+            "confirmed_spellings": {},
+        }
+    )
+
+    assert cfg.speaker_map == {1: "THE WITNESS", 2: "THE REPORTER"}
+    assert "Ignored malformed speaker_map keys" in caplog.text
+
+
 def test_run_correction_job_returns_processed_text_not_raw_text(monkeypatch):
     from core.correction_runner import run_correction_job
     from spec_engine.models import Block
@@ -289,3 +324,18 @@ def test_run_correction_job_rejects_empty_block_stream(monkeypatch):
 
         assert results[0]["success"] is False
         assert "No transcript blocks could be generated." in results[0]["error"]
+
+
+def test_run_correction_job_handles_start_pipeline_session_failure(monkeypatch):
+    from core.correction_runner import run_correction_job
+
+    monkeypatch.setattr(
+        "app_logging.start_pipeline_session",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("session start failed")),
+    )
+
+    results = []
+    run_correction_job("C:\\fake\\transcript.txt", done_callback=lambda r: results.append(r))
+
+    assert results[0]["success"] is False
+    assert "session start failed" in results[0]["error"]
