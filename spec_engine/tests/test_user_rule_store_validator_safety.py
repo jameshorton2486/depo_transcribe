@@ -1,4 +1,5 @@
 from spec_engine.models import Block, BlockType
+import pytest
 
 
 def test_validate_rule_rejects_overly_broad_regex():
@@ -42,6 +43,29 @@ def test_apply_user_rules_uses_safe_apply_when_state_present(monkeypatch):
 
     assert text == "subpoena duces tecum"
     assert records == []
+
+
+def test_apply_corrections_loads_user_rules_once(monkeypatch):
+    from spec_engine.corrections import apply_corrections
+
+    calls = {"count": 0}
+
+    def _load_once():
+        calls["count"] += 1
+        return []
+
+    monkeypatch.setattr("spec_engine.user_rule_store.load_active_rules", _load_once)
+
+    blocks = [
+        Block(speaker_id=1, text="Test one.", raw_text=""),
+        Block(speaker_id=1, text="Test two.", raw_text=""),
+        Block(speaker_id=1, text="Test three.", raw_text=""),
+    ]
+
+    corrected = apply_corrections(blocks, {})
+
+    assert len(corrected) == 3
+    assert calls["count"] == 1
 
 
 def test_validate_blocks_strict_mode_promotes_question_warning_to_error(monkeypatch):

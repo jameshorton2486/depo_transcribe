@@ -175,13 +175,19 @@ def _validate_rule(rule: dict) -> tuple[bool, str]:
     return False, "unknown rule type"
 
 
-def apply_user_rules(text: str, block_index: int = 0, state=None) -> tuple[str, list]:
+def apply_user_rules(
+    text: str,
+    block_index: int = 0,
+    state=None,
+    active_rules: list[dict] | None = None,
+) -> tuple[str, list]:
     from .models import CorrectionRecord
 
     records: list[CorrectionRecord] = []
     current_text = text
+    rules = active_rules if active_rules is not None else load_active_rules()
 
-    for rule in load_active_rules():
+    for rule in rules:
         before = current_text
         try:
             if rule.get("type") == "exact_replace":

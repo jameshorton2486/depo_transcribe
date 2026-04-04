@@ -1873,6 +1873,7 @@ def clean_block(
     block_index: int = 0,
     flags: Optional[List[ScopistFlag]] = None,
     flag_counter: Optional[List[int]] = None,  # mutable [int] box shared across calls
+    active_user_rules: Optional[List[dict]] = None,
 ) -> Tuple[str, List[CorrectionRecord], List[ScopistFlag]]:
     """
     Master correction function. Apply all corrections in reference doc order.
@@ -2006,7 +2007,12 @@ def clean_block(
     try:
         from spec_engine.user_rule_store import apply_user_rules
 
-        new_text, _user_records = apply_user_rules(text, block_index=block_index, state=state)
+        new_text, _user_records = apply_user_rules(
+            text,
+            block_index=block_index,
+            state=state,
+            active_rules=active_user_rules,
+        )
         if _is_safe_rewrite(text, new_text):
             text = new_text
             records.extend(_user_records)
@@ -2072,6 +2078,18 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
     prev_cleaned: str = ""
     prev_speaker: Optional[int] = None
     prev_start: float | None = None
+    active_user_rules: Optional[List[dict]] = None
+
+    try:
+        from spec_engine.user_rule_store import load_active_rules
+
+        active_user_rules = load_active_rules()
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "apply_corrections: user_rule_store unavailable: %s",
+            exc,
+        )
+        active_user_rules = None
 
     for index, block in enumerate(blocks):
         result = clean_block(
@@ -2080,6 +2098,7 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
             block_index=index,
             flags=flags,
             flag_counter=flag_counter,
+            active_user_rules=active_user_rules,
         )
         cleaned_text = result[0]
         records = result[1]
