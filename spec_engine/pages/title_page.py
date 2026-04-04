@@ -45,7 +45,7 @@ def write_title_page(doc: Document, job_config: JobConfig) -> None:
         f"  and numbered cause on the {jc.depo_date}, from",
         f"  {jc.depo_start_time} to {jc.depo_end_time}{method_note} before",
         f"  {jc.reporter_name}, {jc.reporter_csr} in and for the State of Texas,",
-        f"  reported by {jc.reporter_name}, at the offices of",
+        "  at the offices of",
         f"  {jc.location}, {jc.location_city}, pursuant to the Texas Rules",
         "  of Civil Procedure and the provisions stated on the record",
         "  or attached hereto.",

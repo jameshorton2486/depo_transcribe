@@ -451,6 +451,16 @@ def test_title_page_does_not_use_article_before_party_name():
     assert f"at the instance of {cfg.plaintiff_name}" in all_text
 
 
+def test_title_page_mentions_reporter_name_once():
+    cfg = make_full_config()
+    doc = create_document()
+    write_title_page(doc, cfg)
+    all_text = " ".join(
+        cell.text for t in doc.tables for row in t.rows for cell in row.cells
+    )
+    assert all_text.count(cfg.reporter_name) == 1
+
+
 def test_caption_contains_sbot():
     """Caption appearances block must show SBOT number."""
     cfg = make_full_config()
