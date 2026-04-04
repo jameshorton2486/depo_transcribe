@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 
-def test_run_transcription_job_does_not_use_or_persist_keyterms(monkeypatch, tmp_path):
+def test_run_transcription_job_uses_and_persists_keyterms(monkeypatch, tmp_path):
     import core.job_runner as job_runner
 
     audio_path = tmp_path / "audio.wav"
@@ -70,7 +70,7 @@ def test_run_transcription_job_does_not_use_or_persist_keyterms(monkeypatch, tmp
     )
 
     assert (
-        "keyterms" not in captured["transcribe_kwargs"]
-        and "deepgram_keyterms" not in captured["merge_kwargs"]
+        captured["transcribe_kwargs"]["keyterms"] == ["Matthew Coger"]
+        and captured["merge_kwargs"]["deepgram_keyterms"] == ["Matthew Coger"]
         and results[0]["success"] is True
     )

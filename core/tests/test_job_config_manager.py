@@ -30,7 +30,7 @@ def test_merge_and_save_persists_transcription_settings(tmp_path):
     assert data["utt_split"] == 1.2
 
 
-def test_load_job_config_ignores_legacy_deepgram_keyterms(tmp_path):
+def test_load_job_config_preserves_deepgram_keyterms(tmp_path):
     config_path = tmp_path / "source_docs" / "job_config.json"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -46,10 +46,10 @@ def test_load_job_config_ignores_legacy_deepgram_keyterms(tmp_path):
 
     data = load_job_config(str(tmp_path))
 
-    assert "deepgram_keyterms" not in data
+    assert data["deepgram_keyterms"] == ["Matthew Coger"]
 
 
-def test_merge_and_save_ignores_deepgram_keyterms_section(tmp_path):
+def test_merge_and_save_persists_deepgram_keyterms_section(tmp_path):
     merge_and_save(
         str(tmp_path),
         deepgram_keyterms=["Matthew Coger"],
@@ -58,4 +58,4 @@ def test_merge_and_save_ignores_deepgram_keyterms_section(tmp_path):
 
     data = load_job_config(str(tmp_path))
 
-    assert "deepgram_keyterms" not in data
+    assert data["deepgram_keyterms"] == ["Matthew Coger"]

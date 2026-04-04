@@ -47,7 +47,7 @@ UFM_TO_CFG_SCALAR: dict[str, str] = {
     "plaintiff_name":    "plaintiff_name",
 
     # Court
-    "court_type":        "court",               # key mismatch — intentional
+    "court_type":        "court_type",
     "county":            "county",
     "state":             "state",
     "judicial_district": "judicial_district",

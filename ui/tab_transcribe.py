@@ -8,6 +8,7 @@ Includes IntakeReviewDialog for reviewing/editing AI-extracted case data.
 import json
 import os
 import re
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -685,6 +686,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._extracted_case_data: dict = {}
         self._ufm_fields: dict = {}
         self._reporter_notes_text: str = ""
+        self._pdf_keyterms: list[str] = []
         self._confirmed_spellings: dict = {}
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
@@ -1174,6 +1176,7 @@ class TranscribeTab(ctk.CTkFrame):
         """Reset auto-detected case data when switching to a new case."""
         self._pdf_already_loaded = False
         self._reporter_notes_text = ""
+        self._pdf_keyterms = []
         self._confirmed_spellings = {}
         self._extracted_case_data = {}
         self._current_case_path = None
@@ -1241,6 +1244,7 @@ class TranscribeTab(ctk.CTkFrame):
         """Force re-detection of PDF and reporter notes from source_docs."""
         self._pdf_already_loaded = False
         self._reporter_notes_text = ""
+        self._pdf_keyterms = []
         self._extracted_case_data = {}
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
@@ -1273,6 +1277,7 @@ class TranscribeTab(ctk.CTkFrame):
         if existing_config and not self._pdf_already_loaded:
             self._apply_saved_transcription_settings(existing_config)
             self._confirmed_spellings = existing_config.get("confirmed_spellings", {})
+            self._pdf_keyterms = list(existing_config.get("deepgram_keyterms", []) or [])
             ufm = existing_config.get("ufm_fields", {})
             if ufm.get("cause_number") and not self._cause_var.get().strip():
                 self._cause_var.set(ufm["cause_number"])
@@ -1450,6 +1455,26 @@ class TranscribeTab(ctk.CTkFrame):
             logger.error("Folder creation errors: %s", status["errors"])
         if status["created"]:
             logger.info("Folders created: %s", status["created"])
+
+    def _persist_source_doc(self, source_path: str, preferred_name: str | None = None) -> str:
+        """
+        Copy an uploaded source document into {case_root}/source_docs/.
+        Returns the destination path. If case context is incomplete, returns source_path.
+        """
+        if not source_path or not os.path.isfile(source_path):
+            return source_path
+        self._create_case_folders_now()
+        case_root = self._get_current_save_path()
+        if not case_root or not os.path.isdir(case_root):
+            return source_path
+
+        source_docs = os.path.join(case_root, "source_docs")
+        os.makedirs(source_docs, exist_ok=True)
+        filename = preferred_name or os.path.basename(source_path)
+        dest = os.path.join(source_docs, filename)
+        if os.path.abspath(source_path) != os.path.abspath(dest):
+            shutil.copy2(source_path, dest)
+        return dest
 
     def _open_output_folder(self):
         if self._current_case_path and os.path.isdir(self._current_case_path):
@@ -1713,7 +1738,8 @@ class TranscribeTab(ctk.CTkFrame):
             if not filepath:
                 return
 
-            self._last_pdf_path = filepath
+            saved_pdf_path = self._persist_source_doc(filepath)
+            self._last_pdf_path = saved_pdf_path
             self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
             self._extract_status_label.configure(text="Extracting case info\u2026", text_color="white")
 
@@ -1721,7 +1747,7 @@ class TranscribeTab(ctk.CTkFrame):
                 from core.pdf_extractor import extract_case_info_from_pdf
 
                 results = extract_case_info_from_pdf(
-                    filepath,
+                    saved_pdf_path,
                     progress_callback=lambda msg: self.after(0, self._append_transcript_log, msg),
                 )
                 self.after(0, self._apply_pdf_results, results, auto_detected)
@@ -1787,6 +1813,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._date_badge.configure(text=txt, text_color=col)
 
         intake_result = results.get("intake_result")
+        self._pdf_keyterms = list(results.get("keyterms", []) or [])
         if intake_result:
             deponent_name = ""
             if intake_result.deponents:
@@ -1836,6 +1863,7 @@ class TranscribeTab(ctk.CTkFrame):
                     self._current_case_path,
                     ufm_fields=ufm_fields,
                     confirmed_spellings=dict(intake_result.confirmed_spellings),
+                    deepgram_keyterms=self._pdf_keyterms or None,
                 )
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
 
@@ -1852,7 +1880,8 @@ class TranscribeTab(ctk.CTkFrame):
         IntakeReviewDialog(self, self._extracted_case_data)
 
     def _load_reporter_notes(self, filepath: str, auto_detected: bool = False):
-        with open(filepath, "r", encoding="utf-8") as handle:
+        saved_path = filepath if auto_detected else self._persist_source_doc(filepath, preferred_name="reporter_notes.txt")
+        with open(saved_path, "r", encoding="utf-8") as handle:
             self._reporter_notes_text = handle.read()
 
         btn_text = "Notes Auto-Detected" if auto_detected else "Notes Loaded"
@@ -1863,13 +1892,13 @@ class TranscribeTab(ctk.CTkFrame):
         self._extract_status_label.configure(
             text=(
                 f"Reporter notes {'auto-detected' if auto_detected else 'loaded'}: "
-                f"{os.path.basename(filepath)}"
+                f"{os.path.basename(saved_path)}"
             ),
             text_color="#44FF44",
         )
 
         self._append_transcript_log(
-            f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {filepath}"
+            f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {saved_path}"
         )
 
     def _upload_reporter_notes(self):
@@ -1978,8 +2007,11 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _run_job(self):
         from core.job_runner import run_transcription_job
+        from core.keyterm_extractor import extract_keyterms_from_text, merge_keyterms
 
         self._create_case_folders_now()
+        reporter_terms = extract_keyterms_from_text(self._reporter_notes_text or "")
+        final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, reporter_terms)
 
         run_transcription_job(
             audio_path=self._selected_file,
@@ -1991,6 +2023,7 @@ class TranscribeTab(ctk.CTkFrame):
             last_name=self._lastname_var.get(),
             first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
+            keyterms=final_keyterms or None,
             confirmed_spellings=self._confirmed_spellings,
             ufm_fields=self._ufm_fields or None,
             progress_callback=self._on_progress,

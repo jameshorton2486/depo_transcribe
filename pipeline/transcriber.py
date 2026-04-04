@@ -52,7 +52,8 @@ def _transcribe_direct(
     # - smart_format stays off to avoid Deepgram rewriting dates/currency/etc.
     # - numerals stays off because spec_engine owns number normalization
     # - utt_split is the correct pre-recorded utterance control for Nova-3
-    # - keyterms are intentionally disabled for deterministic behavior
+    normalized_keyterms = [str(term).strip() for term in (keyterms or []) if str(term).strip()]
+
     params = {
         "model": model,
         "language": "en",
@@ -67,14 +68,16 @@ def _transcribe_direct(
         "profanity_filter": "false",
         "utt_split": str(utt_split),
     }
-    query = _parse.urlencode(params)
+    if normalized_keyterms:
+        params["keyterm"] = normalized_keyterms
+    query = _parse.urlencode(params, doseq=True)
 
     url = f"https://api.deepgram.com/v1/listen?{query}"
     chunk_name = os.path.basename(audio_file_path)
 
     logger.info(
-        "Deepgram direct HTTP call chunk=%s model=%s",
-        chunk_name, model,
+        "Deepgram direct HTTP call chunk=%s model=%s keyterms=%d",
+        chunk_name, model, len(normalized_keyterms),
     )
 
     if progress_callback:
@@ -215,6 +218,6 @@ def transcribe_chunk(
         audio_file_path,
         model=model,
         utt_split=utt_split,
-        keyterms=None,
+        keyterms=keyterms,
         progress_callback=progress_callback,
     )

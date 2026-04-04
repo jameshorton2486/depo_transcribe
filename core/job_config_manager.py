@@ -82,8 +82,6 @@ def load_job_config(case_root: str) -> dict[str, Any]:
         logger.error("[JobConfig] Failed to load %s: %s", path, exc)
         return {}
 
-    # Legacy compatibility: older configs may still contain keyterm payloads.
-    data.pop("deepgram_keyterms", None)
 
     # Version check
     version = data.get("version")
@@ -96,9 +94,10 @@ def load_job_config(case_root: str) -> dict[str, Any]:
         )
 
     logger.info(
-        "[JobConfig] Loaded: ufm_fields=%d keys  confirmed_spellings=%d  version=%s",
+        "[JobConfig] Loaded: ufm_fields=%d keys  confirmed_spellings=%d  keyterms=%d  version=%s",
         len(data.get("ufm_fields", {})),
         len(data.get("confirmed_spellings", {})),
+        len(data.get("deepgram_keyterms", [])),
         version,
     )
     return data
@@ -128,8 +127,16 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     # ── Stamp version ─────────────────────────────────────────────────────────
     data["version"] = JOB_CONFIG_VERSION
 
-    # Legacy compatibility: drop keyterms when rewriting old configs.
-    data.pop("deepgram_keyterms", None)
+
+    # Normalize Deepgram keyterms to a stable list[str] shape
+    raw_keyterms = data.get("deepgram_keyterms")
+    if raw_keyterms is None:
+        pass
+    elif isinstance(raw_keyterms, list):
+        data["deepgram_keyterms"] = [str(t).strip() for t in raw_keyterms if str(t).strip()]
+    else:
+        logger.warning("[JobConfig] deepgram_keyterms must be a list; dropping invalid value of type %s", type(raw_keyterms).__name__)
+        data.pop("deepgram_keyterms", None)
 
     # ── Validate confirmed_spellings ──────────────────────────────────────────
     spellings: dict = data.get("confirmed_spellings", {})
@@ -144,10 +151,11 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     # ── Log summary ───────────────────────────────────────────────────────────
     logger.info(
         "[JobConfig] Saving → %s  "
-        "(ufm_fields=%d  confirmed_spellings=%d)",
+        "(ufm_fields=%d  confirmed_spellings=%d  keyterms=%d)",
         path,
         len(data.get("ufm_fields", {})),
         len(spellings),
+        len(data.get("deepgram_keyterms", [])),
     )
 
     # ── Write ─────────────────────────────────────────────────────────────────
@@ -188,8 +196,6 @@ def merge_and_save(case_root: str, **sections: Any) -> Path | None:
     existing = load_job_config(case_root)
 
     for key, value in sections.items():
-        if key == "deepgram_keyterms":
-            continue
         if value is not None:
             existing[key] = value
 
