@@ -113,7 +113,13 @@ def _build_job_config_from_ufm(job_config_data: dict) -> Any:
     # speaker_map — JSON stores string keys, JobConfig needs int keys
     speaker_map = ufm.get("speaker_map", {})
     if isinstance(speaker_map, dict):
-        cfg.speaker_map = {int(k): v for k, v in speaker_map.items()}
+        safe_map = {}
+        for raw_key, raw_name in speaker_map.items():
+            try:
+                safe_map[int(raw_key)] = raw_name
+            except (TypeError, ValueError):
+                logger.warning("[CorrectionRunner] Ignoring non-integer speaker_map key: %r", raw_key)
+        cfg.speaker_map = safe_map
 
     # speaker_map_verified — must be True for Q/A classification to use map
     verified = ufm.get("speaker_map_verified", False)

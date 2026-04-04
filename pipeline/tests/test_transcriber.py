@@ -92,7 +92,7 @@ def test_transcribe_chunk_uses_legal_safe_defaults(monkeypatch, tmp_path):
     assert params["numerals"] == ["false"]
 
 
-def test_transcribe_chunk_ignores_keyterms_in_request(monkeypatch, tmp_path):
+def test_transcribe_chunk_includes_keyterms_in_request(monkeypatch, tmp_path):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"audio")
 
@@ -127,4 +127,4 @@ def test_transcribe_chunk_ignores_keyterms_in_request(monkeypatch, tmp_path):
 
     params = parse_qs(urlparse(captured["url"]).query)
 
-    assert "keyterm" not in params
+    assert params["keyterm"] == ["Matthew Coger", "Murphy Oil"]

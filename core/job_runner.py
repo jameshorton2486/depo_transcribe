@@ -75,6 +75,8 @@ def run_transcription_job(
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
         _log(f"Utterance split: {utt_split:.2f}")
+        if keyterms:
+            _log(f"Deepgram keyterms: {len(keyterms)}")
 
         case_path, folder_status = resolve_or_create_case(
             base_dir,
@@ -137,6 +139,7 @@ def run_transcription_job(
                 chunk.file_path,
                 model=model,
                 utt_split=utt_split,
+                keyterms=keyterms,
                 progress_callback=_log,
             )
             chunk_results.append(result)
@@ -227,6 +230,7 @@ def run_transcription_job(
             ufm_fields=ufm_fields if ufm_fields else None,
             confirmed_spellings=confirmed_spellings if confirmed_spellings else None,
             low_confidence_words=low_conf_words if low_conf_words else None,
+            deepgram_keyterms=keyterms if keyterms else None,
         )
         _log("Saved job_config.json → source_docs/")
 
