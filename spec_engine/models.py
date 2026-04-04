@@ -177,11 +177,11 @@ class JobConfig:
     also_present: List[str] = field(default_factory=list)
 
     # Group 4 — Reporter Information
-    reporter_name: str = "Miah Bardot"
-    reporter_csr: str = "CSR No. 12129"
+    reporter_name: str = ""
+    reporter_csr: str = ""
     reporter_expiration: str = ""
-    reporter_firm: str = "SA Legal Solutions"
-    reporter_address: str = "San Antonio, Texas"
+    reporter_firm: str = ""
+    reporter_address: str = ""
     reporter_phone: str = ""
     reporter_city: str = ""
     firm_registration: str = ""

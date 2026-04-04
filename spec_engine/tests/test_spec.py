@@ -48,6 +48,14 @@ def make_unverified_config():
     return cfg
 
 
+def test_jobconfig_reporter_defaults_are_empty():
+    cfg = JobConfig()
+    assert cfg.reporter_name == ""
+    assert cfg.reporter_csr == ""
+    assert cfg.reporter_firm == ""
+    assert cfg.reporter_address == ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # TESTS 1-2: Verbatim preservation (ABSOLUTE RULE — Spec 2.1)
 # ═══════════════════════════════════════════════════════════════
