@@ -40,19 +40,21 @@ def process_blocks(
         _log.log_step("Corrections complete")
 
     blocks = map_speakers(blocks, job_config)
-    assert all(
+    if not all(
         getattr(block, "speaker_role", None) is not None
         and getattr(block, "speaker_name", None) is not None
         for block in blocks
         if getattr(block, "speaker_id", None) is not None
-    ), "Speaker mapping incomplete"
+    ):
+        raise RuntimeError("Speaker mapping incomplete")
 
     if _log:
         _log.snapshot("02a_blocks_speaker_mapped", blocks)
         _log.log_step("Speaker mapping complete")
 
     blocks = classify_blocks(blocks, job_config)
-    assert all(hasattr(block, "block_type") for block in blocks), "Classification failed"
+    if not all(getattr(block, "block_type", None) is not None for block in blocks):
+        raise RuntimeError("Classification failed")
 
     if _log:
         _log.snapshot("03a_blocks_classified", blocks)

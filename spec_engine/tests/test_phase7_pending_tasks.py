@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 from docx import Document
+import pytest
 
 from pipeline.processor import run_pipeline
 from spec_engine.document_builder import _build_witness_intro_lines, process_transcript
@@ -150,6 +151,45 @@ def test_process_blocks_reclassifies_after_objection_extraction(monkeypatch):
     processor_module.process_blocks(blocks, cfg)
 
     assert len(classify_calls) == 2
+
+
+def test_process_blocks_raises_runtime_error_for_incomplete_speaker_mapping(monkeypatch):
+    from spec_engine import processor as processor_module
+
+    blocks = [Block(speaker_id=1, text="Test.", raw_text="")]
+    cfg = {"speaker_map": {1: "THE WITNESS"}, "speaker_map_verified": True}
+
+    monkeypatch.setattr(processor_module, "apply_corrections", lambda current_blocks, *_args, **_kwargs: current_blocks)
+    monkeypatch.setattr(processor_module, "map_speakers", lambda current_blocks, *_args, **_kwargs: current_blocks)
+
+    with pytest.raises(RuntimeError, match="Speaker mapping incomplete"):
+        processor_module.process_blocks(blocks, cfg)
+
+
+def test_process_blocks_raises_runtime_error_for_missing_block_type(monkeypatch):
+    from spec_engine import processor as processor_module
+
+    blocks = [Block(speaker_id=1, text="Test.", raw_text="")]
+    cfg = {"speaker_map": {1: "THE WITNESS"}, "speaker_map_verified": True}
+
+    monkeypatch.setattr(processor_module, "apply_corrections", lambda current_blocks, *_args, **_kwargs: current_blocks)
+
+    def _map(current_blocks, *_args, **_kwargs):
+        for block in current_blocks:
+            block.speaker_role = "WITNESS"
+            block.speaker_name = "THE WITNESS"
+        return current_blocks
+
+    monkeypatch.setattr(processor_module, "map_speakers", _map)
+    def _classify(current_blocks, *_args, **_kwargs):
+        for block in current_blocks:
+            block.block_type = None
+        return current_blocks
+
+    monkeypatch.setattr(processor_module, "classify_blocks", _classify)
+
+    with pytest.raises(RuntimeError, match="Classification failed"):
+        processor_module.process_blocks(blocks, cfg)
 
 
 def test_witness_intro_lines_use_metadata_template():
