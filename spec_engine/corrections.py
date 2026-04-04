@@ -1532,15 +1532,15 @@ def fix_spaced_dashes(
       9:15 a.m.--9:30     → 9:15 a.m. -- 9:30
 
     Guards:
-      - preserve single-letter and short-token stutters (I--I, he--he)
-      - preserve short-token interruption patterns where both sides are brief
+      - preserve true repeated-token stutters (I--I, he--he)
     """
     original = text
     new_text = re.sub(r'\s*--\s*', ' -- ', original)
     new_text = re.sub(
-        r"\b([A-Za-z']{1,3})\s+--\s+([A-Za-z']{1,3})\b",
+        r"\b([A-Za-z']{1,3})\s+--\s+(\1)\b",
         r'\1--\2',
         new_text,
+        flags=re.IGNORECASE,
     )
     new_text = re.sub(r' {2,}', ' ', new_text)
     return _apply_safe_rewrite(

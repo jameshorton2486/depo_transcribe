@@ -16,6 +16,11 @@ def test_fix_spaced_dashes_preserves_short_stutter_tokens():
     assert "I--I" in result
 
 
+def test_fix_spaced_dashes_keeps_interrupted_speech_open():
+    result = clean_block("I -- do not know.", _cfg())[0]
+    assert "I -- do not know." in result
+
+
 def test_apply_corrections_only_skips_near_duplicate_blocks():
     blocks = [
         Block(
