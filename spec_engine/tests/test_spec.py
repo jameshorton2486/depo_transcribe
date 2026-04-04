@@ -484,6 +484,29 @@ def test_certificate_contains_reporter():
     assert "12129" in all_text
 
 
+def test_certificate_omits_signature_waiver_by_default():
+    cfg = make_full_config()
+    doc = create_document()
+    write_certificate(doc, cfg)
+    all_text = " ".join(
+        cell.text for t in doc.tables for row in t.rows for cell in row.cells
+    )
+    assert "deposition transcript was waived by the witness and the" not in all_text
+    assert "parties at the time of the deposition" not in all_text
+
+
+def test_certificate_includes_signature_waiver_when_enabled():
+    cfg = make_full_config()
+    cfg.signature_waived = True
+    doc = create_document()
+    write_certificate(doc, cfg)
+    all_text = " ".join(
+        cell.text for t in doc.tables for row in t.rows for cell in row.cells
+    )
+    assert "deposition transcript was waived by the witness and the" in all_text
+    assert "parties at the time of the deposition" in all_text
+
+
 def test_changes_signature_renders_change_row():
     """Changes page must render the ChangeEntry row."""
     cfg = make_full_config()

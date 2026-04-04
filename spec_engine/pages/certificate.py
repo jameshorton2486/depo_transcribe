@@ -14,6 +14,7 @@ def write_certificate(doc: Document, job_config: JobConfig) -> None:
     from ._lined_page import paginate_lines, write_lined_page
 
     jc = job_config
+    signature_waived = bool(getattr(jc, "signature_waived", False))
     parties = [jc.plaintiff_name] + jc.defendant_names
     parties_str = "; ".join(parties) if parties else "[parties]"
 
@@ -31,11 +32,15 @@ def write_certificate(doc: Document, job_config: JobConfig) -> None:
         "  that the transcript of the oral deposition is a true record of",
         "  the testimony given by the witness;",
         "",
-        "  That examination and signature of the witness to the",
-        "  deposition transcript was waived by the witness and the",
-        "  parties at the time of the deposition;",
-        "",
     ]
+
+    if signature_waived:
+        lines += [
+            "  That examination and signature of the witness to the",
+            "  deposition transcript was waived by the witness and the",
+            "  parties at the time of the deposition;",
+            "",
+        ]
 
     if jc.time_used:
         for attorney, time_str in jc.time_used.items():
