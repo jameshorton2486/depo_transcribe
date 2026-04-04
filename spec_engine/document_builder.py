@@ -7,12 +7,12 @@ corrections_log → caption → certificate.
 
 Also handles:
   - Speaker verification guard (Spec 9.5)
-  - pickle block caching for re-processing (Spec 9.1)
+  - JSON block caching for re-processing (Spec 9.1)
   - Post-record retroactive spelling corrections (Spec Section 8)
   - Q/A pair page-break safety (Spec 5.5)
 """
 
-import pickle
+import json
 from pathlib import Path
 from typing import Any, Callable, List, Optional
 
@@ -26,7 +26,7 @@ from .emitter import (
     add_page_break, create_document, emit_line, emit_line_numbered,
 )
 from .models import (
-    Block, CorrectionRecord, JobConfig, LineType, ScopistFlag,
+    Block, CorrectionRecord, JobConfig, LineType, ScopistFlag, Word, BlockType,
     SpeakerMapUnverifiedError,
 )
 from .pages.caption import write_caption
@@ -49,17 +49,75 @@ LOGGER = get_logger(__name__)
 
 
 def _cache_path(job_config: JobConfig) -> str:
-    """Return cache file path for parsed blocks (Spec 9.1 — pickle caching)."""
+    """Return cache file path for parsed blocks (Spec 9.1 — JSON caching)."""
     safe = job_config.cause_number.replace("/", "-").replace("\\", "-") or "unnamed"
-    return str(Path("jobs") / f"{safe}_blocks.pkl")
+    return str(Path("jobs") / f"{safe}_blocks.json")
+
+
+def _serialize_word(word: Word) -> dict[str, Any]:
+    return {
+        "text": word.text,
+        "start": word.start,
+        "end": word.end,
+        "confidence": word.confidence,
+        "speaker": word.speaker,
+    }
+
+
+def _deserialize_word(payload: dict[str, Any]) -> Word:
+    return Word(
+        text=payload.get("text", ""),
+        start=payload.get("start"),
+        end=payload.get("end"),
+        confidence=payload.get("confidence"),
+        speaker=payload.get("speaker"),
+    )
+
+
+def _serialize_block(block: Block) -> dict[str, Any]:
+    block_type = getattr(block, "block_type", None)
+    block_type_value = (
+        block_type.value if isinstance(block_type, BlockType) else block_type
+    )
+    return {
+        "text": block.text,
+        "speaker_id": block.speaker_id,
+        "raw_text": block.raw_text,
+        "speaker_name": block.speaker_name,
+        "speaker_role": block.speaker_role,
+        "block_type": block_type_value,
+        "words": [_serialize_word(word) for word in block.words],
+        "flags": list(block.flags),
+        "meta": dict(block.meta),
+    }
+
+
+def _deserialize_block(payload: dict[str, Any]) -> Block:
+    block_type_raw = payload.get("block_type", BlockType.UNKNOWN.value)
+    try:
+        block_type = BlockType(block_type_raw) if block_type_raw is not None else None
+    except ValueError:
+        block_type = BlockType.UNKNOWN
+
+    return Block(
+        text=payload.get("text", ""),
+        speaker_id=payload.get("speaker_id"),
+        raw_text=payload.get("raw_text", ""),
+        speaker_name=payload.get("speaker_name"),
+        speaker_role=payload.get("speaker_role", ""),
+        block_type=block_type,
+        words=[_deserialize_word(word) for word in payload.get("words", [])],
+        flags=list(payload.get("flags", [])),
+        meta=dict(payload.get("meta", {})),
+    )
 
 
 def cache_blocks(blocks: List[Block], job_config: JobConfig) -> str:
     """Save parsed blocks to disk. Returns cache path."""
     path = _cache_path(job_config)
     Path("jobs").mkdir(exist_ok=True)
-    with open(path, 'wb') as f:
-        pickle.dump(blocks, f)
+    payload = [_serialize_block(block) for block in blocks]
+    Path(path).write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
 
@@ -67,11 +125,13 @@ def load_cached_blocks(job_config: JobConfig) -> Optional[List[Block]]:
     """Load previously cached blocks. Returns None if not found or stale."""
     path = _cache_path(job_config)
     try:
-        with open(path, 'rb') as f:
-            return pickle.load(f)
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(payload, list):
+            raise ValueError("cache payload is not a list")
+        return [_deserialize_block(item) for item in payload if isinstance(item, dict)]
     except FileNotFoundError:
         return None
-    except pickle.UnpicklingError as exc:
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
         LOGGER.warning("Cached blocks corrupted, re-processing: %s", exc)
         return None
     except Exception as exc:

@@ -793,6 +793,51 @@ def test_process_transcript_returns_flags_key():
         assert isinstance(result["flags"], list)
 
 
+def test_block_cache_round_trips_via_json(monkeypatch, tmp_path):
+    from spec_engine.document_builder import cache_blocks, load_cached_blocks, _cache_path
+    from spec_engine.models import Word, BlockType
+
+    monkeypatch.chdir(tmp_path)
+    cfg = JobConfig(cause_number="CACHE-TEST")
+    blocks = [
+        Block(
+            text="Test block.",
+            speaker_id=1,
+            raw_text="Test block.",
+            speaker_name="THE WITNESS",
+            speaker_role="WITNESS",
+            block_type=BlockType.ANSWER,
+            words=[Word(text="Test", start=0.0, end=0.2, confidence=0.99, speaker=1)],
+            flags=["review"],
+            meta={"start": 0.0},
+        )
+    ]
+
+    path = cache_blocks(blocks, cfg)
+    assert path.endswith("_blocks.json")
+    restored = load_cached_blocks(cfg)
+
+    assert _cache_path(cfg) == path
+    assert restored is not None
+    assert len(restored) == 1
+    assert restored[0].text == "Test block."
+    assert restored[0].block_type == BlockType.ANSWER
+    assert restored[0].words[0].text == "Test"
+    assert restored[0].meta["start"] == 0.0
+
+
+def test_block_cache_returns_none_for_bad_json(monkeypatch, tmp_path):
+    from spec_engine.document_builder import _cache_path, load_cached_blocks
+
+    monkeypatch.chdir(tmp_path)
+    cfg = JobConfig(cause_number="CACHE-BAD")
+    cache_path = Path(_cache_path(cfg))
+    cache_path.parent.mkdir(exist_ok=True)
+    cache_path.write_text("{not valid json", encoding="utf-8")
+
+    assert load_cached_blocks(cfg) is None
+
+
 def test_empty_spec_flags_serializes_cleanly():
     """JobConfig with no flags serializes spec_flags as empty list."""
     import json
