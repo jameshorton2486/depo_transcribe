@@ -10,6 +10,17 @@ import re
 from datetime import datetime
 
 
+def _ordinal_suffix(number: int) -> str:
+    """Return the uppercase ordinal suffix for an integer."""
+    if 10 <= (number % 100) <= 20:
+        return "TH"
+    return {
+        1: "ST",
+        2: "ND",
+        3: "RD",
+    }.get(number % 10, "TH")
+
+
 def map_intake_to_ufm(extracted: dict) -> dict:
     """
     Convert extracted intake JSON into a flat UFM field dict
@@ -85,7 +96,8 @@ def map_intake_to_ufm(extracted: dict) -> dict:
 
     m = re.search(r'(\d+)', court_raw)
     if m:
-        district_no = m.group(1) + "TH"
+        district_num = int(m.group(1))
+        district_no = f"{district_num}{_ordinal_suffix(district_num)}"
 
     # Extract county from the court string when not in its own field.
     # e.g. "370th Judicial District, Hidalgo County, Texas"
