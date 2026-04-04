@@ -26,3 +26,14 @@ def test_leaving_not_global():
 def test_mhmm_normalized():
     text, _, _ = clean_block("Mhmm.", _cfg())
     assert text == "Mm-hmm."
+
+
+def test_trailer_trailer_to_tractor_trailer():
+    text, _, _ = clean_block("He was driving a trailer trailer.", _cfg())
+    assert "tractor trailer" in text.lower()
+
+
+def test_semi_trailer_trailer_is_not_rewritten():
+    text, _, _ = clean_block("He was driving a semi-trailer trailer.", _cfg())
+    assert "semi-trailer" in text.lower()
+    assert "tractor trailer" not in text.lower()

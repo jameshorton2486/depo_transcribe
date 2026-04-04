@@ -286,7 +286,7 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bCVL\s+handbook\b',          'CDL handbook'),
     (r'\bCVL\s+manual\b',            'CDL manual'),
     # "tractor trailer" spacing variant
-    (r'\btrailer\s+trailer\b',       'tractor trailer'),
+    (r'(?<!semi-)(?<!full-)(?<!double-)\btrailer\s+trailer\b', 'tractor trailer'),
     (r'\btrucker\s+trailer\b',       'tractor trailer'),
     # "bill of lading" — Deepgram garbles
     (r'\bbill\s+of\s+[Ll]ayding\b',  'bill of lading'),
