@@ -1,11 +1,16 @@
+"""
+Phase 7 Verification Test Suite — current contracts for processor ordering,
+document-builder witness intro/preamble handling, and transcript formatting.
+"""
+
 import tempfile
 from pathlib import Path
 
 from docx import Document
 import pytest
 
-from pipeline.processor import run_pipeline
 from spec_engine.document_builder import _build_witness_intro_lines, process_transcript
+from spec_engine.emitter import TAB_720, TAB_1440, TAB_2160, _STANDARD_TABS
 from spec_engine.models import Block, BlockType, JobConfig, LineType
 from spec_engine.qa_fixer import _merge_reporter_preamble_blocks
 
@@ -197,6 +202,13 @@ def test_process_blocks_raises_runtime_error_for_missing_block_type(monkeypatch)
         processor_module.process_blocks(blocks, cfg)
 
 
+def test_emitter_uses_current_standard_tab_stops():
+    assert TAB_720 == 720
+    assert TAB_1440 == 1440
+    assert TAB_2160 == 2160
+    assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160]
+
+
 def test_witness_intro_lines_use_metadata_template():
     cfg = JobConfig(
         witness_name="Matthew Allan Coger",
@@ -316,7 +328,9 @@ def test_process_transcript_inserts_witness_intro_block_into_docx():
         assert "BY MR. ALLAN:" in full_text
 
 
-def test_run_pipeline_merges_reporter_preamble_before_final_output():
+def test_run_pipeline_wrapper_merges_reporter_preamble_before_final_output():
+    from pipeline.processor import run_pipeline
+
     result = run_pipeline(
         {
             "utterances": [
