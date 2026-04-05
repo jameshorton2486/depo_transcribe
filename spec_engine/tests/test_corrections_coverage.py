@@ -236,3 +236,26 @@ class TestFixQaStructure:
         all_text = " ".join(b.text for b in result)
         assert "uh" in all_text.lower()
         assert "um" in all_text.lower()
+
+    def test_splits_followup_question_from_answer_block(self):
+        from spec_engine.models import Block, BlockType, JobConfig
+        from spec_engine.qa_fixer import fix_qa_structure
+
+        cfg = JobConfig(
+            speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+            witness_id=1,
+            examining_attorney_id=2,
+        )
+        blocks = [
+            Block(
+                speaker_id=1,
+                speaker_name="THE WITNESS",
+                block_type=BlockType.ANSWER,
+                text="Correct. Have you reviewed the report?",
+                raw_text="",
+            )
+        ]
+
+        result = fix_qa_structure(blocks, job_config=cfg)
+
+        assert [b.block_type for b in result] == [BlockType.ANSWER, BlockType.QUESTION]

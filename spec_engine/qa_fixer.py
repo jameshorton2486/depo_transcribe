@@ -18,7 +18,11 @@ ANSWER_TOKENS = (
     "i remember", "i recall", "i don't recall", "i don't remember",
 )
 
+QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will", "were", "was", "have", "has", "had")
+IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
+
 TOKEN_RE = re.compile(r"[a-z0-9']+")
+SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
 REPORTER_PREAMBLE_START_RE = re.compile(
     r"\bthis\s+is\s+cause\s+number\b"
     r"|\bcause\s+number\b"
@@ -45,6 +49,57 @@ def _witness_identity(job_config: Any, original: Block) -> tuple[Any, str | None
         if witness_name is None:
             witness_name = speaker_map.get(str(witness_id))
     return witness_id, witness_name
+
+
+def _examiner_identity(job_config: Any, original: Block) -> tuple[Any, str | None]:
+    if hasattr(job_config, "examining_attorney_id"):
+        examiner_id = getattr(job_config, "examining_attorney_id", original.speaker_id)
+    elif isinstance(job_config, dict):
+        examiner_id = job_config.get("examining_attorney_id", original.speaker_id)
+    else:
+        examiner_id = original.speaker_id
+
+    examiner_name = None
+    if hasattr(job_config, "speaker_map"):
+        examiner_name = (getattr(job_config, "speaker_map", {}) or {}).get(examiner_id)
+    elif isinstance(job_config, dict):
+        speaker_map = job_config.get("speaker_map", {}) or {}
+        examiner_name = speaker_map.get(examiner_id)
+        if examiner_name is None:
+            examiner_name = speaker_map.get(str(examiner_id))
+    return examiner_id, examiner_name
+
+
+def _looks_like_question_text(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    return (
+        normalized.endswith("?")
+        or any(lowered.startswith(word + " ") for word in QUESTION_WORDS)
+        or any(lowered.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
+    )
+
+
+def _extract_answer_and_continuation(remainder: str) -> tuple[str, str | None] | None:
+    text = (remainder or "").strip()
+    if not text:
+        return None
+
+    lowered = text.lower()
+    if not lowered.startswith(ANSWER_TOKENS):
+        return None
+
+    parts = SENTENCE_END_RE.split(text, maxsplit=1)
+    if len(parts) == 1:
+        return parts[0].strip(), None
+
+    answer_text = parts[0].strip()
+    continuation = parts[1].strip()
+    if not answer_text:
+        return None
+    return answer_text, (continuation or None)
 
 
 def _is_reporter_block(block: Block) -> bool:
@@ -114,10 +169,12 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
             new_blocks.append(block)
             continue
 
-        q_part, a_part = match.groups()
-        if not a_part.lower().startswith(ANSWER_TOKENS):
+        q_part, remainder = match.groups()
+        extracted = _extract_answer_and_continuation(remainder)
+        if not extracted:
             new_blocks.append(block)
             continue
+        a_part, continuation = extracted
 
         witness_id, witness_name = _witness_identity(job_config, block)
         q_block = Block(
@@ -139,6 +196,65 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
             meta={**block.meta, "split_from_question": True},
         )
         new_blocks.extend([q_block, a_block])
+
+        if continuation and _looks_like_question_text(continuation):
+            q2_block = Block(
+                raw_text=block.raw_text,
+                text=continuation,
+                speaker_id=block.speaker_id,
+                speaker_name=block.speaker_name,
+                speaker_role=block.speaker_role,
+                block_type=BlockType.QUESTION,
+                words=[],
+                meta={**block.meta, "split_followup_question": True},
+            )
+            new_blocks.append(q2_block)
+
+    return new_blocks
+
+
+def split_inline_questions_from_answers(blocks: List[Block], job_config: Any = None) -> List[Block]:
+    """
+    Split blocks like 'No, sir. Are you currently employed?' into A + Q blocks.
+    """
+    new_blocks: List[Block] = []
+
+    for block in blocks:
+        if block.block_type != BlockType.ANSWER:
+            new_blocks.append(block)
+            continue
+
+        extracted = _extract_answer_and_continuation(block.text.strip())
+        if not extracted:
+            new_blocks.append(block)
+            continue
+
+        a_part, continuation = extracted
+        if not continuation or not _looks_like_question_text(continuation):
+            new_blocks.append(block)
+            continue
+
+        examiner_id, examiner_name = _examiner_identity(job_config, block)
+        a_block = Block(
+            raw_text=block.raw_text,
+            text=a_part,
+            speaker_id=block.speaker_id,
+            speaker_name=block.speaker_name,
+            speaker_role=block.speaker_role,
+            block_type=BlockType.ANSWER,
+            words=list(block.words),
+            meta={**block.meta, "split_from_answer": True},
+        )
+        q_block = Block(
+            raw_text=block.raw_text,
+            text=continuation,
+            speaker_id=examiner_id,
+            speaker_name=examiner_name,
+            block_type=BlockType.QUESTION,
+            words=[],
+            meta={**block.meta, "split_followup_question": True},
+        )
+        new_blocks.extend([a_block, q_block])
 
     return new_blocks
 
@@ -223,6 +339,7 @@ def fix_qa_structure(blocks: List[Block], job_config: Any = None) -> List[Block]
     """
     blocks = _merge_reporter_preamble_blocks(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
+    blocks = split_inline_questions_from_answers(blocks, job_config=job_config)
     blocks = _merge_orphaned_continuations(blocks)
     blocks = _remove_near_duplicate_blocks(blocks)
     return blocks

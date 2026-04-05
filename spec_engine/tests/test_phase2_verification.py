@@ -8,6 +8,7 @@ from spec_engine.models import Block, BlockType, JobConfig, LineType
 from spec_engine.qa_fixer import (
     _merge_orphaned_continuations,
     _remove_near_duplicate_blocks,
+    fix_qa_structure,
 )
 
 
@@ -157,6 +158,57 @@ def test_remove_near_duplicate_blocks_keeps_similar_text_when_timing_far_apart()
     deduped = _remove_near_duplicate_blocks([d1, d2])
 
     assert len(deduped) == 2
+
+
+def test_fix_qa_structure_splits_merged_question_answer_question_sequence():
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=2,
+        speaker_name="MR. ALLAN",
+        speaker_role="EXAMINING_ATTORNEY",
+        block_type=BlockType.QUESTION,
+        text="Is this the first motor vehicle accident you've been involved in? Yes, sir. Is this the first one where you were injured?",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [
+        BlockType.QUESTION, BlockType.ANSWER, BlockType.QUESTION
+    ]
+    assert result[0].text == "Is this the first motor vehicle accident you've been involved in?"
+    assert result[1].text == "Yes, sir."
+    assert result[1].speaker_id == 1
+    assert result[2].text == "Is this the first one where you were injured?"
+    assert result[2].speaker_id == 2
+
+
+def test_fix_qa_structure_splits_answer_swallowing_next_question():
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=1,
+        speaker_name="THE WITNESS",
+        speaker_role="WITNESS",
+        block_type=BlockType.ANSWER,
+        text="No, sir. Are you currently employed?",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [BlockType.ANSWER, BlockType.QUESTION]
+    assert result[0].text == "No, sir."
+    assert result[0].speaker_id == 1
+    assert result[1].text == "Are you currently employed?"
+    assert result[1].speaker_id == 2
 
 
 @pytest.mark.skip(reason="Imports JobConfigDialog from non-existent 'main' module — no equivalent in app.py")
