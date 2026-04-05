@@ -81,6 +81,11 @@ class TranscriptTab(ctk.CTkFrame):
         self._waveform_duration: float = 0.0
         self._waveform_request_id: int = 0
         self._position_job = None
+        self._click_pending_id: str | None = None
+        self._click_count: int = 0
+        self._user_is_editing: bool = False
+        self._last_edit_position: str | None = None
+        self._edit_idle_timer_id: str | None = None
 
         self._words: list[dict] = []
         self._word_data_request_id = 0
@@ -357,7 +362,7 @@ class TranscriptTab(ctk.CTkFrame):
         shortcut_row.pack(fill="x", padx=8, pady=(0, 2))
         ctk.CTkLabel(
             shortcut_row,
-            text="Ctrl+Click = seek to word  ·  Space = play/pause  ·  Esc = stop  ·  ← → = ±2s",
+            text="Double-click word = seek + play  ·  Single click = stop  ·  Space = play/pause  ·  Esc = stop  ·  ← → = ±2s",
             font=ctk.CTkFont(size=11),
             text_color="#445566",
             anchor="w",
@@ -618,6 +623,9 @@ class TranscriptTab(ctk.CTkFrame):
         self._textbox._textbox.bind("<Button-1>", self._on_textbox_click)
         self._textbox._textbox.bind("<Double-Button-1>", self._on_textbox_double_click)
         self._textbox._textbox.bind("<Control-Button-1>", self._on_ctrl_click_seek)
+        self._textbox._textbox.bind("<Key>", self._on_key_press_in_transcript)
+        self._textbox._textbox.bind("<FocusOut>", self._on_transcript_focus_out)
+        self._textbox._textbox.bind("<FocusIn>", self._on_transcript_focus_in)
         self._textbox._textbox.bind("<space>", self._on_space_play_pause)
         self._textbox._textbox.bind("<Escape>", self._on_escape_stop)
         self._textbox._textbox.bind("<Left>", self._on_skip_back)
@@ -839,7 +847,8 @@ class TranscriptTab(ctk.CTkFrame):
         self._copy_btn.configure(state="disabled")
         self._save_btn.configure(state="disabled")
         self._run_corrections_btn.configure(state="disabled")
-        self._format_btn.configure(state="disabled")
+        if self._format_btn is not None:
+            self._format_btn.configure(state="disabled")
         self._path_label.configure(text="Processing…", text_color="gray")
         self._update_audio_state("Audio stopped", "#445566")
 
@@ -887,7 +896,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._copy_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
             self._run_corrections_btn.configure(state="normal")
-            self._format_btn.configure(state="normal")
+            if self._format_btn is not None:
+                self._format_btn.configure(state="normal")
             self.set_status(
                 "Loaded — type to edit · Ctrl+Click seeks playback · Space toggles audio · Ctrl+Z to undo.",
                 "gray",
@@ -1352,17 +1362,116 @@ class TranscriptTab(ctk.CTkFrame):
         if self._seek_audio(start_time):
             self.set_status(f"Jumped to {self._format_seconds(start_time)}", "#7DD8E8")
 
+    def _on_key_press_in_transcript(self, event) -> None:
+        if event.keysym in (
+            "Shift_L", "Shift_R", "Control_L", "Control_R",
+            "Alt_L", "Alt_R", "Super_L", "Super_R",
+            "Left", "Right", "Up", "Down",
+            "Home", "End", "Prior", "Next",
+            "F1", "F2", "F3", "F4", "F5", "F6",
+            "F7", "F8", "F9", "F10", "F11", "F12",
+        ):
+            return
+        self._user_is_editing = True
+        self._save_edit_position()
+        self._reset_edit_idle_timer()
+
+    def _save_edit_position(self) -> None:
+        try:
+            self._last_edit_position = self._textbox._textbox.index("insert")
+        except Exception:
+            pass
+
+    def _reset_edit_idle_timer(self) -> None:
+        if self._edit_idle_timer_id is not None:
+            self.after_cancel(self._edit_idle_timer_id)
+        self._edit_idle_timer_id = self.after(3000, self._on_edit_idle)
+
+    def _on_edit_idle(self) -> None:
+        self._edit_idle_timer_id = None
+        self._user_is_editing = False
+
+    def _on_transcript_focus_out(self, _event) -> None:
+        self._save_edit_position()
+        self._user_is_editing = False
+        if self._edit_idle_timer_id is not None:
+            self.after_cancel(self._edit_idle_timer_id)
+            self._edit_idle_timer_id = None
+
+    def _on_transcript_focus_in(self, _event) -> None:
+        self._user_is_editing = False
+
+    def _restore_edit_position(self, position: str) -> None:
+        try:
+            self._textbox._textbox.mark_set("insert", position)
+        except Exception:
+            pass
+
     def _on_textbox_click(self, event) -> None:
         item, idx = self._word_item_at_event(event)
         if idx >= 0:
             self._current_review_idx = idx
-        if self._is_audio_playing():
-            self._pause_audio()
+        if self._click_pending_id is not None:
+            self.after_cancel(self._click_pending_id)
+            self._click_pending_id = None
+        self._click_pending_id = self.after(250, self._execute_single_click_stop)
 
     def _on_textbox_double_click(self, event) -> str:
-        return "break"
+        if self._click_pending_id is not None:
+            self.after_cancel(self._click_pending_id)
+            self._click_pending_id = None
+
+        edit_pos = self._last_edit_position if self._user_is_editing else None
+        if not self._player or not self._word_timings:
+            return
+
+        item, idx = self._word_item_at_event(event)
+        if item and idx >= 0:
+            self._current_review_idx = idx
+            if self._seek_audio(float(item["start"])):
+                self._flash_word_item(item)
+                self._play_audio()
+                if edit_pos is not None:
+                    self.after(10, lambda pos=edit_pos: self._restore_edit_position(pos))
+                return "break"
+
+        try:
+            click_index = self._textbox._textbox.index(f"@{event.x},{event.y}")
+        except Exception:
+            return
+
+        result = self._seek_to_nearest_word(click_index)
+        if edit_pos is not None:
+            self.after(10, lambda pos=edit_pos: self._restore_edit_position(pos))
+        return result
+
+    def _execute_single_click_stop(self) -> None:
+        self._click_pending_id = None
+        if self._is_audio_playing():
+            self._stop_audio()
+            self._save_edit_position()
+
+    def _seek_to_nearest_word(self, text_index: str):
+        try:
+            tags = self._textbox._textbox.tag_names(text_index)
+            word_tag = next((tag for tag in tags if tag.startswith("w")), None)
+            if not word_tag:
+                return
+            word_index = int(word_tag[1:])
+            if word_index >= len(self._word_timings):
+                return
+            item = self._word_map[word_index] if word_index < len(self._word_map) else None
+            start_time = float(self._word_timings[word_index].get("start", 0.0) or 0.0)
+            if self._seek_audio(start_time):
+                if item:
+                    self._flash_word_item(item)
+                self._play_audio()
+                return "break"
+        except Exception:
+            return
 
     def _on_ctrl_click_seek(self, event) -> str:
+        edit_pos = self._last_edit_position if self._user_is_editing else None
         item, idx = self._word_item_at_event(event)
         if not item:
             return "break"
@@ -1371,6 +1480,8 @@ class TranscriptTab(ctk.CTkFrame):
         if self._seek_audio(float(item["start"])):
             self._flash_word_item(item)
             self._play_audio()
+            if edit_pos is not None:
+                self.after(10, lambda pos=edit_pos: self._restore_edit_position(pos))
         return "break"
 
     def _on_space_play_pause(self, _event) -> str:
@@ -1721,19 +1832,38 @@ class TranscriptTab(ctk.CTkFrame):
             start_char, end_char = self._find_changed_range(old_content, updated_content)
             self._mark_reviewed_range(start_char, end_char, "corrected")
         self._canonical_text = updated_content
+
+        # Preserve cursor position and scroll fraction across the full
+        # delete/re-insert so the viewport stays where the user is working.
+        widget = self._textbox._textbox
+        try:
+            cursor_pos = widget.index("insert")
+            yview_frac = widget.yview()[0]
+        except Exception:
+            cursor_pos = "1.0"
+            yview_frac = 0.0
+
         self._textbox.configure(state="normal")
         self._textbox.delete("1.0", "end")
         self._textbox.insert("1.0", updated_content)
+
+        try:
+            widget.mark_set("insert", cursor_pos)
+            widget.yview_moveto(yview_frac)
+        except Exception:
+            pass
+
         if self._words:
             self._build_word_map(self._words)
         else:
             self._word_map = []
-        self._waveform_peaks = []
-        self._waveform_duration = 0.0
-        self._waveform_canvas.delete("all")
-        self._waveform_frame.pack_forget()
-        # Always clear any lingering text selection
-        self._textbox._textbox.tag_remove("sel", "1.0", "end")
+
+        # Do NOT clear waveform here — the audio file has not changed, only
+        # the text. Clearing waveform_peaks breaks the audio sync playhead.
+        # Waveform clearing belongs only in set_audio_file() / load_transcript().
+
+        # Clear any lingering text selection.
+        widget.tag_remove("sel", "1.0", "end")
         self.set_status("Change applied — click Save to write to disk.", "#FFCC44")
 
     # ── Find & Replace ────────────────────────────────────────────────────
@@ -2182,7 +2312,7 @@ class TranscriptTab(ctk.CTkFrame):
                         start_tk = f"1.0+{found_item['char_start']}c"
                         end_tk   = f"1.0+{found_item['char_end']}c"
                         widget.tag_add("current_word", start_tk, end_tk)
-                        if not self._is_position_visible(start_tk):
+                        if not self._user_is_editing and not self._is_position_visible(start_tk):
                             widget.see(start_tk)
 
                 # Keep waveform playhead in sync
@@ -2312,13 +2442,15 @@ class TranscriptTab(ctk.CTkFrame):
     def _set_format_processing_state(self, is_processing: bool) -> None:
         self._format_running = is_processing
         if is_processing:
-            self._format_btn.configure(state="disabled", text="Formatting…")
+            if self._format_btn is not None:
+                self._format_btn.configure(state="disabled", text="Formatting…")
             self._run_corrections_btn.configure(state="disabled")
         else:
-            self._format_btn.configure(
-                state="normal" if self._current_path else "disabled",
-                text="Format Transcript",
-            )
+            if self._format_btn is not None:
+                self._format_btn.configure(
+                    state="normal" if self._current_path else "disabled",
+                    text="Format Transcript",
+                )
             self._run_corrections_btn.configure(
                 state="normal" if self._current_path else "disabled",
                 text="⚙ Run Corrections",

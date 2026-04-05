@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import List
 
 from app_logging import get_logger
-from config import CHUNK_DURATION_SECONDS, CHUNK_OVERLAP_SECONDS, TEMP_DIR
+from config import CHUNK_DURATION_SECONDS, CHUNK_OVERLAP_SECONDS, TARGET_SAMPLE_RATE, TEMP_DIR
 
 logger = get_logger(__name__)
 
@@ -29,6 +29,43 @@ class AudioChunk:
     end_seconds: float
     duration_seconds: float
     overlap_seconds: float
+
+
+def _get_audio_duration_seconds(file_path: str) -> float:
+    """Return audio duration from ffprobe, or 0.0 on failure."""
+    cmd = [
+        "ffprobe", "-v", "quiet",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        file_path,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        return float((result.stdout or "").strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _validate_chunk_file(chunk_path: str, expected_duration: float) -> tuple[int, float]:
+    """
+    Fail fast on zero-byte or near-empty chunk outputs before Deepgram sees them.
+    """
+    chunk_size_bytes = os.path.getsize(chunk_path)
+    actual_duration = _get_audio_duration_seconds(chunk_path)
+
+    if chunk_size_bytes <= 4096:
+        raise RuntimeError(
+            f"Chunk output is too small to be valid: {os.path.basename(chunk_path)} "
+            f"({chunk_size_bytes} bytes, expected ~{expected_duration:.1f}s)"
+        )
+
+    if expected_duration > 30 and actual_duration <= 1.0:
+        raise RuntimeError(
+            f"Chunk duration probe failed: {os.path.basename(chunk_path)} "
+            f"(got {actual_duration:.2f}s, expected ~{expected_duration:.1f}s)"
+        )
+
+    return chunk_size_bytes, actual_duration
 
 
 def chunk_audio(
@@ -76,10 +113,13 @@ def chunk_audio(
 
         cmd = [
             "ffmpeg", "-y",
-            "-i", audio_path,
             "-ss", str(start),
+            "-i", audio_path,
             "-t", str(chunk_duration),
-            "-acodec", "copy",
+            "-vn",
+            "-acodec", "pcm_s16le",
+            "-ar", str(TARGET_SAMPLE_RATE),
+            "-ac", "1",
             chunk_path,
         ]
 
@@ -87,13 +127,13 @@ def chunk_audio(
         if result.returncode != 0:
             raise RuntimeError(f"FFmpeg chunk {chunk_index} failed:\n{result.stderr}")
 
-        chunk_size_bytes = os.path.getsize(chunk_path)
+        chunk_size_bytes, actual_duration = _validate_chunk_file(chunk_path, chunk_duration)
         chunk_size_mb = chunk_size_bytes / (1024 * 1024)
         total_chunk_size_bytes += chunk_size_bytes
         chunk_readable = os.access(chunk_path, os.R_OK)
         chunk_name = os.path.basename(chunk_path)
         logger.info(
-            "Chunk created index=%s path=%s size_mb=%.1f readable=%s start_seconds=%.1f end_seconds=%.1f duration_seconds=%.1f",
+            "Chunk created index=%s path=%s size_mb=%.3f readable=%s start_seconds=%.1f end_seconds=%.1f duration_seconds=%.1f actual_duration=%.2f",
             chunk_index,
             chunk_path,
             chunk_size_mb,
@@ -101,8 +141,9 @@ def chunk_audio(
             start,
             chunk_end,
             chunk_duration,
+            actual_duration,
         )
-        print(f"[CHUNK] {chunk_name}: {chunk_duration:.0f}s - {chunk_size_mb:.1f} MB")
+        print(f"[CHUNK] {chunk_name}: {chunk_duration:.0f}s - {chunk_size_mb:.3f} MB")
 
         chunks.append(AudioChunk(
             index=chunk_index,
