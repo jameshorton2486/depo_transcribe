@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from app_logging import get_logger
-from core.config import AI_MODEL
+from core.config import AI_MODEL, MAX_KEYTERMS
 
 logger = get_logger(__name__)
 
@@ -285,7 +285,7 @@ def _strip_markdown_fences(text: str) -> str:
 def hard_filter_keyterms(raw: list[str]) -> list[str]:
     """
     Post-AI safety filter. Runs on all_proper_nouns before storing to job
-    config or sending to Deepgram. Cap: 60 terms.
+    config or sending to Deepgram. Cap: MAX_KEYTERMS.
     """
     seen: set[str] = set()
     result: list[str] = []
@@ -311,7 +311,7 @@ def hard_filter_keyterms(raw: list[str]) -> list[str]:
         seen.add(key)
         result.append(t)
 
-    return result[:60]
+    return result[:MAX_KEYTERMS]
 
 
 def filter_keyterms(raw: list[str]) -> list[str]:
@@ -448,7 +448,7 @@ def parse_intake_document(
     try:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "").strip())
         message = client.messages.create(
             model=AI_MODEL,
             max_tokens=4096,
@@ -480,8 +480,9 @@ def parse_intake_document(
         log(f"[IntakeParser] Keyterm preview: {filtered_terms[:10]}")
     if len(filtered_terms) > 40:
         logger.warning(
-            "[IntakeParser] %s terms  approaching 60-term intake cap",
+            "[IntakeParser] %s terms  approaching %s-term intake cap",
             len(filtered_terms),
+            MAX_KEYTERMS,
         )
 
     vocabulary_terms = _build_vocabulary_terms(data, filtered_terms)

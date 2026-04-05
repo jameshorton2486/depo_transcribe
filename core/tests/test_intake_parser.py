@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from core.config import MAX_KEYTERMS
 from core.intake_parser import (
     STANDARD_LEGAL_SPELLINGS,
     _normalize_confirmed_spellings,
@@ -52,9 +53,9 @@ def test_filter_removes_single_lowercase_words():
     assert filter_keyterms(raw) == ["Murphy Oil USA"]
 
 
-def test_filter_enforces_60_term_cap():
-    raw = [f"Firm Name {i}" for i in range(80)]
-    assert len(filter_keyterms(raw)) <= 60
+def test_filter_enforces_shared_term_cap():
+    raw = [f"Firm Name {i}" for i in range(MAX_KEYTERMS + 20)]
+    assert len(filter_keyterms(raw)) <= MAX_KEYTERMS
 
 
 def test_filter_empty_input():
@@ -85,9 +86,9 @@ def test_filter_keeps_multi_word_all_caps():
     assert "SUBPOENA DUCES TECUM" in result
 
 
-def test_filter_caps_at_60():
-    raw = [f"Name Person {i}" for i in range(80)]
-    assert len(hard_filter_keyterms(raw)) <= 60
+def test_filter_caps_at_max_keyterms():
+    raw = [f"Name Person {i}" for i in range(MAX_KEYTERMS + 20)]
+    assert len(hard_filter_keyterms(raw)) <= MAX_KEYTERMS
 
 
 def test_hard_filter_removes_noise_words():
@@ -180,3 +181,32 @@ def test_parse_intake_document_uses_preextracted_text_without_pdf_read(monkeypat
     )
 
     assert result and result.cause_number == "2025-CI-19595"
+
+
+def test_parse_intake_document_uses_stripped_env_api_key(monkeypatch):
+    captured = {}
+
+    class _FakeMessages:
+        @staticmethod
+        def create(**kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text='{"cause_number":null,"court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}')])
+
+    class _FakeAnthropic:
+        def __init__(self, api_key=None):
+            captured["api_key"] = api_key
+            self.messages = _FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", " test-key ")
+    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+
+    result = parse_intake_document(
+        "ignored.pdf",
+        extracted_text=(
+            "Cause No. 2025-CI-19595\n"
+            "Notice of Deposition of Matthew Coger.\n"
+            "This packet contains enough text to avoid scanned-PDF fallback."
+        ),
+    )
+
+    assert result is not None
+    assert captured["api_key"] == "test-key"
