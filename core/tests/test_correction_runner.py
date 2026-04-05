@@ -168,6 +168,51 @@ def test_build_job_config_ignores_malformed_speaker_map_keys(caplog):
     assert "Ignoring non-integer speaker_map key" in caplog.text
 
 
+def test_build_job_config_populates_ai_proper_nouns_from_saved_context():
+    from core.correction_runner import _build_job_config_from_ufm
+
+    cfg = _build_job_config_from_ufm(
+        {
+            "ufm_fields": {
+                "cause_number": "C-226025-G",
+                "witness_name": "Nadia Yvonne Trevino",
+                "reporter_name": "Miah Bardot",
+                "plaintiff_name": "Nadia Yvonne Trevino",
+                "defendant_name": "Tabitha Marie Ortiz",
+                "plaintiff_counsel": [{"name": "Ed Siconi", "firm": "Reyna Law"}],
+                "defense_counsel": [{"name": "Sutton Davis", "firm": "Defense Firm"}],
+            },
+            "confirmed_spellings": {"Ivonne": "Yvonne"},
+            "deepgram_keyterms": ["Jobstown Pizza and Grill", "Brownsville"],
+        }
+    )
+
+    assert hasattr(cfg, "all_proper_nouns")
+    assert "Jobstown Pizza and Grill" in cfg.all_proper_nouns
+    assert "Brownsville" in cfg.all_proper_nouns
+    assert "Yvonne" in cfg.all_proper_nouns
+    assert "Nadia Yvonne Trevino" in cfg.all_proper_nouns
+    assert "Miah Bardot" in cfg.all_proper_nouns
+    assert "Sutton Davis" in cfg.all_proper_nouns
+    assert "Ed Siconi" in cfg.all_proper_nouns
+
+
+def test_build_job_config_deduplicates_ai_proper_nouns():
+    from core.correction_runner import _build_job_config_from_ufm
+
+    cfg = _build_job_config_from_ufm(
+        {
+            "ufm_fields": {
+                "witness_name": "Nadia Yvonne Trevino",
+            },
+            "confirmed_spellings": {"Nadia Ivonne": "Nadia Yvonne Trevino"},
+            "deepgram_keyterms": ["Nadia Yvonne Trevino", "Nadia Yvonne Trevino"],
+        }
+    )
+
+    assert cfg.all_proper_nouns.count("Nadia Yvonne Trevino") == 1
+
+
 def test_run_correction_job_returns_processed_text_not_raw_text(monkeypatch):
     from core.correction_runner import run_correction_job
     from spec_engine.models import Block

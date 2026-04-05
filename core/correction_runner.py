@@ -34,6 +34,45 @@ def format_blocks_to_text(blocks: list) -> str:
     return emit_blocks(blocks)
 
 
+def _build_ai_proper_nouns(job_config_data: dict, ufm: dict, cfg: Any) -> list[str]:
+    """
+    Build a stable proper-noun context list for the AI pass.
+
+    Source of truth is the saved job_config.json. We prefer persisted
+    Deepgram keyterms, then enrich with confirmed correct spellings and
+    high-value participant names from the mapped JobConfig.
+    """
+    terms: set[str] = set()
+
+    def _add(value: Any):
+        if not isinstance(value, str):
+            return
+        normalized = " ".join(value.split()).strip()
+        if len(normalized) >= 3:
+            terms.add(normalized)
+
+    for term in job_config_data.get("deepgram_keyterms", []) or []:
+        _add(term)
+
+    for correct in (job_config_data.get("confirmed_spellings", {}) or {}).values():
+        _add(correct)
+
+    _add(ufm.get("cause_number", ""))
+    _add(cfg.witness_name)
+    _add(cfg.reporter_name)
+    _add(cfg.plaintiff_name)
+    for name in getattr(cfg, "defendant_names", []) or []:
+        _add(name)
+    for counsel in getattr(cfg, "plaintiff_counsel", []) or []:
+        _add(getattr(counsel, "name", ""))
+        _add(getattr(counsel, "firm", ""))
+    for counsel in getattr(cfg, "defense_counsel", []) or []:
+        _add(getattr(counsel, "name", ""))
+        _add(getattr(counsel, "firm", ""))
+
+    return sorted(terms)
+
+
 # ── job_config loader ────────────────────────────────────────────────────────
 
 def _load_job_config_for_transcript(transcript_path: str) -> dict:
@@ -139,15 +178,19 @@ def _build_job_config_from_ufm(job_config_data: dict) -> Any:
             "name corrections will not run for this transcript"
         )
 
+    # ── AI proper noun context — from saved keyterms + mapped case names ────
+    cfg.all_proper_nouns = _build_ai_proper_nouns(job_config_data, ufm, cfg)
+
     logger.info(
         "[CorrectionRunner] JobConfig built: cause=%r  witness=%r  "
-        "spellings=%d  speakers=%d  counsel=%d+%d",
+        "spellings=%d  speakers=%d  counsel=%d+%d  ai_terms=%d",
         cfg.cause_number,
         cfg.witness_name,
         len(cfg.confirmed_spellings),
         len(cfg.speaker_map),
         len(cfg.plaintiff_counsel),
         len(cfg.defense_counsel),
+        len(cfg.all_proper_nouns),
     )
     return cfg
 
