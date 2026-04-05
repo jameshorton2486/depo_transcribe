@@ -305,6 +305,49 @@ def test_witness_gets_a():
     )
 
 
+def test_reporter_mislabel_after_question_becomes_answer():
+    """Reporter-labeled diarization error after a Q should emit as A when it looks like a witness answer."""
+    cfg = make_config()
+    cfg.speaker_map = {1: "THE WITNESS", 2: "MR. TEST", 4: "THE REPORTER"}
+    cfg.witness_id = 1
+    cfg.examining_attorney_id = 2
+    cfg.speaker_map_verified = True
+    state = ClassifierState(qa_tracker_last_was_q=True)
+    block = Block(speaker_id=4, text="Yes, sir.", raw_text="")
+    results = classify_block(block, cfg, state, block_index=0)
+    assert results == [(LineType.A, "Yes, sir.")]
+
+
+def test_reporter_name_response_after_question_becomes_answer():
+    """A reporter-labeled witness identity response after Q should emit as A."""
+    cfg = make_config()
+    cfg.speaker_map = {1: "THE WITNESS", 2: "MR. TEST", 4: "THE REPORTER"}
+    cfg.witness_id = 1
+    cfg.examining_attorney_id = 2
+    cfg.speaker_map_verified = True
+    state = ClassifierState(qa_tracker_last_was_q=True)
+    block = Block(speaker_id=4, text="It's Nadia Yvonne Trevino.", raw_text="")
+    results = classify_block(block, cfg, state, block_index=0)
+    assert results == [(LineType.A, "It's Nadia Yvonne Trevino.")]
+
+
+def test_reporter_admin_prompt_after_question_stays_speaker_line():
+    """Reporter administrative prompts must not be converted into witness answers."""
+    cfg = make_config()
+    cfg.speaker_map = {1: "THE WITNESS", 2: "MR. TEST", 4: "THE REPORTER"}
+    cfg.witness_id = 1
+    cfg.examining_attorney_id = 2
+    cfg.speaker_map_verified = True
+    state = ClassifierState(qa_tracker_last_was_q=True)
+    block = Block(
+        speaker_id=4,
+        text="Counsel, will you please state your agreement for the record.",
+        raw_text="",
+    )
+    results = classify_block(block, cfg, state, block_index=0)
+    assert results == [(LineType.SP, "THE REPORTER:  Counsel, will you please state your agreement for the record.")]
+
+
 def test_embedded_answer_split():
     """Attorney block with embedded answer is split into Q + A"""
     cfg = make_config()

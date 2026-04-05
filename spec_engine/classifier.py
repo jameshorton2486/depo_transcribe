@@ -98,6 +98,16 @@ CORRECT_MID_RE = re.compile(
 TRAILING_OKAY_RE = re.compile(r'\s{1,2}Okay\.$')
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
+REPORTER_ADMIN_MARKERS = (
+    "for the record",
+    "on the record",
+    "off the record",
+    "back on the record",
+    "deposition",
+    "counsel",
+    "raise your right hand",
+    "solemnly swear",
+)
 
 # ── Post-record spelling pattern (Spec Section 8) ─────────────────────────────
 SPELLING_RE = re.compile(
@@ -231,6 +241,45 @@ def _detect_embedded_answer(
 def _sentence_time(time_str: Optional[str], fallback: str = "[time]") -> str:
     """Normalize a time string for sentence-final insertion."""
     return (time_str or fallback).rstrip(".")
+
+
+def _looks_like_answer_after_question(text: str) -> bool:
+    """
+    Heuristic guard for diarization failures where the witness answer is
+    misattributed to THE REPORTER immediately after a Q line.
+    """
+    normalized = (text or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if lowered.endswith("?"):
+        return False
+    if any(marker in lowered for marker in REPORTER_ADMIN_MARKERS):
+        return False
+    if OBJECTION_START_RE.match(normalized):
+        return False
+
+    for starter in EMBEDDED_ANSWER_STARTERS:
+        if lowered.startswith(starter):
+            return True
+
+    generic_answer_starts = (
+        "it's ",
+        "it is ",
+        "i'm ",
+        "i am ",
+        "my ",
+        "uh,",
+        "um,",
+        "sorry,",
+        "sorry ",
+        "currently ",
+        "born ",
+    )
+    if lowered.startswith(generic_answer_starts):
+        return True
+
+    return len(normalized.split()) <= 12
 
 
 def split_correct_mid(text: str) -> Optional[Tuple[str, str, str]]:
@@ -397,6 +446,8 @@ def classify_block(
     results: List[Tuple[LineType, str]] = []
     text = block.text
     sid  = block.speaker_id
+    speaker_label = _get_label(job_config, sid)
+    speaker_label_upper = speaker_label.upper()
 
     # ── Pre-record filter — discard everything before the legal record opens ──
     # All content before the videographer's "we are on the record" statement
@@ -576,8 +627,16 @@ def classify_block(
         state.qa_tracker_last_was_q = False
         return results
 
+    if (
+        state.qa_tracker_last_was_q
+        and ("REPORTER" in speaker_label_upper or "SPEAKER " in speaker_label_upper)
+        and _looks_like_answer_after_question(text)
+    ):
+        results.append((LineType.A, text))
+        state.qa_tracker_last_was_q = False
+        return results
+
     # ── All other speakers → Speaker Label ────────────────────────────────────
-    label = _get_label(job_config, sid)
-    results.append((LineType.SP, f"{label}:  {text}"))
+    results.append((LineType.SP, f"{speaker_label}:  {text}"))
     state.qa_tracker_last_was_q = False
     return results
