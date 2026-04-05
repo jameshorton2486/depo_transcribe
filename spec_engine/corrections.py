@@ -586,9 +586,16 @@ def _apply_safe_rewrite(
     state: CorrectionState | None = None,
     protected_after: str | None = None,
 ) -> str:
+    compact_date_output = bool(
+        re.search(r'\b\d{2}/\d{2}/\d{4}\b', new_text)
+        or re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+of\s+'?\d{2}\b", new_text, flags=re.IGNORECASE)
+    )
     allow_shortening = (
         pattern == 'artifact_duplicate_4plus'
         and bool(ARTIFACT_DUPLICATE_RE.search(original_text))
+    ) or (
+        pattern == 'fix_spoken_dates'
+        and compact_date_output
     )
     return safe_apply(
         original_text,

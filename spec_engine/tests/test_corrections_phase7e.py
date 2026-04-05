@@ -5,9 +5,11 @@ Generic rules — apply to any Texas deposition.
 
 from spec_engine.corrections import (
     _spoken_year_to_int,
+    clean_block,
     fix_spoken_dates,
     fix_spoken_times,
 )
+from spec_engine.models import JobConfig
 
 
 def test_spoken_year_twenty_twenty_four():
@@ -40,6 +42,11 @@ def test_fix_spoken_dates_november():
 
 def test_fix_spoken_dates_cardinal_day():
     assert "03/19/2003" in fix_spoken_dates("March nineteen two thousand three")
+
+
+def test_clean_block_applies_spoken_date_compaction():
+    result, _, _ = clean_block("March nineteen two thousand three", JobConfig())
+    assert "03/19/2003" in result
 
 
 def test_fix_spoken_dates_month_of_short_year():
