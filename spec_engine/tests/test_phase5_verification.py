@@ -1,7 +1,7 @@
 """
 test_phase5_verification.py
 
-Phase 5 Verification Test Suite — Formatter, Emitter, and Validation
+Phase 5 Verification Test Suite — Corrections, Emitter, and Validation
 Run with: python -m pytest spec_engine/tests/test_phase5_verification.py -v
 """
 
@@ -17,87 +17,111 @@ from spec_engine.models import Block, BlockType
 from spec_engine.validator import _normalize_for_compare, validate_blocks
 
 
-@pytest.mark.skip(reason="normalize_sentence_spacing() API changed — now requires (text, records, block_index) — formatter module removed")
-class TestFix5A_EllipsisProtection:
-    def test_ellipsis_not_double_spaced_before_capital(self):
+class TestFix5A_CurrentSentenceSpacingContract:
+    def _normalize(self, text: str) -> tuple[str, list]:
         from spec_engine.corrections import normalize_sentence_spacing
+
+        records = []
+        return normalize_sentence_spacing(text, records, 0), records
+
+    def test_ellipsis_not_double_spaced_before_capital(self):
         text = "Answer: . . . I do not recall."
-        result = normalize_sentence_spacing(text)
+        result, _records = self._normalize(text)
         assert ". . ." in result
         assert ". . .  " not in result
 
     def test_ellipsis_count_unchanged(self):
-        from spec_engine.corrections import normalize_sentence_spacing
         cases = [
             "He said . . . and paused.",
             "The answer was . . . unclear. Continuing.",
             "First . . . then . . . finally.",
         ]
         for text in cases:
-            assert normalize_sentence_spacing(text).count(". . .") == text.count(". . .")
+            result, _records = self._normalize(text)
+            assert result.count(". . .") == text.count(". . .")
 
     def test_ellipsis_before_uppercase_preserved(self):
-        from spec_engine.corrections import normalize_sentence_spacing
         text = "He said . . . Correct. And moved on."
-        result = normalize_sentence_spacing(text)
+        result, _records = self._normalize(text)
         assert ". . ." in result
         assert ". . .  Correct" not in result
 
     def test_normal_sentence_spacing_still_works(self):
-        from spec_engine.corrections import normalize_sentence_spacing
         text = "He answered. The question was clear."
-        result = normalize_sentence_spacing(text)
+        result, records = self._normalize(text)
         assert "answered.  The" in result
+        assert records
+        assert records[0].pattern == "sentence_spacing_two_spaces"
 
     def test_question_mark_spacing_still_works(self):
-        from spec_engine.corrections import normalize_sentence_spacing
         text = "Did you see it? Yes, I did."
-        result = normalize_sentence_spacing(text)
+        result, _records = self._normalize(text)
         assert "it?  Yes" in result
 
+    def test_abbreviation_spacing_not_double_spaced_mid_name(self):
+        text = "Dr. Smith testified. He left."
+        result, _records = self._normalize(text)
+        assert "Dr.  Smith" not in result
+        assert "testified.  He" in result
 
-@pytest.mark.skip(reason="format_transcript() kwargs (use_qa_format, skip_corrections_already_applied) removed — format_blocks_to_text does not support these")
-class TestFix5B_SkipCorrectionsParameter:
-    def test_parameter_exists_in_signature(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        sig = inspect.signature(format_transcript)
-        assert "skip_corrections_already_applied" in sig.parameters
+class TestFix5B_FormatBlocksToTextCurrentContract:
+    def test_signature_accepts_single_blocks_parameter(self):
+        from core.correction_runner import format_blocks_to_text
 
-    def test_parameter_defaults_false(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        sig = inspect.signature(format_transcript)
-        assert sig.parameters["skip_corrections_already_applied"].default is False
+        sig = inspect.signature(format_blocks_to_text)
+        assert list(sig.parameters.keys()) == ["blocks"]
 
-    def test_existing_callers_unaffected(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        result = format_transcript("Q. Did you witness the incident?", use_qa_format=True)
-        assert isinstance(result, str)
+    def test_legacy_skip_parameter_absent(self):
+        from core.correction_runner import format_blocks_to_text
 
-    def test_skip_flag_callable_without_error(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        result = format_transcript(
-            "A. I was on I-10 near downtown.",
-            skip_corrections_already_applied=True,
-        )
-        assert isinstance(result, str)
+        sig = inspect.signature(format_blocks_to_text)
+        assert "skip_corrections_already_applied" not in sig.parameters
 
-    def test_skip_flag_does_not_apply_highway_normalization(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        text = "A. I was on I 35 near downtown."
-        result_normal = format_transcript(text, use_qa_format=False)
-        result_skip = format_transcript(
-            text, use_qa_format=False, skip_corrections_already_applied=True
-        )
-        assert "I-35" not in result_skip
-        assert "I-35" in result_normal
+    def test_formats_question_answer_and_speaker_blocks(self):
+        from core.correction_runner import format_blocks_to_text
 
-    def test_non_skip_operations_still_run_with_flag(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        text = "Q. Did you witness this. A. yes."
-        result = format_transcript(
-            text, use_qa_format=False, skip_corrections_already_applied=True
-        )
-        assert isinstance(result, str) and len(result) > 0
+        blocks = [
+            Block(
+                speaker_id=2,
+                text="Did you witness the incident?",
+                raw_text="",
+                block_type=BlockType.QUESTION,
+                speaker_role="EXAMINING_ATTORNEY",
+                speaker_name="MR. TEST",
+            ),
+            Block(
+                speaker_id=1,
+                text="Yes, I did.",
+                raw_text="",
+                block_type=BlockType.ANSWER,
+                speaker_role="WITNESS",
+                speaker_name="THE WITNESS",
+            ),
+            Block(
+                speaker_id=3,
+                text="Objection. Form.",
+                raw_text="",
+                block_type=BlockType.SPEAKER,
+                speaker_role="OPPOSING_COUNSEL",
+                speaker_name="MR. BOYCE",
+            ),
+        ]
+
+        result = format_blocks_to_text(blocks)
+        assert "\tQ.  Did you witness the incident?" in result
+        assert "\tA.  Yes, I did." in result
+        assert "\t\t\tMR. BOYCE:  Objection. Form." in result
+
+    def test_empty_blocks_returns_empty_string(self):
+        from core.correction_runner import format_blocks_to_text
+
+        assert format_blocks_to_text([]) == ""
+
+    def test_plain_unknown_block_falls_back_to_text(self):
+        from core.correction_runner import format_blocks_to_text
+
+        blocks = [Block(speaker_id=99, text="Loose text", raw_text="", block_type=BlockType.UNKNOWN)]
+        assert "Loose text" in format_blocks_to_text(blocks)
 
 
 class TestFix5C_EmitSpLineSingleSpace:
@@ -381,18 +405,16 @@ class TestFix5H_TerminalPunctuationValidation:
 
 
 class TestPhase5ExitGate:
-    @pytest.mark.skip(reason="formatter module API removed — normalize_sentence_spacing and format_transcript no longer exist in this form")
     def test_ellipsis_not_double_spaced(self):
         from spec_engine.corrections import normalize_sentence_spacing
-        result = normalize_sentence_spacing("Witness said . . . Yes.")
+        result = normalize_sentence_spacing("Witness said . . . Yes.", [], 0)
         assert ". . .  " not in result
         assert ". . ." in result
 
-    @pytest.mark.skip(reason="formatter module API removed — normalize_sentence_spacing and format_transcript no longer exist in this form")
-    def test_format_transcript_has_skip_parameter(self):
-        from core.correction_runner import format_blocks_to_text as format_transcript
-        sig = inspect.signature(format_transcript)
-        assert "skip_corrections_already_applied" in sig.parameters
+    def test_format_blocks_to_text_current_signature(self):
+        from core.correction_runner import format_blocks_to_text
+        sig = inspect.signature(format_blocks_to_text)
+        assert list(sig.parameters.keys()) == ["blocks"]
 
     def test_sp_single_space_produces_bold(self):
         from spec_engine.emitter import create_document, emit_sp_line
