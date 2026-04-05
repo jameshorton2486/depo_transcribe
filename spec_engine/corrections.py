@@ -366,24 +366,6 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bsub-poena\b', 'subpoena'),
     (r'\bsupboena\b', 'subpoena'),
     (r'\bsub poena\b', 'subpoena'),
-    # ── Reporter name normalization — Miah Bardot, CSR No. 12129 ─────────────
-    # Deepgram mishears "Miah Bardot" in the reporter's opening statement.
-    # These garbles appear at the start of every deposition she reports.
-    # NOTE: Only correct the NAME — the CSR number is corrected separately
-    #       by the cause-number normalization in apply_date_normalization().
-    (r'\bMia\s+[Bb]ardell?\b',        'Miah Bardot'),
-    (r'\bMia\s+[Bb]ordeau\b',         'Miah Bardot'),
-    (r'\bMia\s+[Bb]ardeau\b',         'Miah Bardot'),
-    (r'\bNeobardeau\b',               'Miah Bardot'),
-    (r'\bMiyamardeau\b',              'Miah Bardot'),
-    (r'\bLea\s+[Bb]ardot?\b',         'Miah Bardot'),
-    (r'\bLea\s+[Bb]ardeau\b',         'Miah Bardot'),
-    (r'\b[Mm]ia\s+[Bb]ardot\b',       'Miah Bardot'),
-    # CSR number garbles in the reporter's opening statement
-    (r'\bLicense\s+Number\s+12129\b',  'CSR No. 12129'),
-    (r'\bnumber\s+12129\b',            'No. 12129'),
-    (r'\b12129\.\s*9\b',               '12129'),
-
     # Deepgram zip code / number artifacts
     (r'\b[Rr]oad morning\b', 'Good morning'),
     (r'\bvampires are\b', 'OR fires are'),
@@ -868,7 +850,6 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\breserve for tomorrow\b', 'reserve for trial'),
         (r'\bbeginning of the deposition from\b', 'beginning of the deposition of'),
         (r'\bstipulations for any witness\b', 'stipulations for the witness'),
-        (r'\bMia\s+[Bb]ardell?\b', 'Miah Bardot'),
         (r'\bmope deposition\b', 'remote deposition'),
         (r'\belectronic books\b', 'electronic logs'),
         (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),

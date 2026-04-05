@@ -50,8 +50,10 @@ def test_fix_stipulations_for_any_witness():
     assert "stipulations for the witness" in result
 
 
-def test_existing_reporter_name_rule_mia_bardell():
-    assert "Miah Bardot" in fix_universal_legal_phrases("I am Mia Bardell, Court Reporter.")
+def test_reporter_name_is_not_hardcoded_in_universal_phrase_rules():
+    assert fix_universal_legal_phrases("I am Mia Bardell, Court Reporter.") == (
+        "I am Mia Bardell, Court Reporter."
+    )
 
 
 def test_fix_eod_to_eld_with_trucking_context():
