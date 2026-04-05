@@ -38,6 +38,26 @@ def test_fix_spoken_dates_november():
     assert "11/18/1995" in fix_spoken_dates("November eighteenth nineteen ninety five")
 
 
+def test_fix_spoken_dates_cardinal_day():
+    assert "03/19/2003" in fix_spoken_dates("March nineteen two thousand three")
+
+
+def test_fix_spoken_dates_month_of_short_year():
+    assert "June of '24" in fix_spoken_dates("It happened in June of twenty four")
+
+
+def test_fix_spoken_dates_bare_year_range():
+    assert "2022 to now" in fix_spoken_dates("they all ranged from twenty two to now")
+
+
+def test_fix_spoken_dates_age_reference():
+    assert "Since I was 18" in fix_spoken_dates("Since I was eighteen")
+
+
+def test_fix_spoken_dates_quantity_range():
+    assert "10 to 20 pounds" in fix_spoken_dates("I gained ten to twenty pounds")
+
+
 def test_fix_spoken_dates_preserves_numeric():
     assert "03/23/2024" in fix_spoken_dates("accident on 03/23/2024")
 

@@ -79,6 +79,26 @@ _ORDINAL_DAY = {
     "thirty first": "31",
 }
 
+_CARDINAL_DAY = {
+    "one": "01", "two": "02", "three": "03", "four": "04", "five": "05",
+    "six": "06", "seven": "07", "eight": "08", "nine": "09", "ten": "10",
+    "eleven": "11", "twelve": "12", "thirteen": "13", "fourteen": "14",
+    "fifteen": "15", "sixteen": "16", "seventeen": "17", "eighteen": "18",
+    "nineteen": "19", "twenty": "20", "twenty one": "21", "twenty two": "22",
+    "twenty three": "23", "twenty four": "24", "twenty five": "25",
+    "twenty six": "26", "twenty seven": "27", "twenty eight": "28",
+    "twenty nine": "29", "thirty": "30", "thirty one": "31",
+}
+
+_SMALL_NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90,
+}
+
 
 class CorrectionState:
     """
@@ -192,6 +212,10 @@ TEXAS_DEPOSITION_SEEDS = {
     "HEP": "H-E-B",
     "H E B": "H-E-B",
     "age b": "H-E-B",
+    "Mia Bardo": "Miah Bardot",
+    "Mia Bardell": "Miah Bardot",
+    "Mia Bordeau": "Miah Bardot",
+    "Nadia Ivonne": "Nadia Yvonne",
 }
 
 
@@ -855,6 +879,21 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),
         (r'\bso help you guide\b', 'so help you God'),
         (r'\bso help you god\b', 'so help you God'),
+        (r'\byour\s+remit\s+for\s+this\s+remote\s+deposition\b', 'your agreement for this remote deposition'),
+        (r'\bstate\s+your\s+remit\s+for\b', 'state your agreement for'),
+        (r'\bsame\s+effect\s+as\s+a\s+weapon\s+in\s+the\s+courthouse\b', 'same force and effect as if given in open court'),
+        (r'\bsame\s+force\s+and\s+effect\s+as\s+a\s+weapon\b', 'same force and effect as if given in open court'),
+        (r'\bThey\s+do\.(?=\s+Thank you\b)', 'I do.'),
+        (r'\bdo\s+you\s+have\s+to\s+stay\s+ahead\b', 'do you have to stand'),
+        (r'\byou\s+have\s+to\s+stay\s+ahead\b', 'you have to stand'),
+        (r'\bcourt\s+reporter\s+license\s+in\s+Texas\b', 'court reporter, licensed in Texas'),
+        (r'\bcourt\s+reporter\s+licensed\s+in\s+Texas\b', 'court reporter, licensed in Texas'),
+        (r'\bwho\s+you\s+representing\b', "who you're representing"),
+        (r'\bBraswell\s+incident\b', 'Brownsville incident'),
+        (r'\bBraswell\s+accident\b', 'Brownsville accident'),
+        (r'\bBraswell\s+wreck\b', 'Brownsville wreck'),
+        (r'\bBraswell\s+collision\b', 'Brownsville collision'),
+        (r'\bthe\s+Braswell\b', 'the Brownsville'),
     ]
 
     def _replace(segment: str) -> str:
@@ -989,6 +1028,14 @@ def _spoken_year_to_int(year_str: str) -> str | None:
         suffix = {'eighteen': '18', 'nineteen': '19'}[m.group(1)]
         return f"20{suffix}"
 
+    m = re.match(r'^twenty (one|two|three|four|five|six|seven|eight|nine)$', y)
+    if m:
+        suffix = {
+            'one': '21', 'two': '22', 'three': '23', 'four': '24',
+            'five': '25', 'six': '26', 'seven': '27', 'eight': '28', 'nine': '29',
+        }[m.group(1)]
+        return f"20{suffix}"
+
     m = re.match(
         r'^twenty twenty (one|two|three|four|five|six|seven|eight|nine)$',
         y,
@@ -1037,6 +1084,60 @@ def _spoken_year_to_int(year_str: str) -> str | None:
     return None
 
 
+def _small_number_phrase_to_int(phrase: str) -> int | None:
+    tokens = [t for t in re.sub(r"[-,]", " ", phrase.lower()).split() if t and t != "and"]
+    if not tokens:
+        return None
+
+    total = 0
+    current = 0
+    for token in tokens:
+        if token == "hundred":
+            if current == 0:
+                current = 1
+            current *= 100
+            continue
+        if token == "thousand":
+            if current == 0:
+                current = 1
+            total += current * 1000
+            current = 0
+            continue
+        value = _SMALL_NUMBER_WORDS.get(token)
+        if value is None:
+            return None
+        current += value
+    return total + current
+
+
+def _collapse_small_number_chunks(phrase: str) -> str | None:
+    tokens = [t for t in re.sub(r"[-,]", " ", phrase.lower()).split() if t]
+    if not tokens:
+        return None
+
+    chunks: list[str] = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token in {
+            "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
+            "eighty", "ninety",
+        } and i + 1 < len(tokens) and tokens[i + 1] in {
+            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+        }:
+            chunks.append(str((_SMALL_NUMBER_WORDS[token]) + _SMALL_NUMBER_WORDS[tokens[i + 1]]))
+            i += 2
+            continue
+
+        value = _SMALL_NUMBER_WORDS.get(token)
+        if value is None:
+            return None
+        chunks.append(str(value))
+        i += 1
+
+    return "".join(chunks) if chunks else None
+
+
 def fix_spoken_dates(text: str) -> str:
     """
     Convert spoken Month-Day-Year phrases to MM/DD/YYYY when the year is clear.
@@ -1050,6 +1151,13 @@ def fix_spoken_dates(text: str) -> str:
         r'twelfth|eleventh|tenth|ninth|eighth|seventh|sixth|fifth|fourth|'
         r'third|second|first'
     )
+    cardinal_pattern = (
+        r'thirty\s+one|twenty\s+nine|twenty\s+eight|twenty\s+seven|'
+        r'twenty\s+six|twenty\s+five|twenty\s+four|twenty\s+three|'
+        r'twenty\s+two|twenty\s+one|twenty|nineteen|eighteen|seventeen|'
+        r'sixteen|fifteen|fourteen|thirteen|twelve|eleven|ten|nine|'
+        r'eight|seven|six|five|four|three|two|one'
+    )
     year_pattern = (
         r'twenty\s+twenty(?:\s+(?:one|two|three|four|five|six|seven|eight|nine))?|'
         r'nineteen\s+(?:eighty|ninety)(?:\s+(?:one|two|three|four|five|six|seven|eight|nine|ten))?|'
@@ -1058,7 +1166,31 @@ def fix_spoken_dates(text: str) -> str:
         r'nineteen|twenty))?'
     )
     full_date = re.compile(
-        rf'\b({month_pattern})\s+({ordinal_pattern})\s+({year_pattern})\b',
+        rf'\b({month_pattern})\s+({ordinal_pattern})\s+(?:of\s+)?({year_pattern})\b',
+        re.IGNORECASE,
+    )
+    full_date_cardinal = re.compile(
+        rf'\b({month_pattern})\s+({cardinal_pattern})\s+(?:of\s+)?({year_pattern})\b',
+        re.IGNORECASE,
+    )
+    month_of_short_year = re.compile(
+        r'\b(' + month_pattern + r')\s+of\s+'
+        r'(twenty\s+(?:one|two|three|four|five|six|seven|eight|nine))\b',
+        re.IGNORECASE,
+    )
+    quantity_range = re.compile(
+        r'\b(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)'
+        r'\s+to\s+'
+        r'(ten|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)'
+        r'\s+(pounds?|dollars?|miles?|feet|inches|hours?|minutes?|percent)\b',
+        re.IGNORECASE,
+    )
+    age_reference = re.compile(
+        r'(?<=\bwas\s)(sixteen|seventeen|eighteen|nineteen|twenty(?:\s+one)?)\b',
+        re.IGNORECASE,
+    )
+    bare_year_range = re.compile(
+        r'\b(twenty\s+(?:two|three|four|five|six))(?!\s+(?:dollars|pounds|years|months|days))(?=\s+to\b)',
         re.IGNORECASE,
     )
 
@@ -1101,8 +1233,48 @@ def fix_spoken_dates(text: str) -> str:
                 return m.group(0)
             return f"{month}/{day}/{year}"
 
+        def _repl_cardinal(m: re.Match) -> str:
+            month = _MONTH_TO_NUM.get(m.group(1).lower())
+            day_key = re.sub(r'\s+', ' ', m.group(2).lower().replace('-', ' ')).strip()
+            day = _CARDINAL_DAY.get(day_key)
+            year = _spoken_year_to_int(m.group(3))
+            if not month or not day or not year:
+                return m.group(0)
+            return f"{month}/{day}/{year}"
+
+        short_year_map = {
+            "twenty one": "'21", "twenty two": "'22", "twenty three": "'23",
+            "twenty four": "'24", "twenty five": "'25", "twenty six": "'26",
+            "twenty seven": "'27", "twenty eight": "'28", "twenty nine": "'29",
+        }
+
         working = full_date.sub(_repl, segment)
-        return _fix_standalone_years(working)
+        working = full_date_cardinal.sub(_repl_cardinal, working)
+        working = month_of_short_year.sub(
+            lambda m: f"{m.group(1)} of {short_year_map.get(re.sub(r'\\s+', ' ', m.group(2).lower()).strip(), m.group(2))}",
+            working,
+        )
+        working = quantity_range.sub(
+            lambda m: (
+                f"{_SMALL_NUMBER_WORDS.get(m.group(1).lower(), m.group(1))} to "
+                f"{_SMALL_NUMBER_WORDS.get(m.group(2).lower(), m.group(2))} {m.group(3)}"
+            ),
+            working,
+        )
+        working = age_reference.sub(
+            lambda m: str(_small_number_phrase_to_int(m.group(1)) or m.group(1)),
+            working,
+        )
+        working = bare_year_range.sub(
+            lambda m: _spoken_year_to_int(m.group(1)) or m.group(1),
+            working,
+        )
+        working = re.sub(r'\btwenty\s+eighteen\b', '2018', working, flags=re.IGNORECASE)
+        working = re.sub(r'\btwenty\s+nineteen\b', '2019', working, flags=re.IGNORECASE)
+        working = _fix_standalone_years(working)
+        working = re.sub(r'\b20\s+eighteen\b', '2018', working, flags=re.IGNORECASE)
+        working = re.sub(r'\b20\s+nineteen\b', '2019', working, flags=re.IGNORECASE)
+        return working
 
     return _apply_outside_protected_segments(text, _replace)
 
@@ -1251,14 +1423,48 @@ def fix_address_digits(text: str) -> str:
         rf'((?:{digit_word}\s+){{4}}{digit_word})\s*\.?$',
         re.IGNORECASE,
     )
+    house_number_pattern = re.compile(
+        r'\b((?:twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|'
+        r'twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)'
+        r'(?:\s+(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety))?)'
+        r'(?=\s*,?\s*(?:[A-Z],?\s+as\s+in\s+[A-Z][a-z]+,?\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:'
+        + street_suffixes + r'))',
+        re.IGNORECASE,
+    )
+    thousands_pattern = re.compile(
+        r'\b((?:one|two|three|four|five|six|seven|eight|nine)\s+thousand'
+        r'(?:\s+(?:one|two|three|four|five|six|seven|eight|nine)\s+hundred)?)'
+        r'(?=\s+[A-Z][a-zA-Z]+)',
+        re.IGNORECASE,
+    )
+    apartment_pattern = re.compile(
+        r'\b(Apartment|Apt\.?|Unit|Suite)\s+'
+        r'((?:(?:zero|one|two|three|four|five|six|seven|eight|nine|'
+        r'ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|'
+        r'eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|'
+        r'eighty|ninety)\s*){2,6})',
+        re.IGNORECASE,
+    )
 
     def _replace(segment: str) -> str:
-        working = address_pattern.sub(
-            lambda m: f"{_collapse_spoken_digits(m.group(1))} {m.group(2)}",
+        working = house_number_pattern.sub(
+            lambda m: _collapse_small_number_chunks(m.group(1)) or m.group(1),
             segment,
         )
+        working = thousands_pattern.sub(
+            lambda m: str(_small_number_phrase_to_int(m.group(1)) or m.group(1)),
+            working,
+        )
+        working = address_pattern.sub(
+            lambda m: f"{_collapse_spoken_digits(m.group(1))} {m.group(2)}",
+            working,
+        )
+        working = apartment_pattern.sub(
+            lambda m: f"{m.group(1)} {(_collapse_small_number_chunks(m.group(2)) or m.group(2).strip())}",
+            working,
+        )
 
-        if re.search(r'\b(?:Texas|TX)\b', working, flags=re.IGNORECASE):
+        if re.search(r'\b(?:Texas|TX|New\s+Jersey|NJ)\b', working, flags=re.IGNORECASE):
             working = zip_pattern.sub(lambda m: _collapse_spoken_digits(m.group(1)), working)
         return working
 

@@ -59,3 +59,23 @@ def test_fix_address_digits_no_false_positive():
 
 def test_fix_address_zip_code():
     assert "78408" in fix_address_digits("Corpus Christi, Texas seven eight four zero eight")
+
+
+def test_fix_address_digits_twelve_ten_house_number():
+    result = fix_address_digits("twelve ten, B as in Boy, Ash Street")
+    assert "1210" in result
+
+
+def test_fix_address_digits_thousands_house_number():
+    result = fix_address_digits("two thousand five hundred North McCall Road")
+    assert "2500 North McCall Road" in result
+
+
+def test_fix_address_digits_apartment_number_chunks():
+    result = fix_address_digits("Apartment forty two one twenty five in McAllen, Texas")
+    assert "Apartment 42125" in result
+
+
+def test_fix_address_digits_five_digit_zip_with_leading_zero():
+    result = fix_address_digits("Joint Base, New Jersey zero eight six four zero")
+    assert "08640" in result
