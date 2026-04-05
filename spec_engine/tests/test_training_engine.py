@@ -1,6 +1,8 @@
 import sys
 from types import SimpleNamespace
 
+from core.config import AI_MODEL
+
 
 def test_generate_rules_without_api_key_returns_safe_disabled_state(monkeypatch):
     from spec_engine import training_engine
@@ -50,9 +52,11 @@ def test_generate_rules_normalizes_priorities_and_filters_invalid(monkeypatch):
     from spec_engine import training_engine
 
     monkeypatch.setattr(training_engine, "ANTHROPIC_API_KEY", "test-key")
+    captured = {}
 
     class _Messages:
         def create(self, **kwargs):
+            captured.update(kwargs)
             return SimpleNamespace(content=[SimpleNamespace(text="""{
   "rules": [
     {"type": "exact_replace", "incorrect": "subpena", "correct": "subpoena", "priority": 7},
@@ -67,7 +71,6 @@ def test_generate_rules_normalizes_priorities_and_filters_invalid(monkeypatch):
             self.messages = _Messages()
 
     monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_Client))
-    monkeypatch.setattr(training_engine.os, "environ", {})
     monkeypatch.setattr("spec_engine.user_rule_store.load_all_rules", lambda: [
         {"type": "regex_replace", "pattern": r"\bokay\b", "replacement": "Okay"}
     ])
@@ -78,6 +81,7 @@ def test_generate_rules_normalizes_priorities_and_filters_invalid(monkeypatch):
     assert len(result["rules"]) == 1
     assert result["rules"][0]["incorrect"] == "subpena"
     assert result["rules"][0]["priority"] == 10
+    assert captured["model"] == AI_MODEL
     assert any("verbatim-protected" in flag for flag in result["flags"])
     assert any("Skipped duplicate rule" in flag for flag in result["flags"])
     assert any("AI noted ambiguity" in flag for flag in result["flags"])

@@ -20,7 +20,6 @@ class DepoTranscribeApp(ctk.CTk):
         self.title("Depo-Pro Transcribe")
         self.geometry("1000x900")
         self.minsize(900, 800)
-        self.state("zoomed")
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         ctk.set_widget_scaling(1.0)
@@ -66,6 +65,12 @@ class DepoTranscribeApp(ctk.CTk):
         self.training_tab.pack(fill="both", expand=True)
 
         self.tab_view.configure(command=self._on_tab_change)
+        self.after(0, self._on_startup)
+
+    def _on_startup(self):
+        self.state("zoomed")
+        self.tab_view.set("Transcribe")
+        self.update_idletasks()
 
     def _on_tab_change(self):
         if self.tab_view.get() == "Training":

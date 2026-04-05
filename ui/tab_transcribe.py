@@ -2069,7 +2069,6 @@ class TranscribeTab(ctk.CTkFrame):
             first_name=self._firstname_var.get(),
             date_str=self._date_var.get(),
             keyterms=final_keyterms or None,
-            keyterms=final_keyterms or None,
             confirmed_spellings=self._confirmed_spellings,
             ufm_fields=self._ufm_fields or None,
             progress_callback=self._on_progress,

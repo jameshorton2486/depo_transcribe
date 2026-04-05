@@ -7,10 +7,10 @@ AI-powered rule generation for the Training Engine.
 from __future__ import annotations
 
 import json
-import os
 import re
 
 from config import ANTHROPIC_API_KEY
+from core.config import AI_MODEL
 
 
 RULE_GENERATION_SYSTEM_PROMPT = """You are an expert legal transcript
@@ -205,7 +205,7 @@ def generate_rules(
         from spec_engine.user_rule_store import load_all_rules
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        model_name = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest").strip() or "claude-3-5-sonnet-latest"
+        model_name = AI_MODEL
         response = client.messages.create(
             model=model_name,
             max_tokens=2000,
