@@ -220,23 +220,35 @@ class TestFix6C_ProcessorRunLogger:
         assert isinstance(result, list)
 
 
-@pytest.mark.skip(reason="Asserts unimplemented features in app.py (_last_run_dir, RunLogger, _open_diff_viewer, review_btn) — planned functionality not yet built")
-class TestFix6D_MainRunLoggerWiring:
-    def _get_main_source(self) -> str:
-        return (Path(__file__).resolve().parent.parent.parent / "app.py").read_text(encoding="utf-8")
+class TestFix6D_CurrentIntegrationWiring:
+    def _get_runner_source(self) -> str:
+        return (
+            Path(__file__).resolve().parent.parent.parent / "core" / "correction_runner.py"
+        ).read_text(encoding="utf-8")
 
-    def test_last_run_dir_attribute_in_main(self):
-        assert "_last_run_dir" in self._get_main_source()
+    def _get_corrections_tab_source(self) -> str:
+        return (
+            Path(__file__).resolve().parent.parent.parent / "ui" / "tab_corrections.py"
+        ).read_text(encoding="utf-8")
 
-    def test_open_diff_viewer_method_in_main(self):
-        assert "_open_diff_viewer" in self._get_main_source()
+    def test_run_logger_imported_in_correction_runner(self):
+        assert "from spec_engine.run_logger import RunLogger" in self._get_runner_source()
 
-    def test_run_logger_imported_in_worker(self):
-        assert "RunLogger" in self._get_main_source()
+    def test_correction_runner_passes_run_logger_to_process_blocks(self):
+        assert (
+            "process_blocks(blocks, job_config, run_logger=run_logger)"
+            in self._get_runner_source()
+        )
 
-    def test_review_changes_button_in_main(self):
-        src = self._get_main_source()
-        assert "Review Changes" in src or "review_btn" in src or "_review_btn" in src
+    def test_corrections_tab_captures_source_text_for_diffing(self):
+        src = self._get_corrections_tab_source()
+        assert "self._source_text = Path(self._source_path).read_text(encoding=\"utf-8\")" in src
+        assert "self._source_text = ''" in src
+
+    def test_corrections_tab_uses_diff_summary_after_run(self):
+        src = self._get_corrections_tab_source()
+        assert "from core.diff_engine import summary as diff_summary" in src
+        assert "Diff Summary" in src
 
 
 class TestFix6E_GoldenTestInfrastructure:
