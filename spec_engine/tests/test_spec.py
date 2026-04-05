@@ -348,6 +348,32 @@ def test_reporter_admin_prompt_after_question_stays_speaker_line():
     assert results == [(LineType.SP, "THE REPORTER:  Counsel, will you please state your agreement for the record.")]
 
 
+def test_attorney_mislabel_short_answer_after_question_becomes_answer():
+    """Short direct answers misattributed to opposing counsel after Q should recover to A."""
+    cfg = make_config()
+    cfg.speaker_map = {1: "THE WITNESS", 2: "MR. DAVIS", 3: "MR. SICONI"}
+    cfg.witness_id = 1
+    cfg.examining_attorney_id = 2
+    cfg.speaker_map_verified = True
+    state = ClassifierState(qa_tracker_last_was_q=True)
+    block = Block(speaker_id=3, text="Correct.", raw_text="")
+    results = classify_block(block, cfg, state, block_index=0)
+    assert results == [(LineType.A, "Correct.")]
+
+
+def test_attorney_colloquy_after_question_stays_speaker_line():
+    """Attorney colloquy after Q must not be reclassified as a witness answer."""
+    cfg = make_config()
+    cfg.speaker_map = {1: "THE WITNESS", 2: "MR. DAVIS", 3: "MR. SICONI"}
+    cfg.witness_id = 1
+    cfg.examining_attorney_id = 2
+    cfg.speaker_map_verified = True
+    state = ClassifierState(qa_tracker_last_was_q=True)
+    block = Block(speaker_id=3, text="Thank you.", raw_text="")
+    results = classify_block(block, cfg, state, block_index=0)
+    assert results == [(LineType.SP, "MR. SICONI:  Thank you.")]
+
+
 def test_embedded_answer_split():
     """Attorney block with embedded answer is split into Q + A"""
     cfg = make_config()

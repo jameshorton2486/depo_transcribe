@@ -108,6 +108,7 @@ REPORTER_ADMIN_MARKERS = (
     "raise your right hand",
     "solemnly swear",
 )
+ATTORNEY_LABEL_MARKERS = ("MR.", "MS.", "MRS.", "DR.", "COUNSEL", "ATTORNEY")
 
 # ── Post-record spelling pattern (Spec Section 8) ─────────────────────────────
 SPELLING_RE = re.compile(
@@ -243,10 +244,10 @@ def _sentence_time(time_str: Optional[str], fallback: str = "[time]") -> str:
     return (time_str or fallback).rstrip(".")
 
 
-def _looks_like_answer_after_question(text: str) -> bool:
+def _looks_like_answer_after_question(text: str, speaker_label_upper: str = "") -> bool:
     """
     Heuristic guard for diarization failures where the witness answer is
-    misattributed to THE REPORTER immediately after a Q line.
+    misattributed immediately after a Q line.
     """
     normalized = (text or "").strip()
     if not normalized:
@@ -278,6 +279,12 @@ def _looks_like_answer_after_question(text: str) -> bool:
     )
     if lowered.startswith(generic_answer_starts):
         return True
+
+    is_attorney_label = any(marker in (speaker_label_upper or "") for marker in ATTORNEY_LABEL_MARKERS)
+    if is_attorney_label:
+        return len(normalized.split()) <= 6 and any(
+            lowered.startswith(starter) for starter in EMBEDDED_ANSWER_STARTERS
+        )
 
     return len(normalized.split()) <= 12
 
@@ -629,8 +636,8 @@ def classify_block(
 
     if (
         state.qa_tracker_last_was_q
-        and ("REPORTER" in speaker_label_upper or "SPEAKER " in speaker_label_upper)
-        and _looks_like_answer_after_question(text)
+        and sid != job_config.examining_attorney_id
+        and _looks_like_answer_after_question(text, speaker_label_upper)
     ):
         results.append((LineType.A, text))
         state.qa_tracker_last_was_q = False
