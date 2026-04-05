@@ -247,7 +247,7 @@ re-reading the reason column and confirming the domain impact.
 | Keyterms kept in pipeline | Boosts case-specific names (Coger, Murphy Oil, 2025CI19595) | Without keyterms, proper nouns have higher error rates |
 | afftdn over neural denoisers | Neural denoisers increase WER for ML models | They sound better but hurt Deepgram accuracy |
 | 24kHz sample rate | Preserves 4-8kHz sibilant band for name disambiguation | Lower rates lose consonant distinction (Coger vs Coker) |
-| smart_format=true | Handles dates, times, case numbers | Disabling it degrades number/date formatting |
+| smart_format=false | Keeps Deepgram from rewriting dates/currency while filler_words remain enabled | Turning it on increases formatting drift for legal transcript review |
 | Two correction passes (Python then AI) | Python = fast + free for deterministic patterns; AI = context-dependent cases only | Merging them makes simple fixes slow and expensive |
 | CorrectionRecord on every change | Audit trail for corrections log and diff viewer | Without it, changes are invisible to the court reporter |
 | run_logger.py for snapshots | Single tracing system | Do not create additional ad-hoc logging systems |
@@ -300,14 +300,13 @@ pipeline/preprocessor.py         — FFmpeg: mono → 24kHz → highpass → den
 pipeline/chunker.py              — Splits audio >10min into 600s chunks, 20s overlap.
 pipeline/transcriber.py          — HTTP POST to Deepgram. Returns words + utterances.
 pipeline/assembler.py            — Merges chunks, deduplicates boundary words.
-pipeline/block_builder.py        — Deepgram utterance JSON → List[Block].
 pipeline/processor.py            — run_pipeline() public API.
 pipeline/exporter.py             — Writes .txt and .json to case folder.
-pipeline/keywords.py             — Builds Deepgram keyterm query parameters.
 ```
 
 ### Spec Engine (`spec_engine/`)
 ```
+spec_engine/block_builder.py     — Deepgram utterance JSON → List[Block].
 spec_engine/models.py            — All data classes: Block, BlockType, Word,
                                     JobConfig, CorrectionRecord, ScopistFlag, etc.
 spec_engine/processor.py         — process_blocks(): orchestrates all sub-steps.
@@ -356,7 +355,7 @@ User selects audio
 ```
 User clicks "Run Corrections"
     → core/correction_runner.py (thread)
-    → pipeline/block_builder.py              (JSON → List[Block])
+    → spec_engine/block_builder.py           (JSON → List[Block])
     → spec_engine/processor.py process_blocks():
         1. corrections.py   apply_corrections()
         2. speaker_mapper.py map_speakers()
@@ -517,7 +516,7 @@ Replacing content corrupts the file on save (prior regression — do not repeat)
 3. `_save_transcript()` saves `_canonical_text`, not raw textbox
 4. Rule order in `clean_block()` — 14 rules — MUST NOT change
 5. Character replacement — MUST shift all subsequent word map offsets
-6. `smart_format=true` + `filler_words` conflict on Nova-3 — do not combine
+6. `smart_format` stays OFF while `filler_words` stays ON for Nova-3
 
 ---
 
@@ -679,7 +678,7 @@ Exceptions — keep as numerals:
 
 ```python
 model        = "nova-3"   # or "nova-3-medical"
-smart_format = "true"
+smart_format = "false"
 punctuate    = "true"
 paragraphs   = "true"
 diarize      = "true"
@@ -687,7 +686,7 @@ utterances   = "true"
 filler_words = "true"
 numerals     = "true"
 utt_split    = 1.2        # adjustable in UI
-keyterms     = [...]      # up to 100, from NOD PDF
+keyterms     = [...]      # up to 100, from NOD PDF / reporter notes
 ```
 
 ---
