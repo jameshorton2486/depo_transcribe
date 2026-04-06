@@ -948,6 +948,10 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bBraswell\s+wreck\b', 'Brownsville wreck'),
         (r'\bBraswell\s+collision\b', 'Brownsville collision'),
         (r'\bthe\s+Braswell\b', 'the Brownsville'),
+        (r'\bIs\s+this\s+the\s+first\s+re\s+ranger\b', 'Is this the first where you were injured'),
+        (r'\bIs\s+this\s+the\s+first\s+rear\s+ranger\b', 'Is this the first where you were injured'),
+        (r'\bwho\s+was\s+with\s+living\s+with\s+you\s+a\s+psychiatrist\b', 'who was living with you at that address'),
+        (r'\bJob\s+stown\b', 'Jobstown'),
     ]
 
     def _replace(segment: str) -> str:
@@ -1322,6 +1326,12 @@ def fix_spoken_dates(text: str) -> str:
         working = bare_year_range.sub(
             lambda m: _spoken_year_to_int(m.group(1)) or m.group(1),
             working,
+        )
+        working = re.sub(
+            r'\bTwo\s+fifty\s+to\s+three\s+hundred\s+dollars?\b',
+            '$250 to $300',
+            working,
+            flags=re.IGNORECASE,
         )
         working = re.sub(r'\btwenty\s+eighteen\b', '2018', working, flags=re.IGNORECASE)
         working = re.sub(r'\btwenty\s+nineteen\b', '2019', working, flags=re.IGNORECASE)

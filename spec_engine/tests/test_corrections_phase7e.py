@@ -65,6 +65,10 @@ def test_fix_spoken_dates_quantity_range():
     assert "10 to 20 pounds" in fix_spoken_dates("I gained ten to twenty pounds")
 
 
+def test_fix_spoken_dates_two_fifty_range():
+    assert "$250 to $300" in fix_spoken_dates("Two fifty to three hundred dollars")
+
+
 def test_fix_spoken_dates_preserves_numeric():
     assert "03/23/2024" in fix_spoken_dates("accident on 03/23/2024")
 

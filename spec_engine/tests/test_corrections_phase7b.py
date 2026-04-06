@@ -76,6 +76,21 @@ def test_fix_braswell_to_brownsville_incident():
     assert "Brownsville incident" in result
 
 
+def test_fix_re_ranger_phrase():
+    result = fix_universal_legal_phrases("Is this the first re ranger")
+    assert "where you were injured" in result
+
+
+def test_fix_psychiatrist_question_garble():
+    result = fix_universal_legal_phrases("who was with living with you a psychiatrist")
+    assert "who was living with you at that address" in result
+
+
+def test_fix_job_stown_to_jobstown():
+    result = fix_universal_legal_phrases("I work at Job stown Pizza and Grill")
+    assert "Jobstown Pizza and Grill" in result
+
+
 def test_texas_deposition_seeds_constant_present():
     assert TEXAS_DEPOSITION_SEEDS["Bear County"] == "Bexar County"
 
