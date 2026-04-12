@@ -31,7 +31,11 @@ logger = get_logger(__name__)
 def format_blocks_to_text(blocks: list) -> str:
     from spec_engine.emitter import emit_blocks
 
-    return emit_blocks(blocks)
+    paragraph_text = emit_blocks(blocks)
+    if not paragraph_text:
+        return ""
+
+    return paragraph_text
 
 
 def _build_ai_proper_nouns(job_config_data: dict, ufm: dict, cfg: Any) -> list[str]:
@@ -293,7 +297,7 @@ def run_correction_job(
     session_id = None
 
     try:
-        from spec_engine.block_builder import build_blocks_from_deepgram, build_blocks_from_text
+        from spec_engine.block_builder import build_blocks_from_deepgram
         from spec_engine.processor import process_blocks
         from spec_engine.run_logger import RunLogger
         from app_logging import start_pipeline_session, end_pipeline_session
@@ -316,9 +320,9 @@ def run_correction_job(
                 )
             blocks = build_blocks_from_deepgram(deepgram_data)
         else:
-            _log("No Deepgram JSON found — parsing transcript text directly")
-            raw_text = Path(transcript_path).read_text(encoding="utf-8")
-            blocks = build_blocks_from_text(raw_text)
+            raise RuntimeError(
+                "Deepgram JSON not found. Corrections require utterances-backed Deepgram JSON."
+            )
 
         if not blocks:
             raise RuntimeError("No transcript blocks could be generated.")
