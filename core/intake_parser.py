@@ -59,6 +59,8 @@ class IntakeParsedResult:
     vocabulary_terms: list[VocabularyTerm] = field(default_factory=list)
     all_proper_nouns: list[str] = field(default_factory=list)
     confirmed_spellings: dict[str, str] = field(default_factory=dict)
+    speaker_map_suggestion: dict[str, Any] = field(default_factory=dict)
+    entity_counts: dict[str, int] = field(default_factory=dict)
     term_count: int = 0
     parse_method: str = "ai"
 
@@ -273,6 +275,30 @@ NOISE_WORDS = {
     "rules", "civil", "procedure", "respectfully", "submitted",
 }
 
+ROLE_LEXICON = (
+    "Claimant",
+    "Respondent",
+    "Deponent",
+    "Witness",
+    "Authorized Representative",
+    "Attorney of Record",
+    "Attorney of record",
+    "Ordering Attorney",
+    "Copy Attorney",
+    "Interpreter",
+    "CSR",
+    "Court Reporter",
+)
+
+LEGAL_PHRASE_LEXICON = (
+    "First Amended Notice of Intent to Take",
+    "Notice of Intent to Take",
+    "Zoom Video Deposition",
+    "Certificate of Service",
+    "Respectfully submitted",
+    "Pursuant to",
+)
+
 
 def _strip_markdown_fences(text: str) -> str:
     cleaned = (text or "").strip()
@@ -404,6 +430,151 @@ def _build_vocabulary_terms(data: dict[str, Any], filtered_terms: list[str]) -> 
     return result
 
 
+def _dedupe_preserve(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        value = " ".join(str(item).split()).strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
+
+
+def _extract_dates(text: str) -> set[str]:
+    return set(re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", text))
+
+
+def _extract_times(text: str) -> set[str]:
+    return set(
+        re.findall(
+            r"\b\d{1,2}:\d{2}\s*(?:A\.?M\.?|P\.?M\.?)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _extract_rule_citations(text: str) -> set[str]:
+    return set(
+        re.findall(
+            r"Texas Rule of Civil Procedure\s+\d+\.\d+(?:\([a-z0-9]+\))+",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _build_speaker_map_suggestion(
+    plaintiffs: list[str],
+    defendants: list[str],
+    deponents: list[dict],
+    ordering_attorney: dict,
+    filing_attorney: dict,
+    copy_attorneys: list[dict],
+    reporter_name: str | None,
+) -> dict[str, Any]:
+    suggestion: dict[str, Any] = {}
+
+    if deponents:
+        deponent_name = _coerce_str(deponents[0].get("name"))
+        if deponent_name:
+            suggestion["deponent"] = deponent_name
+            suggestion["witness"] = deponent_name
+
+    if plaintiffs:
+        suggestion["claimant"] = plaintiffs[0]
+    if defendants:
+        suggestion["respondent"] = defendants[0]
+
+    ordering_name = _coerce_str(ordering_attorney.get("name"))
+    filing_name = _coerce_str(filing_attorney.get("name"))
+    copy_names = _dedupe_preserve(
+        [_coerce_str(item.get("name")) or "" for item in copy_attorneys]
+    )
+
+    if ordering_name:
+        suggestion["ordering_attorney"] = ordering_name
+    if filing_name:
+        suggestion["filing_attorney"] = filing_name
+    if copy_names:
+        suggestion["copy_attorneys"] = copy_names
+    if reporter_name:
+        suggestion["reporter"] = reporter_name
+
+    return suggestion
+
+
+def _build_entity_counts(
+    text: str,
+    vocabulary_terms: list[VocabularyTerm],
+    plaintiffs: list[str],
+    defendants: list[str],
+    deponents: list[dict],
+    ordering_attorney: dict,
+    filing_attorney: dict,
+    copy_attorneys: list[dict],
+    reporter_name: str | None,
+    all_proper_nouns: list[str],
+) -> dict[str, int]:
+    people = {
+        term.term for term in vocabulary_terms if term.term_type == "PERSON"
+    }
+    orgs = {
+        term.term for term in vocabulary_terms if term.term_type == "COMPANY"
+    }
+
+    for group in (plaintiffs, defendants):
+        for item in group:
+            if item and " " in item:
+                people.add(item)
+    for deponent in deponents:
+        name = _coerce_str(deponent.get("name"))
+        if name:
+            people.add(name)
+    for attorney in (ordering_attorney, filing_attorney):
+        name = _coerce_str(attorney.get("name"))
+        firm = _coerce_str(attorney.get("firm"))
+        if name:
+            people.add(name)
+        if firm:
+            orgs.add(firm)
+    for item in copy_attorneys:
+        name = _coerce_str(item.get("name"))
+        firm = _coerce_str(item.get("firm"))
+        if name:
+            people.add(name)
+        if firm:
+            orgs.add(firm)
+    if reporter_name:
+        people.add(reporter_name)
+
+    role_count = sum(
+        1 for role in ROLE_LEXICON
+        if re.search(rf"\b{re.escape(role)}\b", text, flags=re.IGNORECASE)
+    )
+
+    legal_phrases = {
+        phrase for phrase in LEGAL_PHRASE_LEXICON
+        if re.search(re.escape(phrase), text, flags=re.IGNORECASE)
+    }
+    legal_phrases.update(_extract_rule_citations(text))
+
+    return {
+        "people": len(people),
+        "orgs": len(orgs),
+        "roles": role_count,
+        "legal_phrases": len(legal_phrases),
+        "dates": len(_extract_dates(text)),
+        "times": len(_extract_times(text)),
+        "keyterms": len(all_proper_nouns),
+    }
+
+
 def parse_intake_document(
     filepath: str,
     progress_callback=None,
@@ -517,6 +688,27 @@ def parse_intake_document(
         vocabulary_terms=vocabulary_terms,
         all_proper_nouns=filtered_terms,
         confirmed_spellings=final_spellings,
+        speaker_map_suggestion=_build_speaker_map_suggestion(
+            plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
+            defendants=_coerce_list_of_str(data.get("defendants")),
+            deponents=_coerce_deponents(data),
+            ordering_attorney=_coerce_dict(data.get("ordering_attorney")),
+            filing_attorney=_coerce_dict(data.get("filing_attorney")),
+            copy_attorneys=_coerce_list_of_dict(data.get("copy_attorneys")),
+            reporter_name=_coerce_str(data.get("reporter_name")),
+        ),
+        entity_counts=_build_entity_counts(
+            text=text,
+            vocabulary_terms=vocabulary_terms,
+            plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
+            defendants=_coerce_list_of_str(data.get("defendants")),
+            deponents=_coerce_deponents(data),
+            ordering_attorney=_coerce_dict(data.get("ordering_attorney")),
+            filing_attorney=_coerce_dict(data.get("filing_attorney")),
+            copy_attorneys=_coerce_list_of_dict(data.get("copy_attorneys")),
+            reporter_name=_coerce_str(data.get("reporter_name")),
+            all_proper_nouns=filtered_terms,
+        ),
         term_count=len(filtered_terms),
         parse_method="ai",
     )

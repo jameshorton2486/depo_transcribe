@@ -59,3 +59,16 @@ def test_merge_and_save_persists_deepgram_keyterms_section(tmp_path):
     data = load_job_config(str(tmp_path))
 
     assert data["deepgram_keyterms"] == ["Matthew Coger"]
+
+
+def test_merge_and_save_persists_intake_metadata_sections(tmp_path):
+    merge_and_save(
+        str(tmp_path),
+        speaker_map_suggestion={"deponent": "Chris Epley"},
+        intake_entity_counts={"people": 4, "orgs": 2, "keyterms": 7},
+    )
+
+    data = load_job_config(str(tmp_path))
+
+    assert data["speaker_map_suggestion"] == {"deponent": "Chris Epley"}
+    assert data["intake_entity_counts"] == {"people": 4, "orgs": 2, "keyterms": 7}

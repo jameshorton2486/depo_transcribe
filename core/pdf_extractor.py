@@ -30,7 +30,16 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
 
         intake = parse_intake_document("", extracted_text=text)
         if intake is None:
-            return []
+            from core.case_vocab import build_case_vocab_from_text
+
+            fallback = build_case_vocab_from_text(text)
+            _log(
+                "Regex case-vocab fallback: "
+                f"{fallback['counts'].get('People', 0)} people, "
+                f"{fallback['counts'].get('Orgs', 0)} orgs, "
+                f"{len(fallback['deepgram_keyterms'])} keyterms"
+            )
+            return list(fallback["deepgram_keyterms"])
         keyterms = list(intake.all_proper_nouns)
         reasons = intake.vocabulary_terms
         if reasons:
@@ -42,14 +51,10 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
         return keyterms
     except Exception as exc:
         _log(f"AI intake parse unavailable, falling back to regex extraction: {exc}")
-        from core.keyterm_extractor import clean_keyterms, extract_keyterms_from_text
+        from core.case_vocab import build_case_vocab_from_text
 
-        raw_candidates = re.findall(
-            r"\b[A-Z][a-zA-Z]{1,}\b(?:\s+[A-Z][a-zA-Z]{1,}\b)*",
-            text,
-        )
-        raw_candidates.extend(extract_keyterms_from_text(text))
-        return clean_keyterms(raw_candidates)
+        fallback = build_case_vocab_from_text(text)
+        return list(fallback["deepgram_keyterms"])
 
 
 # ── Step 0: Filename extraction ──────────────────────────────────────────────
@@ -57,8 +62,12 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
 def extract_from_filename(filename: str) -> dict:
     """
     Parse audio filename for witness name.
-    Expected pattern: MM-DD-YY FirstName LastName ChunkNumber.ext
-    e.g. '03-24-26 Matthew Coger 01_1.wav'
+    Supported patterns:
+      - MM-DD-YY FirstName LastName ChunkNumber.ext
+      - YYYY-MM-DD- FirstName LastName suffix.ext
+    Examples:
+      - '03-24-26 Matthew Coger 01_1.wav'
+      - '2026-04-09- Bianca Caram md.mp4'
     """
     import os
 
@@ -75,12 +84,23 @@ def extract_from_filename(filename: str) -> dict:
         "scanned": False,
     }
 
-    # Match: MM-DD-YY FirstName LastName ChunkInfo
-    pattern = r'^(\d{2}-\d{2}-\d{2})\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)'
+    # Accept either legacy MM-DD-YY or modern YYYY-MM-DD prefixes.
+    # The deposition date is not trusted here, but the date token is a reliable
+    # anchor for extracting the first two name tokens that follow it.
+    pattern = (
+        r'^(?P<date>\d{2}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})'
+        r'(?:\s*-\s*|\s+)'
+        r'(?P<first>[A-Z][a-zA-Z\'-]+)'
+        r'\s+'
+        r'(?P<last>[A-Z][a-zA-Z\'-]+)'
+        r'(?:\b.*)?$'
+    )
     match = re.match(pattern, name)
 
     if match:
-        raw_date, first_name, last_name = match.groups()
+        raw_date = match.group("date")
+        first_name = match.group("first")
+        last_name = match.group("last")
         # NOTE: raw_date is intentionally not parsed into results["date"].
         # Deposition date must come from the uploaded NOD/PDF, never from
         # the audio filename.
@@ -288,6 +308,7 @@ def extract_case_info_from_pdf(
         progress_callback,
         extracted_text=text,
     )
+    fallback_vocab = None
     if intake_result:
         if cause[1] == "failed" and intake_result.cause_number:
             cause = (intake_result.cause_number, "ai")
@@ -308,14 +329,20 @@ def extract_case_info_from_pdf(
                 date = (parsed_dt.strftime("%m/%d/%Y"), "ai")
             except Exception:
                 pass
+    else:
+        from core.case_vocab import build_case_vocab_from_text
+
+        fallback_vocab = build_case_vocab_from_text(text)
 
     return {
         "cause_number": cause,
         "witness_last": witness,
         "witness_first": witness_first,
         "date": date,
-        "keyterms": intake_result.all_proper_nouns if intake_result else [],
-        "confirmed_spellings": intake_result.confirmed_spellings if intake_result else {},
+        "keyterms": intake_result.all_proper_nouns if intake_result else list((fallback_vocab or {}).get("deepgram_keyterms", [])),
+        "confirmed_spellings": intake_result.confirmed_spellings if intake_result else dict((fallback_vocab or {}).get("confirmed_spellings", {})),
+        "speaker_map_suggestion": intake_result.speaker_map_suggestion if intake_result else dict((fallback_vocab or {}).get("speaker_map_suggestion", {})),
+        "intake_entity_counts": intake_result.entity_counts if intake_result else dict((fallback_vocab or {}).get("counts", {})),
         "intake_result": intake_result,
         "scanned": False,
     }

@@ -210,3 +210,63 @@ def test_parse_intake_document_uses_stripped_env_api_key(monkeypatch):
 
     assert result is not None
     assert captured["api_key"] == "test-key"
+
+
+def test_parse_intake_document_builds_speaker_map_and_entity_counts(monkeypatch):
+    response_json = json_text = (
+        '{"cause_number":"01-25-0000-4994","court":null,"case_style":null,'
+        '"deposition_date":"04/08/2026","deposition_method":"Via Zoom",'
+        '"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,'
+        '"signature_waived":false,"video_recorded":true,'
+        '"plaintiffs":["Basilio Gonzales"],'
+        '"defendants":["Rentokil North America Inc"],'
+        '"deponents":[{"name":"Chris Epley","role":"deponent"}],'
+        '"ordering_attorney":{"name":"Juan Munoz Zarate","firm":"Injury Law Guides"},'
+        '"filing_attorney":{"name":"Juan M. Muñoz","firm":"Ford & Harrison LLP"},'
+        '"copy_attorneys":[{"name":"Willard W. Clark III","firm":"Ford & Harrison LLP"}],'
+        '"ordered_by":"SA Legal Solutions","reporter_name":"Miah Bardot",'
+        '"reporter_csr":null,"reporter_firm":"SA Legal Solutions","reporter_address":null,'
+        '"vocabulary_terms":['
+        '{"term":"Chris Epley","term_type":"PERSON","field_name":"deponent","reason":"name"},'
+        '{"term":"Ford & Harrison LLP","term_type":"COMPANY","field_name":"firm","reason":"firm"}'
+        '],'
+        '"all_proper_nouns":["Chris Epley","Ford & Harrison LLP","Texas Rule of Civil Procedure 199.2(b)(1)"],'
+        '"confirmed_spellings":{"Munoz":"Muñoz"}}'
+    )
+
+    class _FakeMessages:
+        @staticmethod
+        def create(**kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text=json_text)])
+
+    class _FakeAnthropic:
+        def __init__(self, api_key=None):
+            self.messages = _FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+
+    result = parse_intake_document(
+        "ignored.pdf",
+        extracted_text=(
+            "Claimant Basilio Gonzales.\n"
+            "Respondent Rentokil North America Inc.\n"
+            "Deponent Chris Epley.\n"
+            "Pursuant to the Texas Rule of Civil Procedure 199.2(b)(1).\n"
+            "Zoom Video Deposition on 04/08/2026 at 9:30 AM."
+        ),
+    )
+
+    assert result is not None
+    assert result.speaker_map_suggestion["deponent"] == "Chris Epley"
+    assert result.speaker_map_suggestion["witness"] == "Chris Epley"
+    assert result.speaker_map_suggestion["claimant"] == "Basilio Gonzales"
+    assert result.speaker_map_suggestion["respondent"] == "Rentokil North America Inc"
+    assert result.speaker_map_suggestion["ordering_attorney"] == "Juan Munoz Zarate"
+    assert result.entity_counts["people"] >= 4
+    assert result.entity_counts["orgs"] >= 2
+    assert result.entity_counts["roles"] >= 2
+    assert result.entity_counts["legal_phrases"] >= 2
+    assert result.entity_counts["dates"] == 1
+    assert result.entity_counts["times"] == 1
+    assert result.entity_counts["keyterms"] == 3
