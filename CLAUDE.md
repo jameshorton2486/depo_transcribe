@@ -680,11 +680,11 @@ Exceptions — keep as numerals:
 model        = "nova-3"   # or "nova-3-medical"
 smart_format = "false"
 punctuate    = "true"
-paragraphs   = "true"
+paragraphs   = "false"
 diarize      = "true"
 utterances   = "true"
 filler_words = "true"
-numerals     = "true"
+numerals     = "false"
 utt_split    = 1.2        # adjustable in UI
 keyterms     = [...]      # up to 100, from NOD PDF / reporter notes
 ```

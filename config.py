@@ -49,6 +49,19 @@ CHUNK_DURATION_SECONDS = 600
 # The assembler deduplicates the overlapping region.
 CHUNK_OVERLAP_SECONDS = 20
 
+# ── Default keyterms for SA Legal Solutions depositions ────────────────────────
+# These help Deepgram lock onto the reporter, filing firm, and common phrases
+# before case-specific keyterms are merged from the intake form.
+DEFAULT_KEYTERMS = [
+    "Miah Bardot",
+    "Bardot",
+    "CSR 12129",
+    "SA Legal Solutions",
+    "San Antonio",
+    "objection form",
+    "pass the witness",
+]
+
 # ── Confidence flagging ───────────────────────────────────────────────────────
 # Words with Deepgram confidence below this threshold are written to the
 # flagged_words.txt output file for human review.
