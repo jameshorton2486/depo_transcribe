@@ -72,3 +72,33 @@ def test_cache_path_changes_when_effective_setting_changes(tmp_path, monkeypatch
     changed = preprocessor._cache_path(input_path, "Default (fair audio)", modified_config)
 
     assert original != changed
+
+
+def test_trim_long_silence_logs_full_ffmpeg_error_and_returns_input(monkeypatch, tmp_path):
+    input_path = tmp_path / "sample.wav"
+    input_path.write_bytes(b"input")
+
+    monkeypatch.setattr(preprocessor, "get_audio_duration", lambda _: 120.0)
+
+    logged = {}
+
+    def fake_error(message, detail):
+        logged["message"] = message
+        logged["detail"] = detail
+
+    monkeypatch.setattr(preprocessor.logger, "error", fake_error)
+    monkeypatch.setattr(
+        preprocessor.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="",
+            stderr="ffmpeg full error detail\nline two of stderr",
+        ),
+    )
+
+    result = preprocessor.trim_long_silence(str(input_path))
+
+    assert result == str(input_path)
+    assert logged["message"] == "[Preprocessor] Silence trimming failed: %s"
+    assert logged["detail"] == "ffmpeg full error detail\nline two of stderr"

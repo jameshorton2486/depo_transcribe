@@ -12,7 +12,67 @@ import os
 from pathlib import Path
 from datetime import datetime
 
+from config import DEFAULT_KEYTERMS
+
 from core.file_manager import resolve_or_create_case
+
+
+def _transcribe_prepared_audio(
+    prepared_audio_path: str,
+    *,
+    duration_seconds: float,
+    model: str,
+    utt_split: float,
+    keyterms: list[str],
+    progress,
+    log,
+    transcribe_chunk,
+    chunk_audio,
+    reassemble_chunks,
+    channel_label: str = "",
+):
+    chunks = chunk_audio(
+        prepared_audio_path,
+        total_duration=duration_seconds,
+        progress_callback=log,
+    )
+    prefix = f"{channel_label} " if channel_label else ""
+    log(f"{prefix}split into {len(chunks)} chunk(s)")
+
+    chunk_results = []
+    chunk_offsets = []
+
+    for i, chunk in enumerate(chunks):
+        pct = 22 + int((i / max(1, len(chunks))) * 58)
+        progress(pct, f"Transcribing {prefix.lower()}chunk {i+1} of {len(chunks)}…".strip())
+        log(f"{prefix}chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s")
+
+        try:
+            result = transcribe_chunk(
+                chunk.file_path,
+                model=model,
+                utt_split=utt_split,
+                keyterms=keyterms,
+                progress_callback=log,
+            )
+            chunk_results.append(result)
+            chunk_offsets.append(chunk.start_seconds)
+            log(f"{prefix}chunk {i+1} OK")
+        except Exception as chunk_exc:
+            log(
+                f"WARNING: {prefix}chunk {i+1}/{len(chunks)} failed "
+                f"({chunk.start_seconds:.0f}s–{chunk.end_seconds:.0f}s): "
+                f"{chunk_exc} — inserting empty placeholder, continuing."
+            )
+            chunk_results.append({
+                "words": [],
+                "utterances": [],
+                "transcript": "",
+                "raw": {},
+            })
+            chunk_offsets.append(chunk.start_seconds)
+
+    return reassemble_chunks(chunk_results, chunk_offsets), chunks
 
 
 def run_transcription_job(
@@ -50,14 +110,18 @@ def run_transcription_job(
             done_callback(result)
 
     try:
+        import concurrent.futures
+
         from pipeline.preprocessor import (
             validate_audio_file, normalize_audio,
-            auto_detect_quality,
             QUALITY_CONFIGS, AUTO_DETECT_KEY, check_ffmpeg,
         )
         from pipeline.chunker import chunk_audio, cleanup_chunks
         from pipeline.transcriber import transcribe_chunk
-        from pipeline.assembler import reassemble_chunks
+        from pipeline.assembler import reassemble_chunks, build_transcript_text
+        from pipeline.audio_quality import analyze_audio
+        from pipeline.vad_trimmer import trim_silence
+        from pipeline.pyannote_diarizer import diarize, align_speakers
         from core.job_config_manager import merge_and_save
 
         _progress(2, "Checking FFmpeg…")
@@ -74,9 +138,10 @@ def run_transcription_job(
         duration_min = v["duration"] / 60
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
+        merged_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
         _log(f"Utterance split: {utt_split:.2f}")
-        if keyterms:
-            _log(f"Deepgram keyterms: {len(keyterms)}")
+        if merged_keyterms:
+            _log(f"Deepgram keyterms: {len(merged_keyterms)} (includes defaults)")
 
         case_path, folder_status = resolve_or_create_case(
             base_dir,
@@ -90,34 +155,76 @@ def run_transcription_job(
         if folder_status["created"]:
             _log(f"Created folders: {folder_status['created']}")
 
-        _progress(10, "Normalizing audio…")
+        _progress(8, "Analyzing audio quality…")
+        analysis = analyze_audio(audio_path)
+        _log(
+            f"Audio tier: {analysis.tier}  "
+            f"Stereo: {analysis.is_stereo}  "
+            f"Zoom-dual-mono: {analysis.zoom_dual_mono}"
+        )
+        for issue in analysis.issues:
+            _log(f"  → {issue}")
 
         if quality == AUTO_DETECT_KEY:
-            _log("Analyzing audio for optimal preprocessing…")
-            quality_cfg, detected_name = auto_detect_quality(audio_path)
-            _log(f"Auto-detected audio quality: {detected_name}")
-            normalized_path = normalize_audio(
-                audio_path,
-                config=quality_cfg,
-                auto_detect=False,
-                progress_callback=_log,
-            )
-        else:
-            quality_cfg = QUALITY_CONFIGS.get(quality)
-            if quality_cfg is None:
-                from pipeline.preprocessor import DEFAULT_CONFIG
-                quality_cfg = DEFAULT_CONFIG
-                _log(f"Unknown quality setting '{quality}' — using Default as fallback")
-            else:
-                _log(f"Normalizing: {quality_cfg['description']}")
-            normalized_path = normalize_audio(
-                audio_path,
-                config=quality_cfg,
-                auto_detect=False,
-                progress_callback=_log,
-            )
+            tier_map = {
+                "CLEAN": "CLEAN (good/excellent audio)",
+                "ENHANCED": "ENHANCED (fair audio)",
+                "RESCUE": "RESCUE (noisy/poor audio)",
+            }
+            quality = tier_map.get(analysis.tier, "ENHANCED (fair audio)")
 
+        quality_cfg = QUALITY_CONFIGS.get(quality)
+        if quality_cfg is None:
+            from pipeline.preprocessor import ENHANCED_CONFIG
+            quality_cfg = ENHANCED_CONFIG
+            _log(f"Unknown quality '{quality}' — using ENHANCED")
+        else:
+            _log(f"Preprocessing tier: {quality_cfg['description']}")
+
+        _progress(10, "Normalizing audio…")
+        normalized_path = normalize_audio(
+            audio_path,
+            config=quality_cfg,
+            auto_detect=False,
+            audio_analysis=analysis,
+            progress_callback=_log,
+        )
         _log(f"Normalized: {os.path.basename(normalized_path)}")
+
+        if quality_cfg.get("noisereduce"):
+            _progress(15, "Applying conservative noise reduction…")
+            try:
+                import noisereduce as nr
+                import soundfile as sf
+
+                audio_data, sample_rate = sf.read(normalized_path)
+                if getattr(audio_data, "ndim", 1) > 1:
+                    audio_data = audio_data.mean(axis=1)
+                reduced = nr.reduce_noise(
+                    y=audio_data,
+                    sr=sample_rate,
+                    stationary=True,
+                    prop_decrease=0.5,
+                )
+                sf.write(normalized_path, reduced, sample_rate)
+                _log("Noise reduction applied (stationary, prop_decrease=0.5)")
+            except Exception as nr_exc:
+                _log(f"Noise reduction skipped: {nr_exc}")
+
+        _progress(18, "Trimming silence…")
+        try:
+            vad_out = normalized_path.replace(".wav", "_vad.wav")
+            trim_result = trim_silence(normalized_path, output_path=vad_out)
+            if trim_result.was_trimmed:
+                normalized_path = trim_result.output_path
+                _log(
+                    f"Silence trimmed: {trim_result.original_duration_s:.1f}s → "
+                    f"{trim_result.trimmed_duration_s:.1f}s "
+                    f"({trim_result.silence_removed_s:.1f}s removed, "
+                    f"{trim_result.speech_segment_count} speech segments)"
+                )
+        except Exception as vad_exc:
+            _log(f"VAD trim skipped: {vad_exc}")
 
         _progress(20, "Splitting into chunks…")
         chunks = chunk_audio(
@@ -127,19 +234,25 @@ def run_transcription_job(
         )
         _log(f"Split into {len(chunks)} chunk(s)")
 
+        use_pyannote = analysis.tier in ("ENHANCED", "RESCUE")
+        pyannote_future = None
+        executor = None
+        if use_pyannote:
+            _log("Starting pyannote diarization (parallel with transcription)…")
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            pyannote_future = executor.submit(diarize, normalized_path)
+
         chunk_results = []
         chunk_offsets = []
-
         for i, chunk in enumerate(chunks):
-            pct = 22 + int((i / len(chunks)) * 58)
+            pct = 22 + int((i / max(1, len(chunks))) * 58)
             _progress(pct, f"Transcribing chunk {i+1} of {len(chunks)}…")
             _log(f"Chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s")
-
             result = transcribe_chunk(
                 chunk.file_path,
                 model=model,
                 utt_split=utt_split,
-                keyterms=keyterms,
+                keyterms=merged_keyterms,
                 progress_callback=_log,
             )
             chunk_results.append(result)
@@ -147,9 +260,29 @@ def run_transcription_job(
 
         _progress(82, "Assembling transcript…")
         assembled = reassemble_chunks(chunk_results, chunk_offsets)
+
         word_count = len(assembled.get("words", []))
         utterance_count = len(assembled.get("utterances", []))
         _log(f"Assembled: {word_count} words, {utterance_count} utterances")
+
+        if pyannote_future is not None:
+            try:
+                _progress(85, "Applying pyannote speaker labels…")
+                pyannote_segments = pyannote_future.result(timeout=300)
+                if pyannote_segments:
+                    assembled["utterances"] = align_speakers(
+                        assembled.get("utterances", []),
+                        pyannote_segments,
+                    )
+                    assembled["transcript"] = build_transcript_text(assembled["utterances"])
+                    _log("Pyannote speaker labels applied successfully")
+                else:
+                    _log("Pyannote returned no segments — keeping Deepgram labels")
+            except Exception as pa_exc:
+                _log(f"Pyannote alignment skipped: {pa_exc}")
+            finally:
+                if executor:
+                    executor.shutdown(wait=False)
 
         _progress(90, "Building output files…")
 
@@ -199,7 +332,7 @@ def run_transcription_job(
             "model": model,
             "utt_split": utt_split,
             "created_at": datetime.now().isoformat(),
-            "chunks": [r.get("raw", {}) for r in chunk_results],
+            "chunks": assembled.get("raw_chunks", []),
         }
         with open(raw_json_path, "w", encoding="utf-8") as f:
             json.dump(raw_data, f, indent=2, ensure_ascii=False)
@@ -248,6 +381,7 @@ def run_transcription_job(
             "job_config_path": str(job_config_path) if job_config_path else None,
             "output_dir": str(out_dir),
             "transcript_text": transcript_text,
+            "audio_tier": analysis.tier if analysis else "",
             "error": None,
         })
 

@@ -901,10 +901,10 @@ class TranscribeTab(ctk.CTkFrame):
         split_hdr = ctk.CTkFrame(split_inner, fg_color="transparent")
         split_hdr.pack(fill="x")
         ctk.CTkLabel(split_hdr, text="Utterance Split", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
-        self._utt_split_var = ctk.DoubleVar(value=0.8)
+        self._utt_split_var = ctk.DoubleVar(value=1.2)
         self._utt_split_label = ctk.CTkLabel(
             split_hdr,
-            text="0.80",
+            text="1.20",
             font=ctk.CTkFont(size=13),
             text_color="gray",
         )
@@ -926,15 +926,22 @@ class TranscribeTab(ctk.CTkFrame):
             quality_inner,
             values=[
                 "Auto-detect (recommended)",
-                "Clean (good/excellent audio)",
-                "Default (fair audio)",
-                "Aggressive (noisy/poor audio)",
+                "CLEAN (good/excellent audio)",
+                "ENHANCED (fair audio)",
+                "RESCUE (noisy/poor audio)",
             ],
             variable=self._quality_var,
             state="readonly",
             width=210,
         )
         self._quality_combo.pack(fill="x", pady=(2, 0))
+        self._audio_tier_label = ctk.CTkLabel(
+            quality_inner,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        )
+        self._audio_tier_label.pack(anchor="w", pady=(2, 0))
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
@@ -1187,8 +1194,9 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_transcript_path = None
         self._model_var.set("nova-3")
         self._quality_var.set("Auto-detect (recommended)")
-        self._utt_split_var.set(0.8)
-        self._utt_split_label.configure(text="0.80")
+        self._audio_tier_label.configure(text="", text_color="gray")
+        self._utt_split_var.set(1.2)
+        self._utt_split_label.configure(text="1.20")
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",
@@ -1836,6 +1844,11 @@ class TranscribeTab(ctk.CTkFrame):
         txt, col = _BADGE.get(witness_src, _BADGE["failed"])
         self._witness_badge.configure(text=txt, text_color=col)
 
+        # Witness First Name
+        witness_first_val, _ = results.get("witness_first", (None, "failed"))
+        if witness_first_val and not self._firstname_var.get().strip():
+            self._firstname_var.set(witness_first_val)
+
         # Date
         date_val, date_src = results.get("date", (None, "failed"))
         if date_val and not self._date_var.get().strip():
@@ -1875,6 +1888,7 @@ class TranscribeTab(ctk.CTkFrame):
                 },
                 "discrepancies": [],
             }
+            self._populate_case_fields(self._extracted_case_data)
             self._review_btn.configure(state="normal")
             self._confirmed_spellings = dict(intake_result.confirmed_spellings)
             self._extract_status_label.configure(
@@ -1905,6 +1919,8 @@ class TranscribeTab(ctk.CTkFrame):
                     ufm_fields=ufm_fields,
                     confirmed_spellings=dict(intake_result.confirmed_spellings),
                     deepgram_keyterms=self._pdf_keyterms or None,
+                    speaker_map_suggestion=dict(intake_result.speaker_map_suggestion or {}),
+                    intake_entity_counts=dict(intake_result.entity_counts or {}),
                 )
                 logger.info("[UI] Saved %d deepgram_keyterms to job_config", len(self._pdf_keyterms))
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
@@ -2023,9 +2039,15 @@ class TranscribeTab(ctk.CTkFrame):
                 )
                 return
 
+            selected_utt_split = float(self._utt_split_var.get())
+            self._selected_utt_split = selected_utt_split
             self._append_transcript_log("Transcription started")
+            self._append_transcript_log(f"Utterance split selected in UI: {selected_utt_split:.2f}")
             self._append_transcript_log("Processing audio...")
-            self._extract_status_label.configure(text="Transcription started.", text_color="#44FF44")
+            self._extract_status_label.configure(
+                text=f"Transcription started.  Utterance split: {selected_utt_split:.2f}",
+                text_color="#44FF44",
+            )
 
             # Disable button
             self._running = True
@@ -2053,6 +2075,7 @@ class TranscribeTab(ctk.CTkFrame):
         from core.keyterm_extractor import extract_keyterms_from_text, merge_keyterms
 
         self._create_case_folders_now()
+        selected_utt_split = float(getattr(self, "_selected_utt_split", self._utt_split_var.get()))
         reporter_terms = extract_keyterms_from_text(self._reporter_notes_text or "")
         final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, reporter_terms)
         if final_keyterms:
@@ -2062,7 +2085,7 @@ class TranscribeTab(ctk.CTkFrame):
             audio_path=self._selected_file,
             model=self._model_var.get(),
             quality=self._quality_var.get(),
-            utt_split=float(self._utt_split_var.get()),
+            utt_split=selected_utt_split,
             base_dir=self._base_dir_var.get(),
             cause_number=self._cause_var.get(),
             last_name=self._lastname_var.get(),
@@ -2120,10 +2143,21 @@ class TranscribeTab(ctk.CTkFrame):
             # Enable review button if case data has been extracted
             if self._extracted_case_data:
                 self._review_btn.configure(state="normal")
+
+            tier = result.get("audio_tier", "")
+            if tier == "CLEAN":
+                self._audio_tier_label.configure(text=" CLEAN audio", text_color="#44BB44")
+            elif tier == "ENHANCED":
+                self._audio_tier_label.configure(text=" ENHANCED processing", text_color="#DDAA00")
+            elif tier == "RESCUE":
+                self._audio_tier_label.configure(text=" RESCUE processing", text_color="#DD4444")
+            else:
+                self._audio_tier_label.configure(text="", text_color="gray")
             self._append_transcript_log("Transcription complete")
         else:
             error_msg = result.get("error", "Unknown error")
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            self._audio_tier_label.configure(text="", text_color="gray")
             transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
 
