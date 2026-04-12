@@ -177,11 +177,13 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
         a_part, continuation = extracted
 
         witness_id, witness_name = _witness_identity(job_config, block)
+        examiner_id, examiner_name = _examiner_identity(job_config, block)
         q_block = Block(
             raw_text=block.raw_text,
             text=q_part.strip(),
             speaker_id=block.speaker_id,
             speaker_name=block.speaker_name,
+            speaker_role=block.speaker_role,
             block_type=BlockType.QUESTION,
             words=list(block.words),
             meta=dict(block.meta),
@@ -197,16 +199,25 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
         )
         new_blocks.extend([q_block, a_block])
 
-        if continuation and _looks_like_question_text(continuation):
+        if continuation:
+            followup_type = (
+                BlockType.QUESTION
+                if _looks_like_question_text(continuation)
+                else BlockType.COLLOQUY
+            )
             q2_block = Block(
                 raw_text=block.raw_text,
                 text=continuation,
-                speaker_id=block.speaker_id,
-                speaker_name=block.speaker_name,
+                speaker_id=examiner_id,
+                speaker_name=examiner_name,
                 speaker_role=block.speaker_role,
-                block_type=BlockType.QUESTION,
+                block_type=followup_type,
                 words=[],
-                meta={**block.meta, "split_followup_question": True},
+                meta={
+                    **block.meta,
+                    "split_followup_question": followup_type == BlockType.QUESTION,
+                    "split_followup_continuation": followup_type == BlockType.COLLOQUY,
+                },
             )
             new_blocks.append(q2_block)
 

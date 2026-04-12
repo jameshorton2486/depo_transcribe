@@ -15,11 +15,15 @@ COLOR USAGE (Spec Section 5.4):
   Orange  #B45F06 / RGBColor(0xB4,0x5F,0x06) — Scopist flags (bold)
   Navy    #1E3A5F / RGBColor(0x1E,0x3A,0x5F) — All parenthetical lines
   Black   Default                              — All other transcript text
+
+LINE BREAK RULE:
+  One paragraph per logical block. Word handles visual word-wrap.
+  Hard line breaks only occur between blocks (new speaker or new Q/A).
+  textwrap is intentionally NOT used anywhere in this file.
 """
 
 import docx.enum.text
 import re
-import textwrap
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
 from docx.oxml import OxmlElement
@@ -37,11 +41,9 @@ COLOR_BLACK  = RGBColor(0x00, 0x00, 0x00)
 # ── Typography ─────────────────────────────────────────────────────────────────
 FONT_NAME = "Courier New"
 FONT_SIZE = Pt(12)
-WRAP_WIDTH = 65
-QA_WRAP_WIDTH = 56
 
 # ── Tab stop positions in twips (Spec Section 5.3) ────────────────────────────
-TAB_720 = 720     # 0.5" — Q./A. line marker
+TAB_720  = 720    # 0.5" — Q./A. line marker
 TAB_1440 = 1440   # 1.0" — Q./A. text start
 TAB_2160 = 2160   # 1.5" — speaker line text start
 _STANDARD_TABS = [TAB_720, TAB_1440, TAB_2160]
@@ -49,9 +51,7 @@ _STANDARD_TABS = [TAB_720, TAB_1440, TAB_2160]
 
 # ── Q/A pair safety tracker (Spec Section 5.5) ────────────────────────────────
 class QAPairTracker:
-    """
-    Spec 5.5: Never split Q and A pairs across pages.
-    """
+    """Spec 5.5: Never split Q and A pairs across pages."""
     def __init__(self):
         self.last_was_q = False
 
@@ -68,10 +68,6 @@ class QAPairTracker:
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _apply_standard_tabs(para) -> None:
-    """
-    Apply the four standard transcript tab stops to a paragraph.
-    Centralizes tab stop definition so both emitter paths stay in sync.
-    """
     pPr = para._p.get_or_add_pPr()
     tabs_elem = OxmlElement("w:tabs")
     for stop_twips in _STANDARD_TABS:
@@ -80,6 +76,7 @@ def _apply_standard_tabs(para) -> None:
         tab.set(qn("w:pos"), str(stop_twips))
         tabs_elem.append(tab)
     pPr.append(tabs_elem)
+
 
 def _set_paragraph_format(para, tab_stops=None):
     pf = para.paragraph_format
@@ -99,23 +96,17 @@ def _set_paragraph_format(para, tab_stops=None):
 
 def _add_run(para, text, bold=False, color=COLOR_BLACK):
     run = para.add_run(text)
-    run.font.name  = FONT_NAME
-    run.font.size  = FONT_SIZE
-    run.font.bold  = bold
+    run.font.name      = FONT_NAME
+    run.font.size      = FONT_SIZE
+    run.font.bold      = bold
     run.font.color.rgb = color
     return run
 
 
-def _wrap_lines(text: str, width: int) -> list[str]:
-    stripped = (text or "").strip()
-    if not stripped:
-        return [""]
-    return textwrap.wrap(
-        stripped,
-        width=width,
-        break_long_words=False,
-        break_on_hyphens=False,
-    ) or [stripped]
+def _clean(text: str) -> str:
+    """Normalize whitespace and remove any carriage returns/newlines."""
+    normalized = (text or "").replace("\r", " ").replace("\n", " ")
+    return " ".join(normalized.split())
 
 
 def _split_speaker_text(text: str) -> tuple[str, str]:
@@ -129,18 +120,20 @@ def _split_speaker_text(text: str) -> tuple[str, str]:
     return "", text
 
 
+# ── Plain-text block output (textbox + _corrected.txt) ───────────────────────
+
 def emit_blocks(blocks: list) -> str:
     """
     Convert processed blocks into plain-text transcript output.
-
-    This mirrors the runtime text export format used by the correction runner.
+    One line per block. No hard wraps inside a block.
+    New line only at block boundaries (new speaker or new Q/A paragraph).
     """
     lines: list[str] = []
 
     for block in blocks:
         bt = getattr(block, "block_type", None)
         block_value = getattr(bt, "value", str(bt)) if bt else "UNKNOWN"
-        text = (block.text or "").strip()
+        text = _clean(block.text or "")
         role = (getattr(block, "speaker_role", "") or "").strip()
         name = (getattr(block, "speaker_name", "") or "").strip()
 
@@ -148,92 +141,72 @@ def emit_blocks(blocks: list) -> str:
             continue
 
         if block_value == "Q":
-            wrapped = textwrap.fill(text, width=QA_WRAP_WIDTH)
-            lines.append(f"\tQ.  {wrapped}")
+            lines.append(f"\tQ.  {text}")
         elif block_value == "A":
-            wrapped = textwrap.fill(text, width=QA_WRAP_WIDTH)
-            lines.append(f"\tA.  {wrapped}")
+            lines.append(f"\tA.  {text}")
         elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
             label = (name or role or "SPEAKER").upper()
-            wrapped = textwrap.fill(text, width=WRAP_WIDTH)
-            lines.append(f"\t\t\t{label}:  {wrapped}")
+            lines.append(f"\t\t\t{label}:  {text}")
         elif block_value in ("PAREN", "PARENTHETICAL", "PN"):
-            lines.append(f"({text})")
+            lines.append(text)
         elif block_value == "FLAG":
             lines.append(text)
         else:
             if name or role:
                 label = (name or role).upper()
-                wrapped = textwrap.fill(text, width=WRAP_WIDTH)
-                lines.append(f"\t\t\t{label}:  {wrapped}")
+                lines.append(f"\t\t\t{label}:  {text}")
             else:
                 lines.append(text)
 
-    return "\n\n".join(lines)
+    return "\n".join(lines)
 
 
-# ── Line type emitters (Spec Section 3.3) ────────────────────────────────────
+# ── DOCX line emitters (Spec Section 3.3) ────────────────────────────────────
+# One paragraph per block. Word wraps to the page margin automatically.
+# No textwrap — carriage returns only at block boundaries.
 
 def emit_q_line(doc: Document, text: str):
-    """Spec 3.3 Type 1 — Question: [TAB] Q. [TAB] text"""
-    lines = _wrap_lines(text, QA_WRAP_WIDTH)
-    for idx, line in enumerate(lines):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_720, TAB_1440])
-        prefix = '\tQ.\t' if idx == 0 else '\t'
-        _add_run(para, f'{prefix}{line}')
+    """Spec 3.3 Type 1 — Question: Tab + Q.  + text (one paragraph)."""
+    para = doc.add_paragraph()
+    _set_paragraph_format(para, [TAB_720, TAB_1440])
+    _add_run(para, f'\tQ.  {_clean(text)}')
 
 
 def emit_a_line(doc: Document, text: str):
-    """Spec 3.3 Type 2 — Answer: [TAB] A. [TAB] text"""
-    lines = _wrap_lines(text, QA_WRAP_WIDTH)
-    for idx, line in enumerate(lines):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_720, TAB_1440])
-        prefix = '\tA.\t' if idx == 0 else '\t'
-        _add_run(para, f'{prefix}{line}')
+    """Spec 3.3 Type 2 — Answer: Tab + A.  + text (one paragraph)."""
+    para = doc.add_paragraph()
+    _set_paragraph_format(para, [TAB_720, TAB_1440])
+    _add_run(para, f'\tA.  {_clean(text)}')
 
 
 def emit_sp_line(doc: Document, text: str):
     """
-    Spec 3.3 Type 3 — Speaker Label: [TAB][TAB][TAB] LABEL: [bold]  text
-    Position: 2160 twips. Label is BOLD. Two literal spaces after colon.
+    Spec 3.3 Type 3 — Speaker Label: 3 tabs + BOLD LABEL: + two spaces + text.
+    One paragraph. Word wraps naturally.
     """
     label, content = _split_speaker_text(text)
+    para = doc.add_paragraph()
+    _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
     if not label:
-        for line in _wrap_lines(text, WRAP_WIDTH):
-            para = doc.add_paragraph()
-            _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
-            _add_run(para, '\t\t\t' + line)
-        return
-
-    prefix_len = len(label) + 2
-    lines = _wrap_lines(content, max(10, WRAP_WIDTH - prefix_len))
-    for idx, line in enumerate(lines):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
-        if idx == 0:
-            _add_run(para, '\t\t\t', bold=False)
-            _add_run(para, label, bold=True)
-            _add_run(para, '  ' + line, bold=False)
-        else:
-            _add_run(para, '\t\t\t' + (' ' * prefix_len) + line, bold=False)
+        _add_run(para, '\t\t\t' + _clean(text))
+    else:
+        _add_run(para, '\t\t\t', bold=False)
+        _add_run(para, label, bold=True)
+        _add_run(para, '  ' + _clean(content), bold=False)
 
 
 def emit_pn_line(doc: Document, text: str):
-    """Spec 3.3 Type 4 — Parenthetical: 4 tabs, navy color."""
-    for line in _wrap_lines(text, WRAP_WIDTH):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para, [TAB_2160])
-        _add_run(para, f'\t\t\t\t{line}', color=COLOR_NAVY)
+    """Spec 3.3 Type 4 — Parenthetical: 4 tabs, navy color (one paragraph)."""
+    para = doc.add_paragraph()
+    _set_paragraph_format(para, [TAB_2160])
+    _add_run(para, f'\t\t\t\t{_clean(text)}', color=COLOR_NAVY)
 
 
 def emit_flag_line(doc: Document, text: str):
-    """Spec 3.3 Type 5 — Scopist Flag: bold orange."""
-    for line in _wrap_lines(text, WRAP_WIDTH):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para)
-        _add_run(para, line, bold=True, color=COLOR_ORANGE)
+    """Spec 3.3 Type 5 — Scopist Flag: bold orange (one paragraph)."""
+    para = doc.add_paragraph()
+    _set_paragraph_format(para)
+    _add_run(para, _clean(text), bold=True, color=COLOR_ORANGE)
 
 
 def emit_header_line(doc: Document, text: str):
@@ -241,23 +214,21 @@ def emit_header_line(doc: Document, text: str):
     para = doc.add_paragraph()
     _set_paragraph_format(para)
     para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(para, text, bold=True)
+    _add_run(para, _clean(text), bold=True)
 
 
 def emit_by_line(doc: Document, text: str):
     """Spec 4.1 — BY attribution line: left-aligned."""
-    for line in _wrap_lines(text, WRAP_WIDTH):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para)
-        _add_run(para, line)
+    para = doc.add_paragraph()
+    _set_paragraph_format(para)
+    _add_run(para, _clean(text))
 
 
 def emit_plain_line(doc: Document, text: str):
-    """Plain transcript text with no label or special styling."""
-    for line in _wrap_lines(text, WRAP_WIDTH):
-        para = doc.add_paragraph()
-        _set_paragraph_format(para)
-        _add_run(para, line)
+    """Plain transcript text — no label, no special styling."""
+    para = doc.add_paragraph()
+    _set_paragraph_format(para)
+    _add_run(para, _clean(text))
 
 
 def emit_line(doc: Document, line_type: LineType, text: str):
@@ -307,30 +278,18 @@ class LineNumberTracker:
     Tracks line numbers for Texas UFM transcript body pages.
     Lines restart at 1 at the start of each transcript page.
     Courier New 12pt double-spaced = approximately 25 lines per page.
+    Derivation: 11.0 inch page height minus 1.0 inch top/bottom margins yields 9.0 inch usable space, so margin math gives ~25 lines per page.
 
     IMPORTANT: Line numbers apply to Pages 3+ (transcript body) only.
     Pages 1 (Corrections Log) and 2 (Caption) are NOT numbered.
     """
-    # LINES_PER_PAGE derivation (Texas UFM compliance):
-    #   Paper height:       11.0 inches
-    #   Top margin:          1.0 inch
-    #   Bottom margin:       1.0 inch
-    #   Usable height:       9.0 inches
-    #   Line height (Courier New 12pt double-spaced): 24pt = 1/3 inch
-    #   Raw capacity:        9.0 / (1/3) = 27 lines
-    #   Deduct 2 lines for UFM header area (page number + catch word)
-    #   Result:              25 lines per body page
     LINES_PER_PAGE = 25
 
     def __init__(self, start_page: int = 3):
         self.current_line = 1
-        self.current_page = start_page  # Transcript body starts on page 3
+        self.current_page = start_page
 
     def next(self) -> tuple:
-        """
-        Advance and return (page_number, line_number).
-        Auto-increments page when line exceeds LINES_PER_PAGE.
-        """
         page = self.current_page
         line = self.current_line
         self.current_line += 1
@@ -340,17 +299,11 @@ class LineNumberTracker:
         return page, line
 
     def reset_for_new_page(self):
-        """Manually trigger a page break (e.g., for section headers)."""
         self.current_line = 1
         self.current_page += 1
 
     def safe_to_break_before(self) -> bool:
-        """
-        Returns True if inserting a section break here is safe
-        (i.e., we're not immediately after a Q line).
-        Works with QAPairTracker for enforcement.
-        """
-        return True  # LineNumberTracker delegates Q/A safety to QAPairTracker
+        return True
 
 
 def emit_line_numbered(
@@ -361,103 +314,74 @@ def emit_line_numbered(
     qa_tracker: QAPairTracker,
 ):
     """
-    Emit a line with a left-margin line number.
-    Format:
-      [line_num right-justified in 4 chars] [TAB] [normal line content]
-
-    Line numbers are right-justified in a 4-char field:
-       1    Q.  Question text
-       2    A.  Answer text
-       3        MR. SALAZAR:  Objection.
-
-    Args:
-        doc: The output Document.
-        line_type: LineType to emit.
-        text: The line text.
-        tracker: LineNumberTracker instance.
-        qa_tracker: QAPairTracker for Q/A split safety.
+    Emit a line with a left-margin line number. One paragraph per block.
+    Word handles visual word-wrap. No textwrap inside blocks.
     """
+    clean = _clean(text)
+
     if line_type == LineType.Q:
-        visual_lines = [('\tQ.\t' if i == 0 else '\t') + line for i, line in enumerate(_wrap_lines(text, QA_WRAP_WIDTH))]
+        visual_line = f'\tQ.  {clean}'
     elif line_type == LineType.A:
-        visual_lines = [('\tA.\t' if i == 0 else '\t') + line for i, line in enumerate(_wrap_lines(text, QA_WRAP_WIDTH))]
+        visual_line = f'\tA.  {clean}'
     elif line_type == LineType.SP:
         label, content = _split_speaker_text(text)
         if label:
-            prefix_len = len(label) + 2
-            wrapped = _wrap_lines(content, max(10, WRAP_WIDTH - prefix_len))
-            visual_lines = [f"\t\t\t{label}  {wrapped[0]}"] + [
-                "\t\t\t" + (" " * prefix_len) + line for line in wrapped[1:]
-            ]
+            visual_line = f'\t\t\t{label}  {_clean(content)}'
         else:
-            visual_lines = ['\t\t\t' + line for line in _wrap_lines(text, WRAP_WIDTH)]
+            visual_line = '\t\t\t' + clean
     elif line_type == LineType.PN:
-        visual_lines = ['\t\t\t\t' + line for line in _wrap_lines(text, WRAP_WIDTH)]
+        visual_line = '\t\t\t\t' + clean
     else:
-        visual_lines = _wrap_lines(text, WRAP_WIDTH)
+        visual_line = clean
 
-    for idx, visual_line in enumerate(visual_lines):
-        page, line_num = tracker.next()
-        if line_type == LineType.Q and idx == 0:
-            qa_tracker.record_q()
-        elif idx == 0:
-            qa_tracker.record_other()
+    page, line_num = tracker.next()
 
-        para = doc.add_paragraph()
-        pf = para.paragraph_format
-        pf.line_spacing_rule = WD_LINE_SPACING.DOUBLE
-        pf.space_before = Pt(0)
-        pf.space_after = Pt(0)
+    if line_type == LineType.Q:
+        qa_tracker.record_q()
+    else:
+        qa_tracker.record_other()
 
-        line_num_str = f"{line_num:>2} "
-        num_run = para.add_run(line_num_str)
-        num_run.font.name = FONT_NAME
-        num_run.font.size = Pt(10)
-        num_run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+    para = doc.add_paragraph()
+    pf = para.paragraph_format
+    pf.line_spacing_rule = WD_LINE_SPACING.DOUBLE
+    pf.space_before = Pt(0)
+    pf.space_after  = Pt(0)
 
-        if line_type in (LineType.Q, LineType.A):
+    line_num_str = f"{line_num:>2} "
+    num_run = para.add_run(line_num_str)
+    num_run.font.name      = FONT_NAME
+    num_run.font.size      = Pt(10)
+    num_run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+    if line_type == LineType.SP:
+        label, content = _split_speaker_text(text)
+        if label and (':' in visual_line):
+            _add_run(para, '\t\t\t', bold=False)
+            _add_run(para, label, bold=True)
+            _add_run(para, '  ' + _clean(content), bold=False)
+        else:
             content_run = para.add_run(visual_line)
             content_run.font.color.rgb = COLOR_BLACK
-        elif line_type == LineType.SP:
-            if idx == 0 and ": " in visual_line:
-                if ":  " in visual_line:
-                    label_part, text_part = visual_line.split(":  ", 1)
-                else:
-                    label_part, text_part = visual_line.split(": ", 1)
-                label_part += ":"
-                para.add_run(label_part[:3]).font.name = FONT_NAME
-                bold_run = para.add_run(label_part[3:])
-                bold_run.bold = True
-                bold_run.font.name = FONT_NAME
-                bold_run.font.size = FONT_SIZE
-                bold_run.font.color.rgb = COLOR_BLACK
-                para.add_run("  " + text_part).font.name = FONT_NAME
-            else:
-                content_run = para.add_run(visual_line)
-                content_run.font.color.rgb = COLOR_BLACK
-        elif line_type == LineType.PN:
-            content_run = para.add_run(visual_line)
-            content_run.font.color.rgb = COLOR_NAVY
-        elif line_type == LineType.FLAG:
-            content_run = para.add_run(visual_line)
-            content_run.bold = True
-            content_run.font.color.rgb = COLOR_ORANGE
-        elif line_type == LineType.HEADER:
-            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            content_run = para.add_run(visual_line)
-            content_run.bold = True
-            content_run.font.color.rgb = COLOR_BLACK
-        elif line_type == LineType.BY:
-            content_run = para.add_run(visual_line)
-            content_run.font.color.rgb = COLOR_BLACK
-        elif line_type == LineType.PLAIN:
-            content_run = para.add_run(visual_line)
-            content_run.font.color.rgb = COLOR_BLACK
+    elif line_type == LineType.PN:
+        content_run = para.add_run(visual_line)
+        content_run.font.color.rgb = COLOR_NAVY
+    elif line_type == LineType.FLAG:
+        content_run = para.add_run(visual_line)
+        content_run.bold = True
+        content_run.font.color.rgb = COLOR_ORANGE
+    elif line_type == LineType.HEADER:
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        content_run = para.add_run(visual_line)
+        content_run.bold = True
+        content_run.font.color.rgb = COLOR_BLACK
+    else:
+        content_run = para.add_run(visual_line)
+        content_run.font.color.rgb = COLOR_BLACK
 
-        for run in para.runs:
-            if not run.font.name:
-                run.font.name = FONT_NAME
-            if not run.font.size:
-                run.font.size = FONT_SIZE
+    for run in para.runs:
+        if not run.font.name:
+            run.font.name = FONT_NAME
+        if not run.font.size:
+            run.font.size = FONT_SIZE
 
-        _apply_standard_tabs(para)
+    _apply_standard_tabs(para)

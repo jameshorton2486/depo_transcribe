@@ -3,7 +3,7 @@
 ## Why the pipeline cannot fully fix speaker label errors automatically
 
 The deterministic corrections engine in
-[corrections.py](/C:/Users/james/PycharmProjects/depo_transcribe/spec_engine/corrections.py)
+[corrections.py](./corrections.py)
 works on the text inside transcript blocks. It does not decide who is
 speaking. Speaker identity comes from diarization and the verified speaker map.
 

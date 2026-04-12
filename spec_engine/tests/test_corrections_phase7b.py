@@ -3,8 +3,10 @@
 from spec_engine.corrections import (
     TEXAS_DEPOSITION_SEEDS,
     apply_texas_deposition_seeds,
+    clean_block,
     fix_universal_legal_phrases,
 )
+from spec_engine.models import JobConfig
 
 
 def test_fix_oath_phrase():
@@ -89,6 +91,39 @@ def test_fix_psychiatrist_question_garble():
 def test_fix_job_stown_to_jobstown():
     result = fix_universal_legal_phrases("I work at Job stown Pizza and Grill")
     assert "Jobstown Pizza and Grill" in result
+
+
+def test_fix_court_portal_license():
+    result = clean_block(
+        "I'm Mia Bardot Court Portal License in Texas, CSR No. 12129.",
+        JobConfig(),
+    )[0]
+    assert "court reporter, licensed in texas" in result.lower()
+
+
+def test_fix_attend_high_school_admission():
+    result = fix_universal_legal_phrases("Did you attend high school admission?")
+    assert "Did you attend high school in Mission" in result
+
+
+def test_fix_by_airport():
+    result = fix_universal_legal_phrases("I was gonna be by airport.")
+    assert "by the airport" in result
+
+
+def test_fix_food_safety_certification():
+    result = clean_block("I have my food safe certification.", JobConfig())[0]
+    assert "food safety certification" in result.lower()
+
+
+def test_fix_a_a_mixture():
+    result = clean_block("It was a a mixture of flavors.", JobConfig())[0]
+    assert "a mixture" in result.lower()
+
+
+def test_fix_two_day_drive():
+    result = clean_block("It was a two day drive.", JobConfig())[0]
+    assert "two-day drive" in result.lower()
 
 
 def test_texas_deposition_seeds_constant_present():

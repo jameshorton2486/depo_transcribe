@@ -176,7 +176,7 @@ def test_q_line_format():
     emit_q_line(doc, "What is your name?")
     assert len(doc.paragraphs) == 1
     text = doc.paragraphs[0].text
-    assert '\tQ.\t' in text, f"FAIL: Q format wrong. Got: {repr(text)}"
+    assert '\tQ.  ' in text, f"FAIL: Q format wrong. Got: {repr(text)}"
 
 
 def test_a_line_format():
@@ -184,7 +184,7 @@ def test_a_line_format():
     doc = create_document()
     emit_a_line(doc, "My name is John Smith.")
     text = doc.paragraphs[0].text
-    assert '\tA.\t' in text, f"FAIL: A format wrong. Got: {repr(text)}"
+    assert '\tA.  ' in text, f"FAIL: A format wrong. Got: {repr(text)}"
 
 
 def test_sp_line_bold_label():
@@ -220,18 +220,15 @@ def test_flag_line_orange_color():
 def test_emitter_q_line_wraps_to_multiple_paragraphs():
     doc = create_document()
     emit_q_line(doc, "word " * 20)
-    assert len(doc.paragraphs) > 1
-    assert '\tQ.\t' in doc.paragraphs[0].text
-    assert doc.paragraphs[1].text.startswith('\t')
+    assert len(doc.paragraphs) == 1
+    assert '\tQ.  ' in doc.paragraphs[0].text
 
 
 def test_emitter_speaker_continuation_aligns_under_content():
     doc = create_document()
     emit_sp_line(doc, "MR. SALAZAR:  " + ("word " * 20))
-    assert len(doc.paragraphs) > 1
+    assert len(doc.paragraphs) == 1
     assert "MR. SALAZAR:" in doc.paragraphs[0].text
-    assert "MR. SALAZAR:" not in doc.paragraphs[1].text
-    assert doc.paragraphs[1].text.startswith('\t\t\t')
 
 
 # ═══════════════════════════════════════════════════════════════

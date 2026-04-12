@@ -187,6 +187,33 @@ def test_fix_qa_structure_splits_merged_question_answer_question_sequence():
     assert result[2].speaker_id == 2
 
 
+def test_fix_qa_structure_preserves_examiner_continuation_after_short_answer():
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=2,
+        speaker_name="MR. ALLAN",
+        speaker_role="EXAMINING_ATTORNEY",
+        block_type=BlockType.QUESTION,
+        text="Have you ever completed a deposition before? No. Just to go over a few things.",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [
+        BlockType.QUESTION, BlockType.ANSWER, BlockType.COLLOQUY
+    ]
+    assert result[0].text == "Have you ever completed a deposition before?"
+    assert result[1].text == "No."
+    assert result[1].speaker_id == 1
+    assert result[2].text == "Just to go over a few things."
+    assert result[2].speaker_id == 2
+
+
 def test_fix_qa_structure_splits_answer_swallowing_next_question():
     cfg = JobConfig(
         speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},

@@ -123,6 +123,31 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
         blocks = [Block(speaker_id=99, text="Loose text", raw_text="", block_type=BlockType.UNKNOWN)]
         assert "Loose text" in format_blocks_to_text(blocks)
 
+    def test_non_qa_paragraphs_use_three_tabs_and_single_newline(self):
+        from core.correction_runner import format_blocks_to_text
+
+        blocks = [
+            Block(
+                speaker_id=4,
+                text="This deposition is taking place via Zoom.",
+                raw_text="",
+                block_type=BlockType.SPEAKER,
+                speaker_name="THE REPORTER",
+            ),
+            Block(
+                speaker_id=1,
+                text="Yes, ma'am.",
+                raw_text="",
+                block_type=BlockType.ANSWER,
+                speaker_name="THE WITNESS",
+            ),
+        ]
+
+        result = format_blocks_to_text(blocks)
+        assert "\t\t\tTHE REPORTER:  This deposition is taking place via Zoom." in result
+        assert "\n\tA.  Yes, ma'am." in result
+        assert "\n\n" not in result
+
 
 class TestFix5C_EmitSpLineSingleSpace:
     def test_two_space_colon_bold_label(self):

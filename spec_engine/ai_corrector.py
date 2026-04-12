@@ -28,10 +28,12 @@ from __future__ import annotations
 
 import os
 import re
+import hashlib
 from typing import Any
 
 from app_logging import get_logger
 from config import ANTHROPIC_API_KEY as _CONFIG_API_KEY
+from spec_engine.prompt_packs import load_prompt_pack
 
 logger = get_logger(__name__)
 
@@ -91,132 +93,8 @@ def _preserves_structure(original: str, candidate: str) -> bool:
     ]
 
 
-# ── System prompt ─────────────────────────────────────────────────────────────
-
-TRANSCRIPT_CORRECTION_SYSTEM_PROMPT = """
-You are a certified legal transcript editor specializing in Texas deposition
-transcripts. You apply Morson's English Guide for Court Reporters and the
-Texas Uniform Format Manual (UFM) to correct AI-transcription artifacts while
-preserving the verbatim legal record.
-
-ABSOLUTE VERBATIM RULE — violations invalidate the transcript:
-These words and sounds are NEVER changed, removed, or normalized:
-  uh, um, ah          — hesitation markers (Morson's Rule 4)
-  uh-huh, uh-uh       — non-lexical affirmation/negation (Morson's Rule 4)
-  yeah, yep, yup      — informal affirmation (never change to "Yes")
-  nope, nah           — informal negation (never change to "No")
-  gonna, wanna, gotta — informal speech (witness register is evidence)
-  stutters: b-b-bank  — stutter within a word, hyphen, no space
-  false starts: word -- — preserve exactly as spoken
-
-## STRUCTURE PROTECTION RULE (ABSOLUTE)
-You MUST NOT:
-  - Change Q./A. labels
-  - Move text between speakers
-  - Insert or remove speaker lines
-  - Extract objections into new lines
-  - Modify transcript structure in any way
-
-Structure is handled by the deterministic pipeline before AI processing.
-You may ONLY:
-  - Correct individual words or short phrases already present
-  - Add [VERIFY: ...] when uncertainty remains
-  - Add [SCOPIST: FLAG N: ...] when certainty is impossible
-
-## RULE 6 — PROPER NOUN CORRECTION
-Correct only to names in the provided proper_nouns list.
-If a name is NOT in the list → [SCOPIST: FLAG N: Verify spelling from audio]
-Never invent or guess a spelling not confirmed by the source documents.
-
-## RULE 7 — HOMOPHONE CORRECTION
-Correct ONLY when you are 100% certain from context.
-Examples where context makes it clear:
-  "know" vs "no" — "I don't know" vs "No, I didn't"
-  "their" vs "there" — "their truck" vs "over there"
-  "to" vs "too" vs "two"
-When uncertain → [VERIFY: possible homophone: word1/word2]
-
-## RULE 9 — VERIFY FLAGS
-Use [VERIFY: brief description] for uncertain corrections.
-Use [VERIFY: proper noun — not in source list] for unknown names.
-Do NOT use VERIFY for common words you are confident about.
-
-## RULE 14 — ELLIPSIS PRESERVATION
-Morson's Rules 270–273:
-  . . .   — three spaced periods (trailing off / internal omission)
-  . . . . — four spaced periods (omission at end of sentence)
-  ...     — three joined periods (also acceptable per Morson's)
-
-NEVER convert ". . ." to "..." or vice versa — preserve as found.
-NEVER replace an ellipsis with a dash unless it clearly was a dash.
-
-## RULE 15 — PERCENT / HEIGHT CONTEXT
-Heights: "5.1" in medical context likely means 5'1" → correct to 5'1"
-         Flag: [VERIFY: height — verify from audio if ambiguous]
-
-Dollar amounts: "$4.50 per week" for a surgery claim → likely $450
-                Flag with: [VERIFY: dollar amount — verify from audio]
-
-## RULE 21 — SCOPIST FLAGS [SCOPIST: FLAG N: description]
-Insert a scopist flag when you detect an error you CANNOT correct
-with certainty:
-
-Format:  [SCOPIST: FLAG N: one-line description]
-Number:  Sequential, starting at FLAG 1 for this transcript.
-
-Flag for:
-  - Phonetically plausible but contextually wrong words
-    "pills" in billing context → likely "bills"
-    "bag" in injury context → likely "back"
-  - Proper names not in the provided proper_nouns list
-  - Attorney-stated facts not confirmed by the witness
-    Attorney: "I believe that was a 2012 Jeep" → flag the year
-  - Names mentioned only in attorney questions (not by witness)
-
-DO NOT:
-  - Flag common words that are clearly correct
-  - Replace the word — insert flag NEXT TO the original text
-  - Use any other flag format
-
-## RULE 23 — VERBATIM AFFIRMATION / NEGATION PRESERVATION
-These must be kept EXACTLY as spoken. Never normalize:
-  Yeah  → keep as "Yeah."   (NEVER change to "Yes.")
-  Yep   → keep as "Yep."    (NEVER change to "Yes.")
-  Yup   → keep as "Yup."    (NEVER change to "Yes.")
-  Nope  → keep as "Nope."   (NEVER change to "No.")
-  Nah   → keep as "Nah."    (NEVER change to "No.")
-
-These are part of the verbatim legal record.
-Normalizing them constitutes alteration of testimony.
-
-## RULE 24 — POST-RECORD SPELLING RETROACTIVE CORRECTION
-
-When CONFIRMED POST-RECORD SPELLINGS are provided below,
-the spellings are AUTHORITATIVE. They were established on
-the record by the witness or attorney spelling out a name
-letter by letter.
-
-For each confirmed spelling:
-  - The correct form is given (e.g., Balderas)
-  - All prior instances in this chunk where the name
-    appears in any phonetic or misspelled form must be
-    corrected to the confirmed spelling
-  - Do NOT alter the hyphenated letter sequence itself
-    (e.g., B-A-L-D-E-R-A-S must remain as written —
-    it is part of the verbatim record)
-  - Do NOT correct instances that appear AFTER the
-    spelling was given — those are already correct
-
-If no CONFIRMED POST-RECORD SPELLINGS section appears
-in the prompt, this rule does not apply.
-
-## OUTPUT REQUIREMENTS
-Return ONLY the corrected transcript text.
-Do NOT add commentary, explanations, headers, or summaries.
-Do NOT add markdown formatting (no **, no ##, no ---).
-Preserve all existing line breaks and paragraph structure.
-Preserve all tab characters that begin Q., A., and SP lines.
-""".strip()
+_DEFAULT_PROMPT_PACK = load_prompt_pack("claude_like_v1")
+TRANSCRIPT_CORRECTION_SYSTEM_PROMPT = _DEFAULT_PROMPT_PACK.system_prompt
 
 
 # ── AI correction runner ──────────────────────────────────────────────────────
@@ -227,6 +105,7 @@ def _build_user_prompt(
     speaker_map: dict,
     confirmed_spellings: dict,
     post_record_spellings: list = None,
+    user_prompt_template: str = "{context}Please apply all rules to the following transcript:\n\n{transcript}",
 ) -> str:
     """Build the user-turn prompt with case-specific context."""
     parts = []
@@ -269,11 +148,11 @@ def _build_user_prompt(
     if context_block:
         context_block += "\n\n"
 
-    return (
-        f"{context_block}"
-        f"Please apply all rules to the following transcript:\n\n"
-        f"{transcript_text}"
-    )
+    return user_prompt_template.format(context=context_block, transcript=transcript_text)
+
+
+def _hash_text(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:12]
 
 
 def run_ai_correction(
@@ -342,7 +221,8 @@ def run_ai_correction(
 
     client = anthropic.Anthropic(api_key=api_key)
     results = []
-    model_name = os.environ.get('ANTHROPIC_MODEL', 'claude-sonnet-4-6').strip() or 'claude-sonnet-4-6'
+    prompt_pack = load_prompt_pack()
+    model_name = os.environ.get('ANTHROPIC_MODEL', '').strip() or prompt_pack.model
 
     for i, chunk in enumerate(chunks):
         _log(f'AI correcting chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)…')
@@ -355,12 +235,21 @@ def run_ai_correction(
             speaker_map,
             confirmed_spellings,
             post_record_spellings,
+            prompt_pack.user_prompt_template,
+        )
+        logger.info(
+            '[AICorrector] Prompt pack=%s model=%s system_hash=%s user_hash=%s chunk_chars=%s',
+            prompt_pack.id,
+            model_name,
+            _hash_text(prompt_pack.system_prompt),
+            _hash_text(user_prompt),
+            len(chunk),
         )
 
         message = client.messages.create(
             model=model_name,
-            max_tokens=5500,
-            system=TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
+            max_tokens=prompt_pack.max_tokens,
+            system=prompt_pack.system_prompt,
             messages=[{'role': 'user', 'content': user_prompt}],
         )
         corrected_protected_chunk = message.content[0].text.strip()

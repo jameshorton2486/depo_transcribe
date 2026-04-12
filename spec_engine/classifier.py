@@ -43,6 +43,28 @@ FIRST_ON_RECORD_PATTERNS = [
     re.compile(r"\btoday'?s\s+date\s+is\s+\d{1,2}/\d{1,2}/\d{4}\b",  re.IGNORECASE),
     re.compile(r'\bthe\s+time\s+is\s+\d{1,2}:\d{2}\s*(?:a\.?m\.?|p\.?m\.?|AM|PM)\b', re.IGNORECASE),
 ]
+PRE_RECORD_KEYWORDS = [
+    'good morning', 'good afternoon', 'good evening',
+    'can you hear me', 'testing one two', 'check one two',
+    'volume check', 'lighting', 'hold on', 'just a second',
+    'everyone ready',
+]
+
+def _is_pre_record_chatter(text: str) -> bool:
+    sanitized = (text or "").strip()
+    if not sanitized:
+        return True
+    upper = sanitized.upper()
+    for prefix in ('Q.', 'A.', 'THE REPORTER', 'MR.', 'MS.', 'MRS.', 'DR.', 'SPEAKER'):
+        if upper.startswith(prefix):
+            return False
+    if len(sanitized.split()) > 12:
+        return False
+    lowered = sanitized.lower()
+    for keyword in PRE_RECORD_KEYWORDS:
+        if re.search(rf'\\b{re.escape(keyword)}\\b', lowered):
+            return True
+    return False
 CONCLUDED_RE   = re.compile(r'deposition\s+(?:is\s+)?concluded', re.IGNORECASE)
 TIME_RE        = re.compile(r'(\d{1,2}:\d{2})\s*(a\.?m\.?|p\.?m\.?|AM|PM)', re.IGNORECASE)
 
@@ -342,6 +364,13 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
       3. Punctuation and simple heuristics
       4. Previous-block context
     """
+    examining_attorney_id = None
+    if job_config is not None:
+        if hasattr(job_config, "examining_attorney_id"):
+            examining_attorney_id = getattr(job_config, "examining_attorney_id", None)
+        elif isinstance(job_config, dict):
+            examining_attorney_id = job_config.get("examining_attorney_id")
+
     if job_config is not None:
         _verified = (
             getattr(job_config, "speaker_map_verified", False)
@@ -391,7 +420,14 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
                 _is_examiner
                 and any(lower.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
             )
-            if (
+            _attorney_label_answer = (
+                previous_type == BlockType.QUESTION
+                and block.speaker_id != examining_attorney_id
+                and _looks_like_answer_after_question(text, role)
+            )
+            if _attorney_label_answer:
+                block.block_type = BlockType.ANSWER
+            elif (
                 text.endswith("?")
                 or any(lower.startswith(word + " ") for word in QUESTION_WORDS)
                 or _imperative_fires
@@ -467,9 +503,12 @@ def classify_block(
                 # the videographer's opening statement IS part of the record
                 break
         else:
-            # Only discard obvious setup chatter — do not discard substantive blocks
-            # This preserves direct classify_block() test behavior
-            pass
+            if _is_pre_record_chatter(text):
+                # This block is pre-record setup chatter (Zoom/Teams setup,
+                # "can you hear me", lighting adjustments, greetings before the
+                # reporter's opening statement). Discard it entirely from the
+                # legal record.
+                return []
 
     # Guard: a verified speaker map must still explicitly cover the speaker ID.
     # Never silently fall through to generic speaker labeling for an unmapped ID.
@@ -487,7 +526,7 @@ def classify_block(
             category='speaker',
             inline_text=flag_text,
         ))
-        return [(LineType.FLAG, flag_text)]
+        results.append((LineType.FLAG, flag_text))
 
     # ── Exhibit marking ───────────────────────────────────────────────────────
     exhibit_match = EXHIBIT_RE.search(text)

@@ -446,6 +446,9 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bAction form\b[.]?', 'Objection. Form.'),
     (r'\bAction point\b[.]?', 'Objection. Form.'),
     (r'\bObjection form\b[.]?', 'Objection. Form.'),
+    (r'\bFood\s+safe\s+certification\b', 'food safety certification'),
+    (r'\ba\s+a\s+mixture\b', 'a mixture'),
+    (r'\btwo\s+day\s+drive\b', 'two-day drive'),
     (r'(?<!\. )\.{4}(?!\.)(?!\s*\.)', '. . . .'),
     (r'(?<!\. )\.{3}(?!\.)(?!\s*\.)', '. . .'),
     (r'\. \.\.', '. . .'),
@@ -952,6 +955,13 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bIs\s+this\s+the\s+first\s+rear\s+ranger\b', 'Is this the first where you were injured'),
         (r'\bwho\s+was\s+with\s+living\s+with\s+you\s+a\s+psychiatrist\b', 'who was living with you at that address'),
         (r'\bJob\s+stown\b', 'Jobstown'),
+        # ── Reporter/misc opening garbles ─────────────────────────────────────
+        (r'\bCourt\s+Portal\s+License\b', 'court reporter, licensed in Texas'),
+        (r"\bI'm\s+Mia\s+Bardot\s+Court\s+Portal\s+License\s+in\s+Texas\b",
+         "I'm Miah Bardot, court reporter, licensed in Texas"),
+        (r'\bDid\s+you\s+attend\s+high\s+school\s+admission\b',
+         'Did you attend high school in Mission'),
+        (r'\bby\s+airport\b', 'by the airport'),
     ]
 
     def _replace(segment: str) -> str:
