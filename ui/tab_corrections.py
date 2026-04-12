@@ -188,6 +188,14 @@ class CorrectionsTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=11, weight="bold"), text_color="#c0d0e0",
         ).pack(side="left", padx=8, pady=4)
 
+        self._viewer_source_label = ctk.CTkLabel(
+            left_hdr,
+            text="Showing: no content loaded",
+            font=ctk.CTkFont(size=10),
+            text_color="#667788",
+        )
+        self._viewer_source_label.pack(side="left", padx=(4, 0), pady=4)
+
         self._open_corrected_btn = ctk.CTkButton(
             left_hdr, text="Open File", width=80, height=22,
             fg_color="transparent", border_width=1, border_color="#334",
@@ -315,6 +323,10 @@ class CorrectionsTab(ctk.CTkFrame):
                     widget.configure(text=value)
                     return
 
+    def _set_viewer_source(self, text: str, color: str = "#667788"):
+        """Show where the transcript viewer content came from."""
+        self._viewer_source_label.configure(text=text, text_color=color)
+
     # ── Public API — called from other tabs ────────────────────────────────────
 
     def notify_transcript_loaded(self, path: str):
@@ -387,6 +399,10 @@ class CorrectionsTab(ctk.CTkFrame):
         self._generate_docx_btn.configure(state="disabled")
         self._open_docx_btn.configure(state="disabled")
         self._run_status.configure(text="Ready to run corrections.", text_color="gray")
+        self._set_viewer_source(
+            "Viewer Source: none (load a transcript to see corrections)",
+            "#667788",
+        )
         logger.info("[CorrectionsTab] Source set: %s", path)
 
     # ── Run pipeline ───────────────────────────────────────────────────────────
@@ -403,6 +419,10 @@ class CorrectionsTab(ctk.CTkFrame):
         self._corrected_textbox.configure(state="normal")
         self._corrected_textbox.delete("1.0", "end")
         self._corrected_textbox.configure(state="disabled")
+        self._set_viewer_source(
+            "Viewer Source: running (waiting for current run output)",
+            "#8899AA",
+        )
         self._log_textbox.configure(state="normal")
         self._log_textbox.delete("1.0", "end")
         self._log_textbox.configure(state="disabled")
@@ -467,10 +487,24 @@ class CorrectionsTab(ctk.CTkFrame):
             self._corrected_textbox.delete("1.0", "end")
             if corr_text:
                 self._corrected_textbox.insert("1.0", corr_text)
+                self._set_viewer_source("Viewer Source: current run output", "#2a7a4a")
             elif corr_path and os.path.isfile(corr_path):
                 self._corrected_textbox.insert(
                     "1.0",
                     Path(corr_path).read_text(encoding="utf-8"),
+                )
+                self._set_viewer_source(
+                    f"Viewer Source: saved corrected file ({os.path.basename(corr_path)})",
+                    "#B8860B",
+                )
+                self._append_log(
+                    "Viewer source: saved corrected file fallback "
+                    "(current run returned no inline corrected_text)."
+                )
+            else:
+                self._set_viewer_source(
+                    "Viewer Source: none (no corrected text available)",
+                    "#AA5555",
                 )
             self._corrected_textbox.configure(state="disabled")
 
@@ -540,6 +574,10 @@ class CorrectionsTab(ctk.CTkFrame):
             error = result.get("error", "Unknown error")
             self._run_status.configure(
                 text=f"Failed: {error[:80]}", text_color="#FF4444")
+            self._set_viewer_source(
+                "Viewer Source: none (corrections failed)",
+                "#AA5555",
+            )
             self._append_log(f"ERROR: {error}")
             for card in (self._stat_corrections, self._stat_flags,
                          self._stat_blocks, self._stat_spellings):
@@ -654,6 +692,10 @@ class CorrectionsTab(ctk.CTkFrame):
             self._corrected_textbox.delete('1.0', 'end')
             self._corrected_textbox.insert('1.0', result_text)
             self._corrected_textbox.configure(state='disabled')
+            self._set_viewer_source(
+                "Viewer Source: AI-corrected textbox content",
+                "#3B6EA5",
+            )
             self._run_status.configure(
                 text='✓ AI correction complete',
                 text_color='#44FF44',

@@ -282,6 +282,45 @@ def reassemble_chunks(
     return merged
 
 
+def merge_channel_assemblies(channel_assemblies: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Merge independently assembled mono channel transcripts into a single timeline.
+
+    Each input assembly represents one physical audio channel and is treated as a
+    distinct speaker lane. Speaker IDs from the underlying ASR output are ignored
+    so the merged transcript preserves stable channel identity.
+    """
+    merged_words: List[Dict] = []
+    merged_utterances: List[Dict] = []
+    raw_chunks: List[Dict[str, Any]] = []
+
+    for channel_index, assembly in enumerate(channel_assemblies):
+        if not assembly:
+            continue
+
+        for word in assembly.get("words", []) or []:
+            merged_words.append({**word, "speaker": channel_index})
+
+        for utterance in assembly.get("utterances", []) or []:
+            merged_utterances.append({**utterance, "speaker": channel_index})
+
+        for raw in assembly.get("raw_chunks", []) or []:
+            raw_chunks.append({"channel": channel_index, "raw": raw})
+
+    merged_words.sort(key=lambda w: (float(w.get("start", 0.0) or 0.0), float(w.get("end", 0.0) or 0.0)))
+    merged_utterances.sort(key=lambda u: (float(u.get("start", 0.0) or 0.0), float(u.get("end", 0.0) or 0.0)))
+
+    labeled_utterances = _attach_speaker_labels(merged_utterances)
+    transcript = build_transcript_text(labeled_utterances)
+
+    return {
+        "words": merged_words,
+        "utterances": labeled_utterances,
+        "transcript": transcript,
+        "raw_chunks": raw_chunks,
+    }
+
+
 def format_timestamp(seconds: float) -> str:
     """Convert float seconds to HH:MM:SS.cs string."""
     total_ms = int(seconds * 100)
