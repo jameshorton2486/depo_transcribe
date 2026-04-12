@@ -20,4 +20,11 @@ tmp_app_window*.png
 
 .pytest_tmp*/
 .pytest_tmp_*/
+*.MP3
+*.mp3
+*.wav
+*.m4a
+*.mp4
+CONSOLIDATION_PROMPT.md.pdf
+**(2).docx
 
