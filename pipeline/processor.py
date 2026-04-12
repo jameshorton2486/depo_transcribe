@@ -3,13 +3,17 @@ pipeline/processor.py
 
 Block-first transcription pipeline controller.
 
+STATUS NOTE:
+This module is not the authoritative runtime correction entry point for the
+desktop app. The live UI flow uses core/correction_runner.py for deterministic
+corrections and spec_engine/ai_corrector.py for optional AI correction.
+
 Connects Deepgram JSON output to the spec_engine block processing pipeline.
 The active correction path is:
     build_blocks_from_deepgram  →  process_blocks  →  format_blocks_to_text
 
-The run_pipeline() function is the public API for external callers.
-AI-assisted correction is reserved for a future phase; the apply_ai flag
-is accepted but silently ignored until that module is built.
+The run_pipeline() function remains available for external/test callers.
+The apply_ai flag is legacy and is still ignored in this module.
 """
 
 from __future__ import annotations
@@ -33,8 +37,8 @@ def run_pipeline(
     Args:
         deepgram_json:  Assembled Deepgram result dict with 'utterances' key.
         job_config:     JobConfig instance or dict with confirmed_spellings etc.
-        apply_ai:       Reserved for future AI correction pass — ignored for now.
-        ai_rules:       Reserved for future use — ignored for now.
+        apply_ai:       Legacy flag — ignored in this module.
+        ai_rules:       Legacy placeholder — ignored.
 
     Returns:
         { "blocks": List[Block], "text": str }
@@ -42,13 +46,11 @@ def run_pipeline(
     blocks = build_blocks_from_deepgram(deepgram_json)
     blocks = process_blocks(blocks, job_config)
 
-    # apply_ai is reserved for Phase 2 — AI-assisted proper noun correction.
-    # When that module is built, it will be wired here.
     if apply_ai:
         import logging
         logging.getLogger(__name__).warning(
-            "run_pipeline: apply_ai=True but AI correction module is not "
-            "yet implemented. Continuing with deterministic corrections only."
+            "run_pipeline: apply_ai=True but this legacy module does not invoke "
+            "spec_engine.ai_corrector. Continuing with deterministic corrections only."
         )
 
     output = format_blocks_to_text(blocks)

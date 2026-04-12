@@ -26,6 +26,10 @@ def process_blocks(
     Apply the agreed block-based processing order.
     If run_logger is provided, snapshots and validation are logged per run.
     """
+    for block in blocks:
+        if not hasattr(block, "speaker_id"):
+            raise RuntimeError("Block missing speaker_id; utterance pipeline broken.")
+
     _log = run_logger
 
     if _log:

@@ -17,9 +17,6 @@ from spec_engine.speaker_resolver import normalize_speaker_id
 def build_blocks_from_deepgram(deepgram_json: Dict[str, Any]) -> List[Block]:
     """
     Convert Deepgram utterances into structured blocks.
-
-    If utterances are present but empty, fall back to a single transcript block so the
-    caller gets a clear, structured object instead of a silent empty pipeline.
     """
     if "utterances" not in deepgram_json:
         raise ValueError(
@@ -61,21 +58,12 @@ def build_blocks_from_deepgram(deepgram_json: Dict[str, Any]) -> List[Block]:
             )
         )
 
-    if blocks:
-        return blocks
+    if not blocks:
+        raise RuntimeError(
+            "block_builder received no utterances-backed blocks; pipeline invalid."
+        )
 
-    transcript_text = (deepgram_json.get("transcript") or "").strip()
-    if transcript_text:
-        return [
-            Block(
-                raw_text=transcript_text,
-                text=transcript_text,
-                speaker_id=None,
-                meta={"source": "transcript_fallback"},
-            )
-        ]
-
-    raise ValueError("Deepgram returned no utterances and no transcript text.")
+    return blocks
 
 
 _TEXT_ABBREV_RE = re.compile(

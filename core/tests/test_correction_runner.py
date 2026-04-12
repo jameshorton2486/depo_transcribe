@@ -88,8 +88,8 @@ def test_correction_runner_produces_corrected_file(monkeypatch):
         assert "Objection" in corrected_text or len(corrected_text) > 0
 
 
-def test_correction_runner_handles_missing_json_gracefully(monkeypatch):
-    """When no Deepgram JSON exists, runner falls back to text parsing."""
+def test_correction_runner_rejects_missing_json(monkeypatch):
+    """When no Deepgram JSON exists, runner must fail instead of parsing raw text."""
     from core.correction_runner import run_correction_job
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -112,7 +112,8 @@ def test_correction_runner_handles_missing_json_gracefully(monkeypatch):
             transcript_path=txt_path,
             done_callback=lambda r: results.append(r),
         )
-        assert results[0]["success"] is True
+        assert results[0]["success"] is False
+        assert "Deepgram JSON not found" in results[0]["error"]
 
 
 def test_format_blocks_to_text_delegates_to_emit_blocks(monkeypatch):
@@ -219,10 +220,9 @@ def test_run_correction_job_returns_processed_text_not_raw_text(monkeypatch):
 
     processed_blocks = [Block(speaker_id=1, text="Processed answer.", raw_text="")]
 
-    monkeypatch.setattr("core.correction_runner._find_deepgram_json", lambda _path: None)
     monkeypatch.setattr(
-        "spec_engine.block_builder.build_blocks_from_text",
-        lambda raw_text: [Block(speaker_id=1, text=raw_text, raw_text=raw_text)],
+        "spec_engine.block_builder.build_blocks_from_deepgram",
+        lambda deepgram_data: [Block(speaker_id=1, text="RAW INPUT SHOULD NOT BE RETURNED", raw_text="RAW INPUT SHOULD NOT BE RETURNED")],
     )
     monkeypatch.setattr(
         "spec_engine.processor.process_blocks",
@@ -239,8 +239,11 @@ def test_run_correction_job_returns_processed_text_not_raw_text(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         txt_path = os.path.join(tmpdir, "source.txt")
+        json_path = os.path.join(tmpdir, "source.json")
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("RAW INPUT SHOULD NOT BE RETURNED")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump({"utterances": [{"speaker": 1, "transcript": "RAW INPUT SHOULD NOT BE RETURNED", "words": []}]}, f)
 
         results = []
         run_correction_job(
@@ -266,10 +269,9 @@ def test_run_correction_job_passes_run_logger_to_process_blocks(monkeypatch):
 
     captured = {}
 
-    monkeypatch.setattr("core.correction_runner._find_deepgram_json", lambda _path: None)
     monkeypatch.setattr(
-        "spec_engine.block_builder.build_blocks_from_text",
-        lambda raw_text: [Block(speaker_id=1, text=raw_text, raw_text=raw_text)],
+        "spec_engine.block_builder.build_blocks_from_deepgram",
+        lambda deepgram_data: [Block(speaker_id=1, text="RAW INPUT", raw_text="RAW INPUT")],
     )
     monkeypatch.setattr(
         "core.correction_runner._load_job_config_for_transcript",
@@ -290,8 +292,11 @@ def test_run_correction_job_passes_run_logger_to_process_blocks(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         txt_path = os.path.join(tmpdir, "source.txt")
+        json_path = os.path.join(tmpdir, "source.json")
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("RAW INPUT")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump({"utterances": [{"speaker": 1, "transcript": "RAW INPUT", "words": []}]}, f)
 
         results = []
         run_correction_job(txt_path, done_callback=lambda r: results.append(r))
@@ -304,10 +309,9 @@ def test_run_correction_job_requires_verified_speaker_map(monkeypatch):
     from core.correction_runner import run_correction_job
     from spec_engine.models import Block
 
-    monkeypatch.setattr("core.correction_runner._find_deepgram_json", lambda _path: None)
     monkeypatch.setattr(
-        "spec_engine.block_builder.build_blocks_from_text",
-        lambda raw_text: [Block(speaker_id=1, text=raw_text, raw_text=raw_text)],
+        "spec_engine.block_builder.build_blocks_from_deepgram",
+        lambda deepgram_data: [Block(speaker_id=1, text="RAW INPUT", raw_text="RAW INPUT")],
     )
     monkeypatch.setattr(
         "core.correction_runner._load_job_config_for_transcript",
@@ -316,8 +320,11 @@ def test_run_correction_job_requires_verified_speaker_map(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         txt_path = os.path.join(tmpdir, "source.txt")
+        json_path = os.path.join(tmpdir, "source.json")
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("RAW INPUT")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump({"utterances": [{"speaker": 1, "transcript": "RAW INPUT", "words": []}]}, f)
 
         results = []
         run_correction_job(txt_path, done_callback=lambda r: results.append(r))
@@ -352,8 +359,7 @@ def test_run_correction_job_rejects_json_without_utterances(monkeypatch):
 def test_run_correction_job_rejects_empty_block_stream(monkeypatch):
     from core.correction_runner import run_correction_job
 
-    monkeypatch.setattr("core.correction_runner._find_deepgram_json", lambda _path: None)
-    monkeypatch.setattr("spec_engine.block_builder.build_blocks_from_text", lambda raw_text: [])
+    monkeypatch.setattr("spec_engine.block_builder.build_blocks_from_deepgram", lambda deepgram_data: [])
     monkeypatch.setattr(
         "core.correction_runner._load_job_config_for_transcript",
         lambda _path: {"ufm_fields": {"speaker_map_verified": True}, "confirmed_spellings": {}},
@@ -361,8 +367,11 @@ def test_run_correction_job_rejects_empty_block_stream(monkeypatch):
 
     with tempfile.TemporaryDirectory() as tmpdir:
         txt_path = os.path.join(tmpdir, "source.txt")
+        json_path = os.path.join(tmpdir, "source.json")
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write("RAW INPUT")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump({"utterances": [{"speaker": 1, "transcript": "RAW INPUT", "words": []}]}, f)
 
         results = []
         run_correction_job(txt_path, done_callback=lambda r: results.append(r))
