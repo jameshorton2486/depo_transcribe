@@ -23,14 +23,18 @@ def _setup_normalize_mocks(monkeypatch, tmp_path):
     return input_path, calls
 
 
-def test_aggressive_tier_includes_dynaudnorm(monkeypatch, tmp_path):
+def test_aggressive_tier_uses_speech_safe_filter_chain(monkeypatch, tmp_path):
     input_path, calls = _setup_normalize_mocks(monkeypatch, tmp_path)
 
     preprocessor.normalize_audio(str(input_path), config=preprocessor.AGGRESSIVE_CONFIG)
 
     ffmpeg_cmd = calls[0]
     filter_chain = ffmpeg_cmd[ffmpeg_cmd.index("-af") + 1]
-    assert "dynaudnorm=p=0.9:m=100" in filter_chain
+    assert "pan=mono|c0=0.5c0+0.5c1" in filter_chain
+    assert "highpass=f=80" in filter_chain
+    assert "loudnorm=I=-16:TP=-1.5:LRA=11" in filter_chain
+    assert "dynaudnorm" not in filter_chain
+    assert "afftdn" not in filter_chain
 
 
 def test_default_tier_does_not_include_dynaudnorm(monkeypatch, tmp_path):

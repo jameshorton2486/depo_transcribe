@@ -46,7 +46,10 @@ def test_extract_case_info_from_pdf_uses_regex_case_vocab_fallback(monkeypatch):
 
 
 def test_extract_case_info_from_pdf_uses_intake_deponent_for_first_and_last_name(monkeypatch):
-    sample_text = "Notice of deposition for Chris Epley."
+    sample_text = (
+        "Notice of deposition for Chris Epley in Cause Number 2025-CI-19595 "
+        "scheduled for April 8, 2026 before the court reporter."
+    )
     intake_result = SimpleNamespace(
         cause_number="2025-CI-19595",
         deponents=[{"name": "Chris Epley"}],
