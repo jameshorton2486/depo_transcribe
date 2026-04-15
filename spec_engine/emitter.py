@@ -22,12 +22,14 @@ LINE BREAK RULE:
   textwrap is intentionally NOT used anywhere in this file.
 """
 
-import docx.enum.text
 import re
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+from docx.enum.text import (
+    WD_ALIGN_PARAGRAPH,
+    WD_BREAK,
+    WD_LINE_SPACING,
+    WD_TAB_ALIGNMENT,
+)
 from docx.shared import Pt, RGBColor, Twips
 
 from .models import LineType
@@ -46,7 +48,8 @@ FONT_SIZE = Pt(12)
 TAB_720  = 720    # 0.5" — Q./A. line marker
 TAB_1440 = 1440   # 1.0" — Q./A. text start
 TAB_2160 = 2160   # 1.5" — speaker line text start
-_STANDARD_TABS = [TAB_720, TAB_1440, TAB_2160]
+TAB_CENTER = 4680  # 3.25" — centered headers / witness-name line
+_STANDARD_TABS = [TAB_720, TAB_1440, TAB_2160, TAB_CENTER]
 
 
 # ── Q/A pair safety tracker (Spec Section 5.5) ────────────────────────────────
@@ -68,14 +71,18 @@ class QAPairTracker:
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _apply_standard_tabs(para) -> None:
-    pPr = para._p.get_or_add_pPr()
-    tabs_elem = OxmlElement("w:tabs")
-    for stop_twips in _STANDARD_TABS:
-        tab = OxmlElement("w:tab")
-        tab.set(qn("w:val"), "left")
-        tab.set(qn("w:pos"), str(stop_twips))
-        tabs_elem.append(tab)
-    pPr.append(tabs_elem)
+    _set_paragraph_tabs(para, _STANDARD_TABS)
+
+
+def _set_paragraph_tabs(para, tab_stops) -> None:
+    for stop_twips in tab_stops or []:
+        alignment = (
+            WD_TAB_ALIGNMENT.CENTER if stop_twips == TAB_CENTER else WD_TAB_ALIGNMENT.LEFT
+        )
+        para.paragraph_format.tab_stops.add_tab_stop(
+            Twips(stop_twips),
+            alignment=alignment,
+        )
 
 
 def _set_paragraph_format(para, tab_stops=None):
@@ -84,14 +91,7 @@ def _set_paragraph_format(para, tab_stops=None):
     pf.space_before = Pt(0)
     pf.space_after  = Pt(0)
     if tab_stops:
-        pPr = para._p.get_or_add_pPr()
-        tabs_elem = OxmlElement('w:tabs')
-        for stop_twips in tab_stops:
-            tab = OxmlElement('w:tab')
-            tab.set(qn('w:val'), 'left')
-            tab.set(qn('w:pos'), str(stop_twips))
-            tabs_elem.append(tab)
-        pPr.append(tabs_elem)
+        _set_paragraph_tabs(para, tab_stops)
 
 
 def _add_run(para, text, bold=False, color=COLOR_BLACK):
@@ -118,6 +118,38 @@ def _split_speaker_text(text: str) -> tuple[str, str]:
         label, content = text.split(":", 1)
         return label + ":", content.strip()
     return "", text
+
+
+def _validate_emit_input(line_type: LineType, text: str) -> str:
+    raw_text = text or ""
+    clean_text = _clean(raw_text)
+
+    if line_type in {LineType.Q, LineType.A, LineType.SP} and not clean_text:
+        raise ValueError(f"{line_type.value} line cannot be empty")
+
+    if raw_text.startswith("\t\t\t\t\t"):
+        raise ValueError(f"{line_type.value} line contains more than four leading tabs")
+
+    if line_type in {LineType.Q, LineType.A, LineType.SP} and raw_text.startswith("    "):
+        raise ValueError(f"{line_type.value} line uses spaces instead of tabs for indentation")
+
+    if line_type == LineType.SP and ":" in raw_text:
+        label, _content = _split_speaker_text(raw_text)
+        if not label.rstrip(":").strip():
+            raise ValueError("Speaker line is missing a label before ':'")
+
+    return clean_text
+
+
+def _qa_visual_text(prefix: str, text: str) -> str:
+    return f"\t{prefix}.  {text}"
+
+
+def _speaker_visual_text(text: str) -> tuple[str, str, str]:
+    label, content = _split_speaker_text(text)
+    if label:
+        return label, content, f"\t\t\t{label}  {content}"
+    return "", text, f"\t\t\t{text}"
 
 
 # ── Plain-text block output (textbox + _corrected.txt) ───────────────────────
@@ -167,16 +199,18 @@ def emit_blocks(blocks: list) -> str:
 
 def emit_q_line(doc: Document, text: str):
     """Spec 3.3 Type 1 — Question: Tab + Q.  + text (one paragraph)."""
+    clean_text = _validate_emit_input(LineType.Q, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para, [TAB_720, TAB_1440])
-    _add_run(para, f'\tQ.  {_clean(text)}')
+    _add_run(para, _qa_visual_text("Q", clean_text))
 
 
 def emit_a_line(doc: Document, text: str):
     """Spec 3.3 Type 2 — Answer: Tab + A.  + text (one paragraph)."""
+    clean_text = _validate_emit_input(LineType.A, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para, [TAB_720, TAB_1440])
-    _add_run(para, f'\tA.  {_clean(text)}')
+    _add_run(para, _qa_visual_text("A", clean_text))
 
 
 def emit_sp_line(doc: Document, text: str):
@@ -184,51 +218,57 @@ def emit_sp_line(doc: Document, text: str):
     Spec 3.3 Type 3 — Speaker Label: 3 tabs + BOLD LABEL: + two spaces + text.
     One paragraph. Word wraps naturally.
     """
-    label, content = _split_speaker_text(text)
+    clean_text = _validate_emit_input(LineType.SP, text)
+    label, content, _visual_text = _speaker_visual_text(clean_text)
     para = doc.add_paragraph()
     _set_paragraph_format(para, [TAB_720, TAB_1440, TAB_2160])
     if not label:
-        _add_run(para, '\t\t\t' + _clean(text))
+        _add_run(para, _visual_text)
     else:
         _add_run(para, '\t\t\t', bold=False)
         _add_run(para, label, bold=True)
-        _add_run(para, '  ' + _clean(content), bold=False)
+        _add_run(para, '  ' + content, bold=False)
 
 
 def emit_pn_line(doc: Document, text: str):
     """Spec 3.3 Type 4 — Parenthetical: 4 tabs, navy color (one paragraph)."""
+    clean_text = _validate_emit_input(LineType.PN, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para, [TAB_2160])
-    _add_run(para, f'\t\t\t\t{_clean(text)}', color=COLOR_NAVY)
+    _add_run(para, f'\t\t\t\t{clean_text}', color=COLOR_NAVY)
 
 
 def emit_flag_line(doc: Document, text: str):
     """Spec 3.3 Type 5 — Scopist Flag: bold orange (one paragraph)."""
+    clean_text = _validate_emit_input(LineType.FLAG, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para)
-    _add_run(para, _clean(text), bold=True, color=COLOR_ORANGE)
+    _add_run(para, clean_text, bold=True, color=COLOR_ORANGE)
 
 
 def emit_header_line(doc: Document, text: str):
     """Spec 4.1 — Examination header: centered bold."""
+    clean_text = _validate_emit_input(LineType.HEADER, text)
     para = doc.add_paragraph()
-    _set_paragraph_format(para)
+    _set_paragraph_format(para, [TAB_CENTER])
     para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_run(para, _clean(text), bold=True)
+    _add_run(para, clean_text, bold=True)
 
 
 def emit_by_line(doc: Document, text: str):
     """Spec 4.1 — BY attribution line: left-aligned."""
+    clean_text = _validate_emit_input(LineType.BY, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para)
-    _add_run(para, _clean(text))
+    _add_run(para, clean_text)
 
 
 def emit_plain_line(doc: Document, text: str):
     """Plain transcript text — no label, no special styling."""
+    clean_text = _validate_emit_input(LineType.PLAIN, text)
     para = doc.add_paragraph()
     _set_paragraph_format(para)
-    _add_run(para, _clean(text))
+    _add_run(para, clean_text)
 
 
 def emit_line(doc: Document, line_type: LineType, text: str):
@@ -317,18 +357,14 @@ def emit_line_numbered(
     Emit a line with a left-margin line number. One paragraph per block.
     Word handles visual word-wrap. No textwrap inside blocks.
     """
-    clean = _clean(text)
+    clean = _validate_emit_input(line_type, text)
 
     if line_type == LineType.Q:
-        visual_line = f'\tQ.  {clean}'
+        visual_line = _qa_visual_text("Q", clean)
     elif line_type == LineType.A:
-        visual_line = f'\tA.  {clean}'
+        visual_line = _qa_visual_text("A", clean)
     elif line_type == LineType.SP:
-        label, content = _split_speaker_text(text)
-        if label:
-            visual_line = f'\t\t\t{label}  {_clean(content)}'
-        else:
-            visual_line = '\t\t\t' + clean
+        label, content, visual_line = _speaker_visual_text(clean)
     elif line_type == LineType.PN:
         visual_line = '\t\t\t\t' + clean
     else:
@@ -354,11 +390,11 @@ def emit_line_numbered(
     num_run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
 
     if line_type == LineType.SP:
-        label, content = _split_speaker_text(text)
+        label, content, _visual_text = _speaker_visual_text(clean)
         if label and (':' in visual_line):
             _add_run(para, '\t\t\t', bold=False)
             _add_run(para, label, bold=True)
-            _add_run(para, '  ' + _clean(content), bold=False)
+            _add_run(para, '  ' + content, bold=False)
         else:
             content_run = para.add_run(visual_line)
             content_run.font.color.rgb = COLOR_BLACK

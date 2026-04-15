@@ -10,7 +10,7 @@ from docx import Document
 import pytest
 
 from spec_engine.document_builder import _build_witness_intro_lines, process_transcript
-from spec_engine.emitter import TAB_720, TAB_1440, TAB_2160, _STANDARD_TABS
+from spec_engine.emitter import TAB_720, TAB_1440, TAB_2160, TAB_CENTER, _STANDARD_TABS
 from spec_engine.models import Block, BlockType, JobConfig, LineType
 from spec_engine.qa_fixer import _merge_reporter_preamble_blocks
 
@@ -206,7 +206,8 @@ def test_emitter_uses_current_standard_tab_stops():
     assert TAB_720 == 720
     assert TAB_1440 == 1440
     assert TAB_2160 == 2160
-    assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160]
+    assert TAB_CENTER == 4680
+    assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160, TAB_CENTER]
 
 
 def test_witness_intro_lines_use_metadata_template():

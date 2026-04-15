@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from docx.shared import Twips
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -204,8 +205,14 @@ class TestFix5D_SharedTabStopHelper:
         assert _STANDARD_TABS is not None
 
     def test_standard_tabs_contains_correct_values(self):
-        from spec_engine.emitter import TAB_720, TAB_1440, TAB_2160, _STANDARD_TABS
-        assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160]
+        from spec_engine.emitter import (
+            TAB_720,
+            TAB_1440,
+            TAB_2160,
+            TAB_CENTER,
+            _STANDARD_TABS,
+        )
+        assert _STANDARD_TABS == [TAB_720, TAB_1440, TAB_2160, TAB_CENTER]
 
     def test_apply_standard_tabs_helper_exists(self):
         from spec_engine.emitter import _apply_standard_tabs
@@ -236,6 +243,28 @@ class TestFix5D_SharedTabStopHelper:
         a_text = "".join(r.text for r in doc.paragraphs[1].runs)
         assert "Q." in q_text
         assert "A." in a_text
+
+    def test_header_line_uses_center_tab_stop(self):
+        from spec_engine.emitter import TAB_CENTER, create_document, emit_header_line
+
+        doc = create_document()
+        emit_header_line(doc, "EXAMINATION")
+        tab_positions = [stop.position for stop in doc.paragraphs[0].paragraph_format.tab_stops]
+        assert Twips(TAB_CENTER) in tab_positions
+
+    def test_question_emitter_rejects_empty_text(self):
+        from spec_engine.emitter import create_document, emit_q_line
+
+        doc = create_document()
+        with pytest.raises(ValueError, match="Q line cannot be empty"):
+            emit_q_line(doc, "   ")
+
+    def test_speaker_emitter_rejects_missing_label_before_colon(self):
+        from spec_engine.emitter import create_document, emit_sp_line
+
+        doc = create_document()
+        with pytest.raises(ValueError, match="missing a label"):
+            emit_sp_line(doc, ":  Objection.")
 
 
 class TestFix5E_LinesPerPageDocumentation:
@@ -449,7 +478,7 @@ class TestPhase5ExitGate:
 
     def test_standard_tabs_constant_exists(self):
         from spec_engine.emitter import _STANDARD_TABS
-        assert len(_STANDARD_TABS) == 3
+        assert len(_STANDARD_TABS) == 4
 
     def test_lines_per_page_is_25(self):
         from spec_engine.emitter import LineNumberTracker
