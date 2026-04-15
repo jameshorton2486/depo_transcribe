@@ -238,6 +238,49 @@ def test_fix_qa_structure_splits_answer_swallowing_next_question():
     assert result[1].speaker_id == 2
 
 
+def test_fix_qa_structure_splits_answer_question_answer_chain():
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=1,
+        speaker_name="THE WITNESS",
+        speaker_role="WITNESS",
+        block_type=BlockType.ANSWER,
+        text="Yes. Could you state your full name for the record, please? Matthew Allan Coger.",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [
+        BlockType.ANSWER, BlockType.QUESTION, BlockType.ANSWER
+    ]
+    assert result[0].text == "Yes."
+    assert result[1].text == "Could you state your full name for the record, please?"
+    assert result[1].speaker_id == 2
+    assert result[2].text == "Matthew Allan Coger."
+    assert result[2].speaker_id == 1
+
+
+def test_classify_blocks_witness_mislabel_question_becomes_question():
+    blocks = [
+        Block(
+            speaker_id=1,
+            text="Do you solemnly swear to tell the truth, the whole truth, and nothing but the truth so help you God? I do.",
+            raw_text="",
+            speaker_role="WITNESS",
+            speaker_name="THE WITNESS",
+        ),
+    ]
+
+    results = classify_blocks(blocks)
+
+    assert results[0].block_type == BlockType.QUESTION
+
+
 @pytest.mark.skip(reason="Imports JobConfigDialog from non-existent 'main' module — no equivalent in app.py")
 def test_auto_fill_spellings_adds_reporter_variants(monkeypatch):
     pytest.importorskip("tkinter", reason="tkinter not available in headless environment")

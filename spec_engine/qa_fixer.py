@@ -20,6 +20,34 @@ ANSWER_TOKENS = (
 
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will", "were", "was", "have", "has", "had")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
+QUESTION_LEAD_PHRASES = (
+    "please state",
+    "would you please",
+    "could you please",
+    "would you",
+    "could you",
+    "will you",
+    "can you",
+    "have you",
+    "had you",
+    "are you",
+    "were you",
+    "was there",
+    "were there",
+    "do you solemnly swear",
+    "do you affirm",
+)
+COLLOQUY_STARTERS = (
+    "let's ",
+    "let me ",
+    "just ",
+    "okay",
+    "all right",
+    "and ",
+    "so ",
+    "now ",
+    "then ",
+)
 
 TOKEN_RE = re.compile(r"[a-z0-9']+")
 SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
@@ -75,11 +103,36 @@ def _looks_like_question_text(text: str) -> bool:
     if not normalized:
         return False
     lowered = normalized.lower()
+    imperative_match = any(lowered.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
+    if lowered.startswith("tell ") and not lowered.startswith(("tell me ", "tell us ", "tell the ")):
+        imperative_match = False
     return (
         normalized.endswith("?")
         or any(lowered.startswith(word + " ") for word in QUESTION_WORDS)
-        or any(lowered.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
+        or imperative_match
+        or any(lowered.startswith(phrase + " ") for phrase in QUESTION_LEAD_PHRASES)
     )
+
+
+def _looks_like_generic_answer_fragment(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized or _looks_like_question_text(normalized):
+        return False
+
+    lowered = normalized.lower()
+    if lowered.startswith(COLLOQUY_STARTERS):
+        return False
+    if lowered.startswith(ANSWER_TOKENS):
+        return True
+
+    words = normalized.split()
+    if len(words) > 8:
+        return False
+
+    if re.fullmatch(r"[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){0,5}\.?", normalized):
+        return True
+
+    return normalized[0].isupper()
 
 
 def _extract_answer_and_continuation(remainder: str) -> tuple[str, str | None] | None:
@@ -171,6 +224,10 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
 
         q_part, remainder = match.groups()
         extracted = _extract_answer_and_continuation(remainder)
+        if extracted is None and block.meta.get("split_followup_question_from_answer"):
+            stripped_remainder = remainder.strip()
+            if stripped_remainder and _looks_like_generic_answer_fragment(stripped_remainder):
+                extracted = (stripped_remainder, None)
         if not extracted:
             new_blocks.append(block)
             continue
@@ -263,7 +320,11 @@ def split_inline_questions_from_answers(blocks: List[Block], job_config: Any = N
             speaker_name=examiner_name,
             block_type=BlockType.QUESTION,
             words=[],
-            meta={**block.meta, "split_followup_question": True},
+            meta={
+                **block.meta,
+                "split_followup_question": True,
+                "split_followup_question_from_answer": True,
+            },
         )
         new_blocks.extend([a_block, q_block])
 
@@ -351,6 +412,7 @@ def fix_qa_structure(blocks: List[Block], job_config: Any = None) -> List[Block]
     blocks = _merge_reporter_preamble_blocks(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
     blocks = split_inline_questions_from_answers(blocks, job_config=job_config)
+    blocks = split_inline_answers(blocks, job_config=job_config)
     blocks = _merge_orphaned_continuations(blocks)
     blocks = _remove_near_duplicate_blocks(blocks)
     return blocks

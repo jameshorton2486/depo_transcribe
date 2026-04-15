@@ -120,6 +120,23 @@ CORRECT_MID_RE = re.compile(
 TRAILING_OKAY_RE = re.compile(r'\s{1,2}Okay\.$')
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
+QUESTION_LEAD_PHRASES = (
+    "please state",
+    "would you please",
+    "could you please",
+    "would you",
+    "could you",
+    "will you",
+    "can you",
+    "have you",
+    "had you",
+    "are you",
+    "were you",
+    "was there",
+    "were there",
+    "do you solemnly swear",
+    "do you affirm",
+)
 REPORTER_ADMIN_MARKERS = (
     "for the record",
     "on the record",
@@ -266,6 +283,22 @@ def _sentence_time(time_str: Optional[str], fallback: str = "[time]") -> str:
     return (time_str or fallback).rstrip(".")
 
 
+def _looks_like_question_text(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    imperative_match = any(lowered.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
+    if lowered.startswith("tell ") and not lowered.startswith(("tell me ", "tell us ", "tell the ")):
+        imperative_match = False
+    return (
+        normalized.endswith("?")
+        or any(lowered.startswith(word + " ") for word in QUESTION_WORDS)
+        or imperative_match
+        or any(lowered.startswith(phrase + " ") for phrase in QUESTION_LEAD_PHRASES)
+    )
+
+
 def _looks_like_answer_after_question(text: str, speaker_label_upper: str = "") -> bool:
     """
     Heuristic guard for diarization failures where the witness answer is
@@ -405,7 +438,10 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
         elif OBJECTION_START_RE.match(text):
             block.block_type = BlockType.SPEAKER
         elif resolved_role == ROLE_WITNESS or "WITNESS" in role:
-            block.block_type = BlockType.ANSWER
+            if _looks_like_question_text(text):
+                block.block_type = BlockType.QUESTION
+            else:
+                block.block_type = BlockType.ANSWER
         elif (
             resolved_role in (ROLE_REPORTER, ROLE_VIDEOGRAPHER, ROLE_INTERPRETER)
             or any(marker in role for marker in ("REPORTER", "VIDEOGRAPHER", "INTERPRETER"))
@@ -427,15 +463,11 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
             )
             if _attorney_label_answer:
                 block.block_type = BlockType.ANSWER
-            elif (
-                text.endswith("?")
-                or any(lower.startswith(word + " ") for word in QUESTION_WORDS)
-                or _imperative_fires
-            ):
+            elif _looks_like_question_text(text) or _imperative_fires:
                 block.block_type = BlockType.QUESTION
             else:
                 block.block_type = BlockType.COLLOQUY
-        elif text.endswith("?"):
+        elif _looks_like_question_text(text):
             block.block_type = BlockType.QUESTION
         elif any(lower.startswith(token) for token in EMBEDDED_ANSWER_STARTERS):
             block.block_type = BlockType.ANSWER
@@ -669,6 +701,21 @@ def classify_block(
         return results
 
     if sid == job_config.witness_id:
+        if _looks_like_question_text(text):
+            split = _detect_embedded_answer(text, job_config)
+            if split:
+                q_text, a_text, continuation = split
+                results.append((LineType.Q, q_text))
+                results.append((LineType.A, a_text))
+                if continuation:
+                    results.append((LineType.Q, continuation))
+                    state.qa_tracker_last_was_q = True
+                else:
+                    state.qa_tracker_last_was_q = False
+                return results
+            results.append((LineType.Q, text))
+            state.qa_tracker_last_was_q = True
+            return results
         results.append((LineType.A, text))
         state.qa_tracker_last_was_q = False
         return results
