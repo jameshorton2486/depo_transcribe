@@ -13,6 +13,11 @@ def test_fix_oath_phrase():
     assert fix_universal_legal_phrases("so help you guide") == "so help you God"
 
 
+def test_fix_oath_phrase_not_applied_outside_oath_context():
+    result = fix_universal_legal_phrases("He texted the phrase so help you guide to mock the oath.")
+    assert "so help you guide" in result
+
+
 def test_fix_mope_deposition():
     assert fix_universal_legal_phrases("this mope deposition") == "this remote deposition"
 

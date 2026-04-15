@@ -294,44 +294,44 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     # ── Objection garble — single word variants → "Objection." ──────────────
     # These are universal: apply to every deposition regardless of case.
     # Source: DeproPro Reference Rev 2, Table 5 (Q/A Classification)
-    (r'^\s*Injection\b(?!\s+(?:form|point|site|therapy|treatment|cortisone|steroid|trigger))[.]?',
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Injection\b(?!\s+(?:form|point|site|therapy|treatment|cortisone|steroid|trigger))[.]?',
      'Objection.'),
-    (r'\bInfection\b[.]?',              'Objection.'),
-    (r'\bDetection\b[.]?',              'Objection.'),
-    (r'\bProtection\b(?!\s+order)[.]?', 'Objection.'),
-    (r'\bPerfection\b[.]?',             'Objection.'),
-    (r'\bEviction\b[.]?',               'Objection.'),
-    (r'\bDefinition\b[.]?',             'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Infection\b[.]?',              'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Detection\b[.]?',              'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Protection\b(?!\s+order)[.]?', 'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perfection\b[.]?',             'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Eviction\b[.]?',               'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Definition\b[.]?',             'Objection.'),
 
     # ── Objection + Form two-word variants → "Objection. Form." ─────────────
-    (r'\bInjection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
-    (r'\bDirection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Injection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Direction\s+[Ff]orm\b[.]?',   'Objection. Form.'),
 
     # ── Form and leading variants → "Form and leading." ──────────────────────
-    (r'\bFormer\s+[Ll]eaving\b[.]?',    'Form and leading.'),
-    (r'\bForm\s+and\s+[Ll]eaving\b[.]?','Form and leading.'),
-    (r'\bForm\s+and\s+[Ll]egal\b[.]?',  'Form and leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Former\s+[Ll]eaving\b[.]?',    'Form and leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Form\s+and\s+[Ll]eaving\b[.]?','Form and leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Form\s+and\s+[Ll]egal\b[.]?',  'Form and leading.'),
 
     # ── Leading variants → "Leading." ────────────────────────────────────────
-    (r'\bBleeding\b[.]?',               'Leading.'),
-    (r'(?i)\b(Objection[.,]\s{1,3})Leaving\b[.]?', r'\1Leading.'),
-    (r'\bWarming\b[.]?',                'Leading.'),
-    (r'\bWarm\s+[Ll]eading\b[.]?',      'Leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Bleeding\b[.]?',               'Leading.'),
+    (r'(?i)^\s*(?:[A-Z][A-Z.\s]+:\s*)?(Objection[.,]\s{1,3})Leaving\b[.]?', r'\1Leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Warming\b[.]?',                'Leading.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Warm\s+[Ll]eading\b[.]?',      'Leading.'),
 
     # ── Pass the witness variants → "Pass the witness." ──────────────────────
     # WARNING: "pass away" is intentionally excluded — it means to die.
-    (r'\bPast\s+[Ww]itness\b[.]?',      'Pass the witness.'),
-    (r'\bPastor\s+[Ww]itness\b[.]?',    'Pass the witness.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Past\s+[Ww]itness\b[.]?',      'Pass the witness.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Pastor\s+[Ww]itness\b[.]?',    'Pass the witness.'),
     # ── Additional objection garbles (confirmed across multiple depositions) ──
-    (r'\bDissection\b[.]?',              'Objection.'),
-    (r'\bPerception\b[.]?',              'Objection.'),
-    (r'\bAddiction\b[.]?',               'Objection.'),
-    (r'\bDeflection\b[.]?',              'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Dissection\b[.]?',              'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perception\b[.]?',              'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\b[.]?',               'Objection.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\b[.]?',              'Objection.'),
     # Combined forms of the new variants
-    (r'\bDissection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
-    (r'\bPerception\s+[Ff]orm\b[.]?',    'Objection. Form.'),
-    (r'\bAddiction\s+[Ff]orm\b[.]?',     'Objection. Form.'),
-    (r'\bDeflection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Dissection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perception\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\s+[Ff]orm\b[.]?',     'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
     # "Counsel, state the basis" — garbled version of attorney's request
     (r'\bcan\s+cancel\s+state\s+the\s+basis\b',  'Counsel, state the basis'),
     (r'\bcancel\s+state\s+the\s+basis\b',         'Counsel, state the basis'),
@@ -342,13 +342,6 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\b[Bb]etty\s+[Dd]ump\b',     'belly dump'),
     # "super dump" — type of dump truck. Deepgram hears "dumb"
     (r'\bsuper\s+dumb\b',            'super dump'),
-    # "pre-trip inspection" — mandatory CDL inspection. Deepgram hears "free"
-    (r'\bfree\s+trip\b',             'pre-trip'),
-    (r'\bfree-trip\b',               'pre-trip'),
-    (r'\bfree\s+trip\s+inspection\b','pre-trip inspection'),
-    # "scale house" — DOT weigh station. Deepgram hears "scaler"
-    (r'\bscaler\s+house\b',          'scale house'),
-    (r'\bscaler\s+houses?\b',        'scale house'),
     # "CDL handbook" / "CDL manual" — Deepgram hears "CDO" or "CEO"
     (r'\bCDO\s+handbook\b',          'CDL handbook'),
     (r'\bCDO\s+manual\b',            'CDL manual'),
@@ -356,16 +349,9 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bCEO\s+manual\b',            'CDL manual'),
     (r'\bCVL\s+handbook\b',          'CDL handbook'),
     (r'\bCVL\s+manual\b',            'CDL manual'),
-    # "tractor trailer" spacing variant
-    (r'(?<!semi-)(?<!full-)(?<!double-)\btrailer\s+trailer\b', 'tractor trailer'),
-    (r'\btrucker\s+trailer\b',       'tractor trailer'),
     # "bill of lading" — Deepgram garbles
     (r'\bbill\s+of\s+[Ll]ayding\b',  'bill of lading'),
     (r'\bbill\s+of\s+[Ll]aden\b',    'bill of lading'),
-    # "hours of service" — HOS regulations
-    (r'\bours\s+of\s+service\b',     'hours of service'),
-    # "out of service" — DOT violation type
-    (r'\bout\s+of\s+server\b',       'out of service'),
     # Exhibit number formatting — Morson's Rule 217
     # exhibit 15 / exhibit no 15 / exhibit number 15 → Exhibit No. 15
     (r'\b[Ee]xhibit\s+[Nn]umber\s+(\d+)\b',  r'Exhibit No. \1'),
@@ -381,8 +367,6 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
      '408th Judicial District'),
     (r'\b408\s+[Jj]udicial\s+[Dd]istrict\b',
      '408th Judicial District'),
-    # "Cause Number" preamble garbles — Deepgram mishears "cop number"
-    (r'\bcop\s+number\b',            'Cause Number'),
     (r'\bcaught\s+number\b',         'Cause Number'),
     (r'\bcause\s+numbers?\b',        'Cause Number'),
     # "non-CDL" split forms
@@ -765,23 +749,14 @@ def apply_universal_corrections(
 
 def fix_depot_mishearing(text: str) -> str:
     """
-    Normalize Deepgram's legal false-cognate "depot/depots" to deposition terms.
+    Preserve literal "depot" language.
 
-    This is limited to non-objection, non-parenthetical, non-quoted spans so the
-    verbatim legal record remains intact where these deterministic rules must not fire.
+    Earlier builds rewrote "depot/depots" to deposition terms. That is not
+    safe for verbatim transcripts because depot is a legitimate noun in many
+    cases. The function remains as a compatibility shim and intentionally does
+    nothing.
     """
-    def _replace(segment: str) -> str:
-        return re.sub(
-            r'\bdepots?\b',
-            lambda m: _preserve_match_case(
-                m.group(0),
-                'depositions' if m.group(0).lower() == 'depots' else 'deposition',
-            ),
-            segment,
-            flags=re.IGNORECASE,
-        )
-
-    return _apply_outside_protected_segments(text, _replace)
+    return text
 
 
 def fix_cause_number_prefix(text: str) -> str:
@@ -793,7 +768,7 @@ def fix_cause_number_prefix(text: str) -> str:
     """
     def _replace(segment: str) -> str:
         return re.sub(
-            r'\b(?:cop|cost|cause)\s+numbers?\b',
+            r'\b(?:cause|caught)\s+numbers?\b',
             'Cause Number',
             segment,
             flags=re.IGNORECASE,
@@ -934,8 +909,6 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bmope deposition\b', 'remote deposition'),
         (r'\belectronic books\b', 'electronic logs'),
         (r'\bRS[\s-]?22 insurance\b', 'SR-22 insurance'),
-        (r'\bso help you guide\b', 'so help you God'),
-        (r'\bso help you god\b', 'so help you God'),
         (r'\byour\s+remit\s+for\s+this\s+remote\s+deposition\b', 'your agreement for this remote deposition'),
         (r'\bstate\s+your\s+remit\s+for\b', 'state your agreement for'),
         (r'\bsame\s+effect\s+as\s+a\s+weapon\s+in\s+the\s+courthouse\b', 'same force and effect as if given in open court'),
@@ -964,6 +937,11 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bby\s+airport\b', 'by the airport'),
     ]
 
+    oath_context = re.compile(
+        r'\b(sworn|swear|affirm|raise\s+your\s+right\s+hand|solemnly)\b',
+        re.IGNORECASE,
+    )
+
     def _replace(segment: str) -> str:
         working = segment
         for pattern, replacement in replacements:
@@ -977,6 +955,23 @@ def fix_universal_legal_phrases(text: str) -> str:
                 working,
                 flags=re.IGNORECASE,
             )
+        phrase_pattern = re.compile(r'\bso help you (guide|god)\b', re.IGNORECASE)
+
+        def _fix_oath_phrase(match: re.Match) -> str:
+            prefix = working[:match.start()]
+            suffix = working[match.end():]
+            prefix_tokens = re.findall(r'\b[\w-]+\b', prefix)[-6:]
+            suffix_tokens = re.findall(r'\b[\w-]+\b', suffix)[:6]
+            local_window = ' '.join(prefix_tokens + [match.group(0)] + suffix_tokens)
+            if oath_context.search(local_window) or re.fullmatch(
+                r'\s*so help you (?:guide|god)\s*\.?\s*',
+                working,
+                flags=re.IGNORECASE,
+            ):
+                return 'so help you God'
+            return match.group(0)
+
+        working = phrase_pattern.sub(_fix_oath_phrase, working)
         return _fix_eod_to_eld(working)
 
     return _apply_outside_protected_segments(text, _replace)
@@ -996,11 +991,19 @@ def fix_traffic_citation_mishearing(text: str) -> str:
     )
 
     def _replace(segment: str) -> str:
-        if not traffic_context.search(segment):
-            return segment
+        def _replace_match(match: re.Match) -> str:
+            prefix = segment[:match.start()]
+            suffix = segment[match.end():]
+            prefix_tokens = re.findall(r'\b[\w-]+\b', prefix)[-6:]
+            suffix_tokens = re.findall(r'\b[\w-]+\b', suffix)[:6]
+            local_window = ' '.join(prefix_tokens + [match.group(0)] + suffix_tokens)
+            if traffic_context.search(local_window):
+                return _preserve_phrase_case(match.group(0), 'citation')
+            return match.group(0)
+
         return re.sub(
             r'\bsanitation\b',
-            lambda m: _preserve_phrase_case(m.group(0), 'citation'),
+            _replace_match,
             segment,
             flags=re.IGNORECASE,
         )
@@ -2184,14 +2187,6 @@ def clean_block(
     _before = text  # snapshot for block-level summary log
 
     text = apply_multiword_corrections(text, records, block_index, state=state)
-    text = _apply_safe_rewrite(
-        text,
-        fix_depot_mishearing(text),
-        records,
-        block_index,
-        'fix_depot_mishearing',
-        state=state,
-    )
     text = _apply_safe_rewrite(
         text,
         fix_cause_number_prefix(text),

@@ -28,9 +28,10 @@ def test_mhmm_normalized():
     assert text == "Mm-hmm."
 
 
-def test_trailer_trailer_to_tractor_trailer():
+def test_trailer_trailer_preserved_verbatim():
     text, _, _ = clean_block("He was driving a trailer trailer.", _cfg())
-    assert "tractor trailer" in text.lower()
+    assert "tractor trailer" not in text.lower()
+    assert "trailer." in text.lower()
 
 
 def test_semi_trailer_trailer_is_not_rewritten():

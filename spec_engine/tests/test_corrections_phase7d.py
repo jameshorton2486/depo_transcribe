@@ -88,3 +88,8 @@ def test_fix_traffic_citation_with_court_context():
 
 def test_fix_traffic_citation_officer_context():
     assert "citation" in fix_traffic_citation_mishearing("the officer gave me a sanitation")
+
+
+def test_fix_traffic_citation_does_not_fire_on_distant_context():
+    text = "The sanitation worker arrived at the building and fifteen people later the officer wrote a report."
+    assert "sanitation" in fix_traffic_citation_mishearing(text)

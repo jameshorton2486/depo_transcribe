@@ -6,11 +6,11 @@ from spec_engine.corrections import (
 
 
 def test_fix_depot_mishearing_plural():
-    assert fix_depot_mishearing("keep these depots") == "keep these depositions"
+    assert fix_depot_mishearing("keep these depots") == "keep these depots"
 
 
 def test_fix_depot_mishearing_singular():
-    assert fix_depot_mishearing("doing two depot") == "doing two deposition"
+    assert fix_depot_mishearing("doing two depot") == "doing two depot"
 
 
 def test_fix_depot_mishearing_preserves_other_words():
@@ -18,11 +18,11 @@ def test_fix_depot_mishearing_preserves_other_words():
 
 
 def test_fix_cause_number_prefix_cop():
-    assert fix_cause_number_prefix("cop number 2025CI08060") == "Cause Number 2025CI08060"
+    assert fix_cause_number_prefix("cop number 2025CI08060") == "cop number 2025CI08060"
 
 
 def test_fix_cause_number_prefix_cost():
-    assert fix_cause_number_prefix("cost number 2025") == "Cause Number 2025"
+    assert fix_cause_number_prefix("cost number 2025") == "cost number 2025"
 
 
 def test_fix_judicial_district_ordinal_three_digit():

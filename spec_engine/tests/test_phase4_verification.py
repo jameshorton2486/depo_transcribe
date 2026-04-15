@@ -363,6 +363,50 @@ class TestFix4D_MapSpeakersInDocumentBuilder:
         assert result[0].speaker_name != ""
         assert "BOYCE" in result[0].speaker_name.upper()
 
+    def test_generic_speaker_with_reporter_text_maps_to_reporter(self):
+        from spec_engine.speaker_mapper import map_speakers
+
+        cfg = JobConfig(
+            speaker_map={1: "THE WITNESS", 2: "MR. ALLAN", 4: "THE REPORTER"},
+            witness_id=1,
+            examining_attorney_id=2,
+            speaker_map_verified=True,
+        )
+        blocks = [Block(speaker_id=9, text="Please raise your right hand.", raw_text="")]
+
+        result = map_speakers(blocks, cfg)
+
+        assert result[0].speaker_role == "REPORTER"
+        assert result[0].speaker_name == "THE REPORTER"
+
+    def test_generic_speaker_question_maps_to_last_attorney(self):
+        from spec_engine.speaker_mapper import map_speakers
+
+        cfg = _coger_cfg()
+        blocks = [
+            Block(speaker_id=2, text="State your name for the record.", raw_text=""),
+            Block(speaker_id=9, text="Could you state your full name for the record, please?", raw_text=""),
+        ]
+
+        result = map_speakers(blocks, cfg)
+
+        assert result[1].speaker_role in ("ATTORNEY", "EXAMINING_ATTORNEY")
+        assert "ALLAN" in result[1].speaker_name.upper()
+
+    def test_generic_speaker_after_attorney_answer_maps_to_witness(self):
+        from spec_engine.speaker_mapper import map_speakers
+
+        cfg = _coger_cfg()
+        blocks = [
+            Block(speaker_id=2, text="Did you go there?", raw_text=""),
+            Block(speaker_id=9, text="Yes, sir.", raw_text=""),
+        ]
+
+        result = map_speakers(blocks, cfg)
+
+        assert result[1].speaker_role == "WITNESS"
+        assert result[1].speaker_name == "THE WITNESS"
+
 
 class TestPhase4Integration:
     def test_detect_input_format_deepgram_standard(self):

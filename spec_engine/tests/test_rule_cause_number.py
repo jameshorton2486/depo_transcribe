@@ -18,11 +18,6 @@ def _cfg():
 
 class TestHappyPath:
 
-    def test_cop_number_corrected(self):
-        result = clean_block("This is cop number 2025CI19595.", _cfg())[0]
-        assert "Cause Number" in result
-        assert "cop number" not in result.lower()
-
     def test_caught_number_corrected(self):
         result = clean_block("This is caught number 2025CI19595.", _cfg())[0]
         assert "Cause Number" in result
@@ -44,15 +39,25 @@ class TestFalsePositiveGuard:
         result = clean_block("The cop arrived at the scene.", _cfg())[0]
         assert "Cause Number" not in result
 
+    def test_cop_number_phrase_unchanged(self):
+        result = clean_block("The cop number on the badge was 217.", _cfg())[0]
+        assert "Cause Number" not in result
+        assert "cop number" in result.lower()
+
     def test_number_alone_unchanged(self):
         result = clean_block("The number was three.", _cfg())[0]
         assert "Cause Number" not in result
 
+    def test_cost_number_phrase_unchanged(self):
+        result = clean_block("The cost number was on the invoice.", _cfg())[0]
+        assert "Cause Number" not in result
+        assert "cost number" in result.lower()
+
 
 class TestPunctuationBoundary:
 
-    def test_cop_number_in_full_preamble(self):
-        text = "This is cop number 2025CI19595 in the District Court."
+    def test_caught_number_in_full_preamble(self):
+        text = "This is caught number 2025CI19595 in the District Court."
         result = clean_block(text, _cfg())[0]
         assert "Cause Number" in result
         assert "District Court" in result
@@ -61,7 +66,7 @@ class TestPunctuationBoundary:
 class TestPassOrdering:
 
     def test_correction_recorded(self):
-        result, records, _ = clean_block("This is cop number 2025CI19595.", _cfg())
+        result, records, _ = clean_block("This is caught number 2025CI19595.", _cfg())
         assert "Cause Number" in result
         assert len(records) >= 1
 
@@ -69,4 +74,4 @@ class TestPassOrdering:
 class TestInterface:
 
     def test_returns_string(self):
-        assert isinstance(clean_block("cop number 12345.", _cfg())[0], str)
+        assert isinstance(clean_block("caught number 12345.", _cfg())[0], str)
