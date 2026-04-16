@@ -332,6 +332,22 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perception\s+[Ff]orm\b[.]?',    'Objection. Form.'),
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\s+[Ff]orm\b[.]?',     'Objection. Form.'),
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    # Standard objection types
+    (r'^\s*Objection[,.]?\s+[Nn]on[\s-]?responsive\.?', 'Objection.  Nonresponsive.'),
+    (r'^\s*Objection[,.]?\s+[Hh]earsay\.?', 'Objection.  Hearsay.'),
+    (r'^\s*Objection[,.]?\s+[Ss]peculation\.?', 'Objection.  Speculation.'),
+    (r'^\s*Objection[,.]?\s+[Ff]oundation\.?', 'Objection.  Foundation.'),
+    (r'^\s*Objection[,.]?\s+[Cc]ompound\.?', 'Objection.  Compound.'),
+    (r'^\s*Objection[,.]?\s+[Aa]rgumentative\.?', 'Objection.  Argumentative.'),
+    (r'^\s*Objection[,.]?\s+[Vv]ague\.?', 'Objection.  Vague.'),
+    (r'^\s*Objection[,.]?\s+[Rr]elevance\.?', 'Objection.  Relevance.'),
+    (r'^\s*Objection[,.]?\s+[Pp]rivilege\.?', 'Objection.  Privilege.'),
+    (r'^\s*Objection[,.]?\s+[Ss]cope\.?', 'Objection.  Scope.'),
+    (r'^\s*Objection[,.]?\s+[Aa]sked\s+and\s+answered\.?', 'Objection.  Asked and answered.'),
+    (r'^\s*Objection[,.]?\s+[Cc]alls\s+for\s+(?:a\s+)?(?:legal\s+)?conclusion\.?', 'Objection.  Calls for a legal conclusion.'),
+    (r'^\s*Objection[,.]?\s+[Aa]ssumes\s+facts(?:\s+not\s+in\s+evidence)?\.?', 'Objection.  Assumes facts not in evidence.'),
+    (r'^\s*Objection[,.]?\s+[Ll]eading\.?', 'Objection.  Leading.'),
+    (r'^\s*Objection[,.]?\s+[Ff]orm\s+and\s+[Ff]oundation\.?', 'Objection.  Form and foundation.'),
     # "Counsel, state the basis" — garbled version of attorney's request
     (r'\bcan\s+cancel\s+state\s+the\s+basis\b',  'Counsel, state the basis'),
     (r'\bcancel\s+state\s+the\s+basis\b',         'Counsel, state the basis'),
@@ -349,6 +365,44 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bCEO\s+manual\b',            'CDL manual'),
     (r'\bCVL\s+handbook\b',          'CDL handbook'),
     (r'\bCVL\s+manual\b',            'CDL manual'),
+    # Medical terminology
+    (r'\bsub[\s-]*acromial\s+bursa\b', 'subacromial bursa'),
+    (r'\bsub[\s-]*deltoid\s+bursitis\b', 'subdeltoid bursitis'),
+    (r'\bthick[\s-]*hole?\s+sack\b', 'thecal sac'),
+    (r'\btheca\s+sac\b', 'thecal sac'),
+    (r'\bthek[ae]l\s+sac\b', 'thecal sac'),
+    (r'\bnew[\s-]*row[\s-]*[Ff]oraminal\b', 'neuroforaminal'),
+    (r'\bneuro[\s-]*foraminal\b', 'neuroforaminal'),
+    (r'\binter[\s-]*vertebral\s+disc\b', 'intervertebral disc'),
+    (r'\bdis[ck][\s-]*her[\s-]*nia[\s-]*tion\b', 'disc herniation'),
+    (r'\blumbar\s+face[\s-]*[te]ts?\b', 'lumbar facets'),
+    (r'\bface[\s-]*[te]t\s+load[\s-]*ing\b', 'facet loading'),
+    (r'\bcer[\s-]*vi[ck]al[\s-]*[gj]ia\b', 'cervicalgia'),
+    (r'\bradicu[li][\s-]*op[\s-]*athy\b', 'radiculopathy'),
+    (r'\bdis[ck][\s-]*o[\s-]*genic\b', 'discogenic'),
+    (r'\bneuro[\s-]*path[\s-]*ic\b', 'neuropathic'),
+    (r'\bsac[\s-]*ro[\s-]*iliac\b', 'sacroiliac'),
+    (r'\bbio[\s-]*physical\s+profile\b', 'biophysical profile'),
+    (r'\bnon[\s-]*stress\s+test\b', 'nonstress test'),
+    (r'\blast\s+menstrual\s+period\b', 'last menstrual period'),
+    (r'\bshoulder\s+dys[\s-]*tocia\b', 'shoulder dystocia'),
+    (r'\bges[\s-]*ta[\s-]*tional\s+dia[\s-]*be[\s-]*tes\b', 'gestational diabetes'),
+    (r'\bpoly[\s-]*hyd[\s-]*ramnios\b', 'polyhydramnios'),
+    (r'\bde[\s-]*cel[\s-]*er[\s-]*ation[s]?\b', 'deceleration'),
+    (r'\bblunt\s+force\s+trauma\b', 'blunt force trauma'),
+    (r'\bclosed\s+head\s+injury\b', 'closed head injury'),
+    (r'\btraumatic\s+brain\s+injury\b', 'traumatic brain injury'),
+    (r'\bsubdural\s+hematoma\b', 'subdural hematoma'),
+    (r'\bsubarachnoid\s+hemorrhage\b', 'subarachnoid hemorrhage'),
+    (r'\bdegenerative\s+disc\s+disease\b', 'degenerative disc disease'),
+    # Insurance and legal-finance vocabulary
+    (r'\bunder[\s-]*insured\s+motorist\b', 'underinsured motorist'),
+    (r'\bun[\s-]*insured\s+motorist\b', 'uninsured motorist'),
+    (r'\bpersonal\s+injury\s+protection\b', 'personal injury protection'),
+    (r'\bcustodian\s+of\s+records\b', 'custodian of records'),
+    (r'\bmed[\s-]*pay\b', 'MedPay'),
+    (r'\bUM\s*/\s*UIM\b', 'UM/UIM'),
+    (r'\bstacking\s+coverage\b', 'stacking coverage'),
     # "bill of lading" — Deepgram garbles
     (r'\bbill\s+of\s+[Ll]ayding\b',  'bill of lading'),
     (r'\bbill\s+of\s+[Ll]aden\b',    'bill of lading'),
@@ -367,7 +421,6 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
      '408th Judicial District'),
     (r'\b408\s+[Jj]udicial\s+[Dd]istrict\b',
      '408th Judicial District'),
-    (r'\bcaught\s+number\b',         'Cause Number'),
     (r'\bcause\s+numbers?\b',        'Cause Number'),
     # "non-CDL" split forms
     (r'\bnon\s+CDL\b',               'non-CDL'),
@@ -392,8 +445,10 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bLoop\s+1604\b', 'Loop 1604'),
     (r'\bFM\s+(\d+)\b', r'FM \1'),
 
-    # Doctor. artifact — Deepgram adds period after "Doctor" before a name
+    # Doctor artifacts before a name
     (r'\bDoctor\.\s+', 'Dr. '),
+    (r'\b[Dd]octor\s+(?=[A-Z][a-z])', 'Dr. '),
+    (r'\bDR\s+(?=[A-Z][a-z])', 'Dr. '),
 
     # Standalone K/k → Okay.  (word boundary + space-or-end lookahead)
     (r'(?<![a-zA-Z])[Kk]\.(?=\s|$)',  'Okay.'),
@@ -439,6 +494,16 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\.\. \.', '. . .'),
     (r'\band\s*/\s*or\b', 'and/or'),
     (r'\beither\s*/\s*or\b', 'either/or'),
+    (r'\bpre[\s-]+existing\b', 'pre-existing'),
+    (r'\bpre[\s-]+accident\b', 'pre-accident'),
+    (r'\bpost[\s-]+accident\b', 'post-accident'),
+    (r'\bfollow[\s-]+up\b', 'follow-up'),
+    (r'\bself[\s-]+pay\b', 'self-pay'),
+    (r'\bself[\s-]+employed\b', 'self-employed'),
+    (r'\bnon[\s-]+party\b', 'non-party'),
+    (r'\bnon[\s-]+responsive\b', 'nonresponsive'),
+    (r'\bowner[\s-]+operator\b', 'owner-operator'),
+    (r'\bday[\s-]+to[\s-]+day\b', 'day-to-day'),
 
     # Oath / opening garbles
     (r'\bso\s+I\s+help\s+you\s+guide\b', 'so help you God'),
@@ -584,19 +649,24 @@ def safe_apply(
         return text
     if not _is_safe_rewrite(text, new_text) and not allow_shortening:
         logger.warning(
-            "[corrections] skipped unsafe rewrite pattern=%s block=%d before_len=%d after_len=%d",
+            "[corrections] SKIPPED (result too short) pattern=%s block=%d before_len=%d after_len=%d",
             pattern,
             block_index,
             len(text),
             len(new_text),
         )
+        print(
+            f"RULE SKIPPED (too short): {pattern!r} "
+            f"({len(text)}->{len(new_text)} chars)"
+        )
         return text
     if state is not None and state.would_conflict(new_text):
         logger.warning(
-            "[corrections] skipped conflicting rewrite pattern=%s block=%d",
+            "[corrections] SKIPPED (conflict with earlier rule) pattern=%s block=%d",
             pattern,
             block_index,
         )
+        print(f"RULE SKIPPED (blocked by earlier rule): {pattern!r}")
         return text
     if state is not None:
         state.record(pattern, text, new_text, protected_after=protected_after)
@@ -768,7 +838,7 @@ def fix_cause_number_prefix(text: str) -> str:
     """
     def _replace(segment: str) -> str:
         return re.sub(
-            r'\b(?:cause|caught)\s+numbers?\b',
+            r'\bcause\s+numbers?\b',
             'Cause Number',
             segment,
             flags=re.IGNORECASE,

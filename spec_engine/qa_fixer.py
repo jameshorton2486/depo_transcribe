@@ -18,6 +18,15 @@ ANSWER_TOKENS = (
     "i remember", "i recall", "i don't recall", "i don't remember",
 )
 
+STANDALONE_ANSWER_WORDS = frozenset({
+    "correct", "right", "yes", "no", "true", "false",
+    "absolutely", "exactly", "certainly", "agreed", "indeed",
+    "uh-huh", "mm-hmm",
+    "correct.", "right.", "yes.", "no.", "true.", "false.",
+    "absolutely.", "exactly.", "certainly.", "agreed.", "indeed.",
+    "uh-huh.", "mm-hmm.",
+})
+
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will", "were", "was", "have", "has", "had")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
 QUESTION_LEAD_PHRASES = (
@@ -349,6 +358,15 @@ def _merge_orphaned_continuations(blocks: List[Block]) -> List[Block]:
         same_type = prev.block_type == block.block_type
         is_tiny = word_count <= 3
         is_mergeable = block.block_type in mergeable_types
+
+        if block.block_type == BlockType.ANSWER:
+            block_words = {
+                w.strip('.,!?').lower()
+                for w in (block.text or "").split()
+            }
+            if block_words & STANDALONE_ANSWER_WORDS:
+                result.append(block)
+                continue
 
         if same_speaker and same_type and is_tiny and is_mergeable:
             merged = Block(

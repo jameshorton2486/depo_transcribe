@@ -18,9 +18,10 @@ def _cfg():
 
 class TestHappyPath:
 
-    def test_caught_number_corrected(self):
+    def test_caught_number_unchanged(self):
         result = clean_block("This is caught number 2025CI19595.", _cfg())[0]
-        assert "Cause Number" in result
+        assert "Cause Number" not in result
+        assert "caught number" in result.lower()
 
     def test_cause_numbers_singular(self):
         result = clean_block("cause numbers 2025CI19595.", _cfg())[0]
@@ -56,22 +57,25 @@ class TestFalsePositiveGuard:
 
 class TestPunctuationBoundary:
 
-    def test_caught_number_in_full_preamble(self):
+    def test_caught_number_in_full_preamble_unchanged(self):
         text = "This is caught number 2025CI19595 in the District Court."
         result = clean_block(text, _cfg())[0]
-        assert "Cause Number" in result
+        assert "Cause Number" not in result
+        assert "caught number" in result.lower()
         assert "District Court" in result
 
 
 class TestPassOrdering:
 
-    def test_correction_recorded(self):
+    def test_no_correction_recorded_for_caught_number(self):
         result, records, _ = clean_block("This is caught number 2025CI19595.", _cfg())
-        assert "Cause Number" in result
-        assert len(records) >= 1
+        assert "Cause Number" not in result
+        assert not any("Cause Number" in record.corrected for record in records)
 
 
 class TestInterface:
 
     def test_returns_string(self):
-        assert isinstance(clean_block("caught number 12345.", _cfg())[0], str)
+        result = clean_block("caught number 12345.", _cfg())[0]
+        assert isinstance(result, str)
+        assert "Cause Number" not in result

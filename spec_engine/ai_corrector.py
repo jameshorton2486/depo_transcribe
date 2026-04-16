@@ -21,7 +21,9 @@ VERBATIM MANDATE (absolute, no exceptions):
   uh, um, ah, uh-huh, uh-uh, yeah, yep, yup, nope, nah, gonna, wanna
   — these are NEVER normalized or removed. They are part of the legal record.
 
-Called from core/correction_runner.py when apply_ai=True.
+Called from ui/tab_corrections.py via the "AI Correct" button only.
+Never runs automatically. Deterministic corrections and AI correction
+are separate explicit user actions.
 """
 
 from __future__ import annotations

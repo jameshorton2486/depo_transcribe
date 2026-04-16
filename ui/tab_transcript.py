@@ -2508,18 +2508,11 @@ class TranscriptTab(ctk.CTkFrame):
             corrected_path = correction_result.get("corrected_path") or source
             final_text = correction_result.get("corrected_text", "")
 
-            if ANTHROPIC_API_KEY.strip():
-                self.after(0, self.append_log, "Running AI review...")
-                job_config = _build_job_config_from_ufm(job_config_data) if job_config_data else {}
-                final_text = run_ai_correction(
-                    transcript_text=final_text,
-                    job_config=job_config or {},
-                    progress_callback=lambda msg: self.after(0, self.append_log, msg),
-                )
-                with open(corrected_path, "w", encoding="utf-8") as fh:
-                    fh.write(final_text)
-            else:
-                self.after(0, self.append_log, "AI review skipped — ANTHROPIC_API_KEY not set.")
+            self.after(
+                0,
+                self.append_log,
+                "Deterministic corrections complete. Use 'AI Correct' in the Corrections tab to run the AI pass.",
+            )
 
             self.after(0, self.append_log, "Formatting document...")
             output_path = format_transcript_to_docx(
@@ -2648,20 +2641,10 @@ class TranscriptTab(ctk.CTkFrame):
         except Exception:
             ANTHROPIC_API_KEY = ""
 
-        if ANTHROPIC_API_KEY.strip():
-            self._run_corrections_btn.configure(state="disabled", text="AI Correcting…")
-            self.set_status(
-                "Deterministic corrections complete — running Claude AI pass…",
-                "#4499FF",
-            )
-            self.append_log("Starting AI correction pass…")
-            self._start_ai_correction(corrected_text)
-            return
-
         self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
         self.set_status(
             f"✓ Corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
-            "  AI skipped: ANTHROPIC_API_KEY not set.",
+            "  Use 'AI Correct' in the Corrections tab to run the optional AI pass.",
             "#44FF44",
         )
 
