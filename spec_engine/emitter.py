@@ -180,8 +180,15 @@ def emit_blocks(blocks: list) -> str:
     Convert processed blocks into plain-text transcript output.
     One line per block. No hard wraps inside a block.
     New line only at block boundaries (new speaker or new Q/A paragraph).
+
+    Speaker label rule (CLAUDE.md section 18):
+    Consecutive SP/COLLOQUY/SPEAKER blocks from the same speaker emit the
+    label only on the first block. Subsequent same-speaker blocks are
+    emitted at the SP indent (three tabs) with no label. Any intervening
+    block type (Q, A, PN, FLAG, etc.) resets the chain.
     """
     lines: list[str] = []
+    last_speaker_label: str | None = None
 
     for block in blocks:
         bt = getattr(block, "block_type", None)
@@ -195,21 +202,33 @@ def emit_blocks(blocks: list) -> str:
 
         if block_value == "Q":
             lines.append(f"\tQ.  {text}")
+            last_speaker_label = None
         elif block_value == "A":
             lines.append(f"\tA.  {text}")
+            last_speaker_label = None
         elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
             label = name or role or "SPEAKER"
-            lines.append(_format_plain_speaker_line(label, text))
+            normalized = _normalize_speaker_label(label) or "SPEAKER"
+            if last_speaker_label == normalized:
+                # Same speaker as the previous SP block - emit continuation
+                # at the SP indent with no label (per UFM speaker label rule).
+                lines.append(f"\t\t\t{text}")
+            else:
+                lines.append(_format_plain_speaker_line(label, text))
+                last_speaker_label = normalized
         elif block_value in ("PAREN", "PARENTHETICAL", "PN"):
             lines.append(text)
+            last_speaker_label = None
         elif block_value == "FLAG":
             lines.append(text)
+            last_speaker_label = None
         else:
             if name or role:
                 label = (name or role).upper()
                 lines.append(f"\t\t\t{label}:  {text}")
             else:
                 lines.append(text)
+            last_speaker_label = None
 
     return "\n".join(lines)
 
