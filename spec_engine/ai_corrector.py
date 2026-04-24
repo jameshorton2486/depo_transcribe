@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import re
 import hashlib
+import time
 from typing import Any
 
 from app_logging import get_logger
@@ -44,12 +45,15 @@ VERBATIM_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 SPEAKER_PREFIX_RE = re.compile(r"^\s*([A-Z][A-Z .'\-]+:)")
-STUTTER_RE = re.compile(r"\b\w+-\w+\b")
+# Texas stutters / false starts use a double hyphen, not a single hyphen.
+DOUBLE_HYPHEN_STUTTER_RE = re.compile(r"\b\w+--\w*\b")
 FALSE_START_RE = re.compile(r"\b\w+\s*--")
 SCOPIST_FLAG_RE = re.compile(r'\[SCOPIST: FLAG \d+:')
 WORD_RE = re.compile(r"\b[\w']+\b")
-MAX_LENGTH_DELTA_RATIO = 0.05
+MAX_LENGTH_DELTA_RATIO = 0.30
 MAX_WORD_CHANGE_RATIO = 0.15
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY_SEC = 2.0
 
 
 def _protect_verbatim(text: str) -> tuple[str, dict[str, str]]:
@@ -76,13 +80,29 @@ def _all_protected_tokens_preserved(text: str, protected: dict[str, str]) -> boo
     return all(key in text for key in protected)
 
 
+def _verbatim_counts_preserved(original: str, candidate: str) -> bool:
+    """
+    Compare verbatim token counts in the restored text, not placeholder keys.
+
+    The old validation path generated fresh __VERBATIM_N__ placeholders from
+    the original text and then checked for those keys in the restored candidate.
+    That can never succeed because the candidate has already had placeholders
+    restored back to real words.
+    """
+    from collections import Counter
+
+    original_tokens = [m.group(0).lower() for m in VERBATIM_TOKEN_RE.finditer(original)]
+    candidate_tokens = [m.group(0).lower() for m in VERBATIM_TOKEN_RE.finditer(candidate)]
+    return Counter(original_tokens) == Counter(candidate_tokens)
+
+
 def _extract_speaker_prefix(line: str) -> str:
     match = SPEAKER_PREFIX_RE.match(line)
     return match.group(1).strip() if match else ""
 
 
 def _extract_special_verbatim_forms(text: str) -> list[str]:
-    forms = [match.group(0) for match in STUTTER_RE.finditer(text)]
+    forms = [match.group(0) for match in DOUBLE_HYPHEN_STUTTER_RE.finditer(text)]
     forms.extend(match.group(0) for match in FALSE_START_RE.finditer(text))
     return forms
 
@@ -145,7 +165,7 @@ def _word_change_ratio(original: str, candidate: str) -> float:
 
 
 def _validate_ai_output(original: str, candidate: str) -> bool:
-    if not _all_protected_tokens_preserved(candidate, _protect_verbatim(original)[1]):
+    if not _verbatim_counts_preserved(original, candidate):
         return False
     if not _preserves_special_verbatim_forms(original, candidate):
         return False
@@ -164,10 +184,6 @@ def _validate_ai_output(original: str, candidate: str) -> bool:
         _line_preserves_protected_content(original_line, candidate_line)
         for original_line, candidate_line in zip(original_lines, candidate_lines)
     )
-
-
-_DEFAULT_PROMPT_PACK = load_prompt_pack("legal_transcript_v1")
-TRANSCRIPT_CORRECTION_SYSTEM_PROMPT = _DEFAULT_PROMPT_PACK.system_prompt
 
 
 # ── AI correction runner ──────────────────────────────────────────────────────
@@ -226,6 +242,62 @@ def _build_user_prompt(
 
 def _hash_text(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:12]
+
+
+def _api_call_with_retry(
+    client: Any,
+    model_name: str,
+    max_tokens: int,
+    temperature: float,
+    system_prompt: str,
+    user_prompt: str,
+    chunk_index: int,
+    log_fn,
+) -> str | None:
+    """
+    Retry transient Anthropic API failures with exponential backoff.
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            message = client.messages.create(
+                model=model_name,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            )
+            content = getattr(message, "content", None) or []
+            if not content:
+                raise RuntimeError("Anthropic response missing content")
+            return content[0].text.strip()
+        except Exception as exc:
+            last_exc = exc
+            status_code = getattr(exc, "status_code", None)
+            error_name = exc.__class__.__name__.lower()
+
+            if status_code in {401, 403} or "authentication" in error_name:
+                log_fn(
+                    f"Chunk {chunk_index}: API authentication error — check ANTHROPIC_API_KEY: {exc}"
+                )
+                return None
+
+            if attempt >= _MAX_RETRIES:
+                break
+
+            delay = _RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1))
+            log_fn(
+                f"Chunk {chunk_index}: API error ({type(exc).__name__}, "
+                f"attempt {attempt}/{_MAX_RETRIES}) — retrying in {delay:.0f}s: {exc}"
+            )
+            time.sleep(delay)
+
+    log_fn(
+        f"Chunk {chunk_index}: All {_MAX_RETRIES} API attempts failed "
+        f"— reverting to original. Last error: {last_exc}"
+    )
+    return None
 
 
 def run_ai_correction(
@@ -288,14 +360,19 @@ def run_ai_correction(
             job_config.get('post_record_spellings', []) or []
         )
 
+    try:
+        prompt_pack = load_prompt_pack()
+    except Exception as exc:
+        _log(f'Prompt pack unavailable: {exc} — AI correction skipped')
+        return transcript_text
+
+    model_name = os.environ.get('ANTHROPIC_MODEL', '').strip() or prompt_pack.model
     MAX_CHARS = 8000
     chunks = _split_into_chunks(transcript_text, MAX_CHARS)
     _log(f'Split transcript into {len(chunks)} chunk(s) for AI correction')
 
     client = anthropic.Anthropic(api_key=api_key)
     results = []
-    prompt_pack = load_prompt_pack()
-    model_name = os.environ.get('ANTHROPIC_MODEL', '').strip() or prompt_pack.model
 
     for i, chunk in enumerate(chunks):
         _log(f'AI correcting chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)…')
@@ -319,14 +396,20 @@ def run_ai_correction(
             len(chunk),
         )
 
-        message = client.messages.create(
-            model=model_name,
+        corrected_protected_chunk = _api_call_with_retry(
+            client=client,
+            model_name=model_name,
             max_tokens=prompt_pack.max_tokens,
             temperature=prompt_pack.temperature,
-            system=prompt_pack.system_prompt,
-            messages=[{'role': 'user', 'content': user_prompt}],
+            system_prompt=prompt_pack.system_prompt,
+            user_prompt=user_prompt,
+            chunk_index=i + 1,
+            log_fn=_log,
         )
-        corrected_protected_chunk = message.content[0].text.strip()
+
+        if corrected_protected_chunk is None:
+            results.append(chunk)
+            continue
 
         if not _all_protected_tokens_preserved(corrected_protected_chunk, protected):
             _log('AI output removed verbatim-protected tokens — reverting to original chunk')
@@ -341,7 +424,7 @@ def run_ai_correction(
 
         results.append(corrected_chunk)
 
-    assembled = '\n\n'.join(results)
+    assembled = '\n'.join(results)
     assembled = _renumber_scopist_flags(assembled)
 
     total_flags = len(SCOPIST_FLAG_RE.findall(assembled))
@@ -351,29 +434,36 @@ def run_ai_correction(
 
 def _split_into_chunks(text: str, max_chars: int) -> list[str]:
     """
-    Split transcript text into chunks at paragraph boundaries.
-    Preserves complete paragraphs — never splits mid-paragraph.
+    Split transcript text into chunks at Q/A block boundaries.
+
+    The transcript text typically uses single newlines between Q/A and speaker
+    lines. We only break chunks before a Q. or speaker line, never mid-answer.
     """
     if len(text) <= max_chars:
         return [text]
 
-    paragraphs = text.split('\n\n')
     chunks = []
     current = []
     current_len = 0
 
-    for para in paragraphs:
-        para_len = len(para) + 2
-        if current_len + para_len > max_chars and current:
-            chunks.append('\n\n'.join(current))
-            current = [para]
-            current_len = para_len
+    for line in text.splitlines():
+        line_len = len(line) + 1
+        line_sig = _line_signature(line)
+
+        if (
+            current
+            and current_len + line_len > max_chars
+            and line_sig in {"Q", "SP"}
+        ):
+            chunks.append('\n'.join(current))
+            current = [line]
+            current_len = line_len
         else:
-            current.append(para)
-            current_len += para_len
+            current.append(line)
+            current_len += line_len
 
     if current:
-        chunks.append('\n\n'.join(current))
+        chunks.append('\n'.join(current))
     return chunks
 
 

@@ -10,7 +10,6 @@ from types import SimpleNamespace
 
 import pytest
 from spec_engine.ai_corrector import (
-    TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
     _protect_verbatim,
     _validate_ai_output,
     _preserves_special_verbatim_forms,
@@ -21,6 +20,7 @@ from spec_engine.ai_corrector import (
     _build_user_prompt,
     run_ai_correction,
 )
+from spec_engine.prompt_packs import load_prompt_pack
 
 
 class TestSplitIntoChunks:
@@ -36,27 +36,23 @@ class TestSplitIntoChunks:
         assert result[0] == text
 
     def test_splits_at_paragraph_boundary(self):
-        para1 = "A" * 100
-        para2 = "B" * 100
-        text = para1 + "\n\n" + para2
-        result = _split_into_chunks(text, max_chars=150)
+        text = "Q. First question?\nA. First answer.\nQ. Second question?"
+        result = _split_into_chunks(text, max_chars=40)
         assert len(result) == 2
 
-    def test_first_chunk_contains_first_paragraph(self):
-        para1 = "A" * 100
-        para2 = "B" * 100
-        text = para1 + "\n\n" + para2
-        result = _split_into_chunks(text, max_chars=150)
-        assert para1 in result[0]
+    def test_first_chunk_contains_first_qa_pair(self):
+        text = "Q. First question?\nA. First answer.\nQ. Second question?"
+        result = _split_into_chunks(text, max_chars=40)
+        assert result[0] == "Q. First question?\nA. First answer."
 
     def test_chunks_reassemble_to_original(self):
-        text = "\n\n".join([f"Paragraph {i}: " + "x" * 50 for i in range(10)])
-        chunks = _split_into_chunks(text, max_chars=300)
-        reassembled = "\n\n".join(chunks)
+        text = "\n".join([f"Q. Question {i}?" if i % 2 == 0 else f"A. Answer {i}." for i in range(20)])
+        chunks = _split_into_chunks(text, max_chars=120)
+        reassembled = "\n".join(chunks)
         assert reassembled == text
 
     def test_single_oversized_paragraph_stays_whole(self):
-        long_para = "word " * 500
+        long_para = "Q. " + ("word " * 500)
         result = _split_into_chunks(long_para, max_chars=100)
         assert len(result) == 1
 
@@ -118,8 +114,9 @@ class TestBuildUserPrompt:
 class TestPromptSafety:
 
     def test_prompt_forbids_structure_changes(self):
-        assert "Change Q./A. labels" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
-        assert "Modify transcript structure in any way" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
+        pack = load_prompt_pack("legal_transcript_v1")
+        assert "Change Q./A. labels" in pack.system_prompt
+        assert "Modify transcript structure in any way" in pack.system_prompt
 
     def test_speaker_label_change_fails_structure_check(self):
         original = "MR. SMITH:  Hello."
@@ -138,7 +135,7 @@ class TestVerbatimProtection:
         assert _restore_verbatim(protected_text, protected) == original
 
     def test_stutter_change_fails_special_verbatim_check(self):
-        original = "I went to the b-bank."
+        original = "I went to the b--bank."
         candidate = "I went to the bank."
 
         assert _preserves_special_verbatim_forms(original, candidate) is False
@@ -181,6 +178,23 @@ class TestValidationLayer:
         candidate = "Q.\tDid you go there?\nA.\tI went."
 
         assert _validate_ai_output(original, candidate) is False
+
+    def test_validate_ai_output_allows_scopist_flag_addition(self):
+        original = (
+            "Q.\tDid you go there and review the documents before the deposition began "
+            "before the deposition began before the deposition began before the deposition began?\n"
+            "A.\tI did go there and review the documents before the deposition began "
+            "before the deposition began before the deposition began before the deposition began."
+        )
+        candidate = (
+            "Q.\tDid you go there and review the documents before the deposition began "
+            "before the deposition began before the deposition began before the deposition began?\n"
+            "A.\tI did go there and review the documents before the deposition began "
+            "before the deposition began before the deposition began before the deposition began "
+            "[SCOPIST: FLAG 1: verify]."
+        )
+
+        assert _validate_ai_output(original, candidate) is True
 
 
 class TestRunAICorrection:
@@ -285,3 +299,34 @@ class TestRunAICorrection:
 
         assert run_ai_correction(text, {}) == text
         assert captured["temperature"] == 0.0
+
+    def test_load_prompt_pack_failure_returns_original(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+        monkeypatch.setattr("spec_engine.ai_corrector.load_prompt_pack", lambda: (_ for _ in ()).throw(FileNotFoundError("missing")))
+
+        text = "Q.\tDid you go there?\nA.\tI did go there."
+
+        assert run_ai_correction(text, {}) == text
+
+    def test_api_retry_recovers_on_transient_error(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+        call_count = {"value": 0}
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    call_count["value"] += 1
+                    if call_count["value"] == 1:
+                        raise RuntimeError("timeout")
+                    return SimpleNamespace(content=[SimpleNamespace(text="Q.\tDid you go there?\nA.\tI did go there.")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tI did go there."
+
+        assert run_ai_correction(text, {}) == text
+        assert call_count["value"] == 2
