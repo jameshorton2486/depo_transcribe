@@ -254,6 +254,75 @@ def test_transcribe_chunk_logs_params_and_utterance_count(monkeypatch, tmp_path,
     assert "Utterances received: 1" in captured.out
 
 
+def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_path):
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"audio")
+
+    raw_utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 0.5,
+            "transcript": "Well,",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 0,
+            "start": 0.5,
+            "end": 1.0,
+            "transcript": "I do two things.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+    merged_utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 1.0,
+            "transcript": "Well, I do two things.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    def fake_post(url, content=None, headers=None, timeout=None):
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "results": {
+                    "channels": [
+                        {
+                            "alternatives": [
+                                {
+                                    "transcript": "Well, I do two things.",
+                                    "words": [],
+                                }
+                            ]
+                        }
+                    ],
+                    "utterances": raw_utterances,
+                }
+            },
+        )
+
+    monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
+    monkeypatch.setattr(transcriber.httpx, "post", fake_post)
+    monkeypatch.setattr(
+        transcriber,
+        "merge_utterances",
+        lambda utterances, gap_threshold_seconds, min_word_count: merged_utterances,
+    )
+
+    result = transcriber.transcribe_chunk(str(audio_path))
+
+    assert result["raw_utterances"] == raw_utterances
+    assert result["utterances"] == merged_utterances
+
+
 def test_transcribe_chunk_rejects_missing_utterances(monkeypatch, tmp_path):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"audio")

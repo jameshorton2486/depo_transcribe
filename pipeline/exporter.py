@@ -10,6 +10,7 @@ OUTPUT FILES:
   1. {prefix}_transcript.txt    — Plain text with speaker labels and timestamps.
   2. {prefix}_deepgram.json     — Full structured output with word-level data.
   3. {prefix}_flagged_words.txt — Words below the confidence threshold.
+  4. raw_deepgram.txt           — Latest raw utterance transcript baseline.
 """
 
 import json
@@ -22,6 +23,15 @@ from pipeline.assembler import build_transcript_text, format_timestamp
 from config import OUTPUT_DIR, LOW_CONFIDENCE_THRESHOLD
 
 LOGGER = get_logger(__name__)
+
+
+def save_raw_deepgram_output(utterances: List[Dict[str, Any]], path: str) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        for utterance in utterances:
+            speaker = utterance.get("speaker", "?")
+            text = (utterance.get("transcript") or "").strip()
+            if text:
+                f.write(f"Speaker {speaker}: {text}\n\n")
 
 
 def export_results(
@@ -37,7 +47,7 @@ def export_results(
     Write all output files for a completed transcription.
 
     Returns:
-        { "transcript": path, "json": path, "flagged": path }
+        { "transcript": path, "json": path, "flagged": path, "raw_deepgram": path }
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print(f"[EXPORT] Writing output files to {OUTPUT_DIR}/")
@@ -94,6 +104,15 @@ def export_results(
     if progress_callback:
         progress_callback(f"Transcript written: {os.path.basename(txt_path)}")
 
+    raw_deepgram_path = os.path.join(OUTPUT_DIR, "raw_deepgram.txt")
+    save_raw_deepgram_output(
+        assembled_result.get("raw_utterances", assembled_result.get("utterances", [])),
+        raw_deepgram_path,
+    )
+
+    if progress_callback:
+        progress_callback(f"Raw Deepgram transcript written: {os.path.basename(raw_deepgram_path)}")
+
     # ── Flagged words ─────────────────────────────────────────────────────────
     flagged: List[Dict] = [
         w for w in assembled_result["words"]
@@ -121,4 +140,9 @@ def export_results(
         )
 
     print("[EXPORT] Done")
-    return {"transcript": txt_path, "json": json_path, "flagged": flagged_path}
+    return {
+        "transcript": txt_path,
+        "json": json_path,
+        "flagged": flagged_path,
+        "raw_deepgram": raw_deepgram_path,
+    }

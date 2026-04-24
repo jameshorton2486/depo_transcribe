@@ -130,7 +130,55 @@ def test_reassemble_chunks_merges_same_speaker_overlap_text():
     assert merged["transcript"] == "Speaker 0: beginning of the edition"
 
 
-def test_reassemble_chunks_merges_same_speaker_sentence_continuation_across_boundary():
+def test_reassemble_chunks_prefers_raw_utterances_when_available():
+    chunk_results = [
+        {
+            "raw": {"chunk": 0},
+            "transcript": "Speaker 0: ignored merged chunk",
+            "words": [
+                {"word": "Good", "start": 0.0, "end": 0.2, "speaker": 0},
+                {"word": "afternoon", "start": 0.2, "end": 0.5, "speaker": 0},
+                {"word": "Doctor", "start": 0.5, "end": 0.7, "speaker": 0},
+                {"word": "Leifer", "start": 0.7, "end": 1.0, "speaker": 0},
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Good afternoon, Doctor Leifer.",
+                    "start": 0.0,
+                    "end": 1.0,
+                    "words": [],
+                },
+            ],
+            "raw_utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Good afternoon,",
+                    "start": 0.0,
+                    "end": 0.5,
+                    "words": [],
+                },
+                {
+                    "speaker": 0,
+                    "transcript": "Doctor Leifer.",
+                    "start": 0.5,
+                    "end": 1.0,
+                    "words": [],
+                },
+            ],
+        },
+    ]
+
+    merged = assembler.reassemble_chunks(chunk_results, chunk_start_offsets=[0.0])
+
+    assert [u["transcript"] for u in merged["utterances"]] == [
+        "Good afternoon,",
+        "Doctor Leifer.",
+    ]
+    assert merged["transcript"] == "Speaker 0: Good afternoon,\n\nSpeaker 0: Doctor Leifer."
+
+
+def test_reassemble_chunks_keeps_same_speaker_sentence_continuation_separate():
     chunk_results = [
         {
             "raw": {"chunk": 0},
@@ -176,8 +224,11 @@ def test_reassemble_chunks_merges_same_speaker_sentence_continuation_across_boun
 
     merged = assembler.reassemble_chunks(chunk_results, chunk_start_offsets=[0.0, 0.5])
 
-    assert [u["transcript"] for u in merged["utterances"]] == ["Good afternoon, Doctor Leifer."]
-    assert merged["transcript"] == "Speaker 0: Good afternoon, Doctor Leifer."
+    assert [u["transcript"] for u in merged["utterances"]] == [
+        "Good afternoon,",
+        "Doctor Leifer.",
+    ]
+    assert merged["transcript"] == "Speaker 0: Good afternoon,\n\nSpeaker 0: Doctor Leifer."
 
 
 def test_reassemble_chunks_keeps_same_speaker_complete_sentences_separate():
@@ -240,6 +291,51 @@ def test_reassemble_chunks_keeps_same_speaker_complete_sentences_separate():
         "I do two things.",
         "I am on the faculty.",
     ]
+
+
+def test_reassemble_chunks_keeps_short_same_speaker_overlap_acknowledgment_separate():
+    chunk_results = [
+        {
+            "raw": {"chunk": 0},
+            "transcript": "Speaker 0: Yes.",
+            "words": [
+                {"word": "Yes", "start": 0.0, "end": 0.2, "speaker": 0},
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Yes.",
+                    "start": 0.0,
+                    "end": 0.2,
+                    "words": [
+                        {"word": "Yes", "start": 0.0, "end": 0.2, "speaker": 0},
+                    ],
+                },
+            ],
+        },
+        {
+            "raw": {"chunk": 1},
+            "transcript": "Speaker 0: Yes.",
+            "words": [
+                {"word": "Yes", "start": 0.0, "end": 0.2, "speaker": 0},
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Yes.",
+                    "start": 0.0,
+                    "end": 0.2,
+                    "words": [
+                        {"word": "Yes", "start": 0.0, "end": 0.2, "speaker": 0},
+                    ],
+                },
+            ],
+        },
+    ]
+
+    merged = assembler.reassemble_chunks(chunk_results, chunk_start_offsets=[0.0, 0.1])
+
+    assert [u["transcript"] for u in merged["utterances"]] == ["Yes.", "Yes."]
 
 
 def test_merge_channel_assemblies_keeps_channels_as_separate_speakers():

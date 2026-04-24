@@ -32,6 +32,8 @@ ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
 NEAR_SILENT_THRESHOLD_DB = -55.0
 REQUEST_DEBUG_PREFIX = "DEEPGRAM PARAMS:"
+RAW_UTTERANCE_DEBUG_PREFIX = "RAW UTTERANCE SAMPLE:"
+MERGED_UTTERANCE_DEBUG_PREFIX = "MERGED UTTERANCE SAMPLE:"
 REQUIRED_DEEPGRAM_FLAGS = {
     "utterances": "true",
     "diarize": "true",
@@ -130,6 +132,8 @@ def _transcribe_direct(
     # - utt_split must honor the caller-provided parameter
     # - paragraphs stays OFF so downstream formatting owns transcript structure
     # - utterances=True is required — correction_runner checks for this key
+    # - preserve the current return contract; expose extra debug context without
+    #   changing downstream behavior
     normalized_keyterms = [
         str(term).strip() for term in (keyterms or []) if str(term).strip()
     ]
@@ -247,6 +251,9 @@ def _transcribe_direct(
                 min_word_count=2,
             )
 
+            logger.debug("%s %s", RAW_UTTERANCE_DEBUG_PREFIX, raw_utterances[:2])
+            logger.debug("%s %s", MERGED_UTTERANCE_DEBUG_PREFIX, utterances[:2])
+
             elapsed = time.time() - t0
             logger.info(
                 "Deepgram direct OK chunk=%s elapsed=%.2fs words=%s utterances=%s raw_utterances=%s",
@@ -257,10 +264,11 @@ def _transcribe_direct(
                 progress_callback(f"Done: {len(words)} words, {len(utterances)} utterances")
 
             return {
-                "words":      words,
-                "utterances": utterances,
-                "transcript": alt.get("transcript", ""),
-                "raw":        raw,
+                "words":            words,
+                "utterances":       utterances,
+                "raw_utterances":   raw_utterances,
+                "transcript":       alt.get("transcript", ""),
+                "raw":              raw,
             }
 
         except Exception as exc:
@@ -298,10 +306,11 @@ def transcribe_chunk(
 
     Returns:
         {
-            "words":      list of word dicts with timestamps,
-            "utterances": list of speaker-grouped utterance dicts,
-            "transcript": full plain-text string,
-            "raw":        complete Deepgram response as dict,
+            "words":          list of word dicts with timestamps,
+            "utterances":     merged speaker-grouped utterance dicts,
+            "raw_utterances": Deepgram utterances before local merge heuristics,
+            "transcript":     full plain-text string,
+            "raw":            complete Deepgram response as dict,
         }
 
     Raises:

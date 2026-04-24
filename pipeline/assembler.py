@@ -27,7 +27,6 @@ ROLE_SEQUENCE = [
 ]
 
 _OVERLAP_WORD_RE = re.compile(r"^\W+|\W+$")
-_CONTINUATION_TRAILING_PUNCTUATION = {",", ":", ";", "--", "—"}
 
 
 def _count_utterance_words(utterance: Dict) -> int:
@@ -46,45 +45,6 @@ def _build_speaker_role_map(utterances: List[Dict]) -> Dict[int, str]:
 
 def _normalize_overlap_token(token: str) -> str:
     return _OVERLAP_WORD_RE.sub("", (token or "").strip().lower())
-
-
-def _ends_with_terminal_punctuation(text: str) -> bool:
-    stripped = (text or "").rstrip()
-    if not stripped:
-        return False
-    return stripped.endswith((".", "?", "!"))
-
-
-def _is_same_speaker_continuation(previous: Dict, candidate: Dict) -> bool:
-    """
-    Detect a same-speaker continuation across adjacent chunk boundaries.
-
-    This is intentionally conservative: it only joins fragments that are close
-    in time and where the previous fragment clearly does not look complete.
-    """
-    if previous.get("speaker") != candidate.get("speaker"):
-        return False
-
-    prev_text = (previous.get("transcript") or "").strip()
-    curr_text = (candidate.get("transcript") or "").strip()
-    if not prev_text or not curr_text:
-        return False
-
-    if _ends_with_terminal_punctuation(prev_text):
-        return False
-
-    gap = float(candidate.get("start", 0.0) or 0.0) - float(previous.get("end", 0.0) or 0.0)
-    if gap < 0 or gap > 1.0:
-        return False
-
-    if prev_text.endswith(tuple(_CONTINUATION_TRAILING_PUNCTUATION)):
-        return True
-
-    first_char = curr_text[0]
-    if not first_char.islower():
-        return False
-
-    return len(prev_text.split()) >= 3
 
 
 def is_near_duplicate(
@@ -184,6 +144,8 @@ def _merge_adjacent_same_speaker_overlap(
     curr_text = (candidate.get("transcript") or "").strip()
     if not prev_text or not curr_text:
         return False
+    if len(curr_text.split()) < 4:
+        return False
 
     overlap_count = _find_overlap_word_count(prev_text, curr_text, max_overlap_words=max_overlap_words)
     if overlap_count <= 0:
@@ -208,38 +170,6 @@ def _merge_adjacent_same_speaker_overlap(
         "[ASSEMBLE] Merged overlap utterance speaker=%s overlap_words=%d",
         previous.get("speaker"),
         overlap_count,
-    )
-    return True
-
-
-def _merge_same_speaker_continuation(
-    merged_utterances: List[Dict],
-    candidate: Dict,
-) -> bool:
-    """
-    Merge a same-speaker continuation when a chunk boundary split one sentence
-    into adjacent fragments without duplicated overlap text.
-    """
-    if not merged_utterances:
-        return False
-
-    previous = merged_utterances[-1]
-    if not _is_same_speaker_continuation(previous, candidate):
-        return False
-
-    previous_text = (previous.get("transcript") or "").strip()
-    candidate_text = (candidate.get("transcript") or "").strip()
-    previous["transcript"] = f"{previous_text} {candidate_text}".strip()
-    previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
-
-    prev_words = list(previous.get("words") or [])
-    candidate_words = list(candidate.get("words") or [])
-    if prev_words and candidate_words:
-        previous["words"] = prev_words + candidate_words
-
-    _logger.debug(
-        "[ASSEMBLE] Merged continuation utterance speaker=%s",
-        previous.get("speaker"),
     )
     return True
 
@@ -374,26 +304,36 @@ def reassemble_chunks(
     """
     _logger.info("[ASSEMBLE] Joining %d chunks...", len(chunk_results))
     if not chunk_results:
-        return {"words": [], "utterances": [], "transcript": "", "raw_chunks": []}
+        return {
+            "words": [],
+            "utterances": [],
+            "raw_utterances": [],
+            "transcript": "",
+            "raw_chunks": [],
+        }
 
     if len(chunk_results) == 1:
         result = chunk_results[0]
-        labeled_utterances = _attach_speaker_labels(result["utterances"])
+        source_utterances = result.get("raw_utterances") or result["utterances"]
+        labeled_utterances = _attach_speaker_labels(source_utterances)
         transcript = build_transcript_text(labeled_utterances)
         return {
-            "words":       result["words"],
-            "utterances":  labeled_utterances,
-            "transcript":  transcript or result["transcript"],
-            "raw_chunks":  [result["raw"]],
+            "words":          result["words"],
+            "utterances":     labeled_utterances,
+            "raw_utterances": labeled_utterances,
+            "transcript":     transcript or result["transcript"],
+            "raw_chunks":     [result["raw"]],
         }
 
     all_words: List[Dict] = []
     all_utterances: List[Dict] = []
+    all_raw_utterances: List[Dict] = []
     raw_chunks = []
 
     for i, result in enumerate(chunk_results):
         offset = chunk_start_offsets[i]
         raw_chunks.append(result["raw"])
+        source_utterances = result.get("raw_utterances") or result["utterances"]
 
         adjusted_words = [
             {**w, "start": round(w["start"] + offset, 3), "end": round(w["end"] + offset, 3)}
@@ -431,7 +371,7 @@ def reassemble_chunks(
             overlap_start = max(0.0, chunk_start_offsets[i] - CHUNK_OVERLAP_SECONDS)
             speaker_remap = _build_speaker_remap(
                 prev_utterances=all_utterances,
-                next_utterances=result["utterances"],
+                next_utterances=source_utterances,
                 overlap_start=overlap_start,
                 offset=offset,
             )
@@ -446,7 +386,7 @@ def reassemble_chunks(
                 raw_speaker = int(speaker)
                 word["speaker"] = speaker_remap.get(raw_speaker, raw_speaker)
 
-        for u in result["utterances"]:
+        for u in source_utterances:
             u_start = round(float(u.get("start", 0.0) or 0.0) + offset, 3)
             u_end = round(float(u.get("end", 0.0) or 0.0) + offset, 3)
 
@@ -473,13 +413,13 @@ def reassemble_chunks(
             if _merge_adjacent_same_speaker_overlap(all_utterances, candidate_utterance):
                 continue
 
-            if _merge_same_speaker_continuation(all_utterances, candidate_utterance):
-                continue
-
             all_utterances.append(candidate_utterance)
+            all_raw_utterances.append(candidate_utterance)
 
     all_utterances.sort(key=lambda u: u["start"])
+    all_raw_utterances.sort(key=lambda u: u["start"])
     labeled_utterances = _attach_speaker_labels(all_utterances)
+    labeled_raw_utterances = _attach_speaker_labels(all_raw_utterances)
     full_transcript = build_transcript_text(labeled_utterances)
     if not full_transcript.strip():
         # Fallback if no utterances (shouldn't happen with diarize=True)
@@ -487,6 +427,7 @@ def reassemble_chunks(
     merged = {
         "words": all_words,
         "utterances": labeled_utterances,
+        "raw_utterances": labeled_raw_utterances,
         "transcript": full_transcript,
         "raw_chunks": raw_chunks,
     }
