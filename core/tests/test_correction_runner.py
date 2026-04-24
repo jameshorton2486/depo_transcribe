@@ -305,7 +305,7 @@ def test_run_correction_job_passes_run_logger_to_process_blocks(monkeypatch):
         assert captured["run_logger"] is not None
 
 
-def test_run_correction_job_requires_verified_speaker_map(monkeypatch):
+def test_run_correction_job_allows_unverified_speaker_map_in_draft_mode(monkeypatch):
     from core.correction_runner import run_correction_job
     from spec_engine.models import Block
 
@@ -329,8 +329,8 @@ def test_run_correction_job_requires_verified_speaker_map(monkeypatch):
         results = []
         run_correction_job(txt_path, done_callback=lambda r: results.append(r))
 
-        assert results[0]["success"] is False
-        assert "Speaker map must be verified" in results[0]["error"]
+        assert results[0]["success"] is True
+        assert results[0]["draft_mode"] is True
 
 
 def test_run_correction_job_rejects_json_without_utterances(monkeypatch):

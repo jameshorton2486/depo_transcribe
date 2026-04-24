@@ -17,6 +17,44 @@ from config import DEFAULT_KEYTERMS
 from core.file_manager import resolve_or_create_case
 
 
+def _build_transcript_from_utterances(utterances: list[dict]) -> str:
+    lines: list[str] = []
+    for utterance in utterances or []:
+        speaker = utterance.get("speaker_label") or f"Speaker {utterance.get('speaker', 0)}"
+        text = (utterance.get("transcript") or "").strip()
+        if text:
+            lines.append(f"{speaker}: {text}")
+    return "\n\n".join(lines)
+
+
+def _safe_write_text(path: Path, content: str, log) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        log(f"[SAVE SUCCESS] {path}")
+    except Exception as exc:
+        log(f"[SAVE ERROR] {path} -> {exc}")
+        raise
+
+
+def _safe_write_json(path: Path, payload: dict, log) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        log(f"[SAVE SUCCESS] {path}")
+    except Exception as exc:
+        log(f"[SAVE ERROR] {path} -> {exc}")
+        raise
+
+
+def _validate_assembled_result(assembled: dict) -> None:
+    if not assembled.get("utterances"):
+        raise RuntimeError("No utterances returned from Deepgram")
+    if len(assembled.get("words", [])) == 0:
+        raise RuntimeError("No words returned from Deepgram")
+
+
 def _transcribe_prepared_audio(
     prepared_audio_path: str,
     *,
@@ -60,17 +98,10 @@ def _transcribe_prepared_audio(
             log(f"{prefix}chunk {i+1} OK")
         except Exception as chunk_exc:
             log(
-                f"WARNING: {prefix}chunk {i+1}/{len(chunks)} failed "
-                f"({chunk.start_seconds:.0f}s–{chunk.end_seconds:.0f}s): "
-                f"{chunk_exc} — inserting empty placeholder, continuing."
+                f"ERROR: {prefix}chunk {i+1}/{len(chunks)} failed "
+                f"({chunk.start_seconds:.0f}s–{chunk.end_seconds:.0f}s): {chunk_exc}"
             )
-            chunk_results.append({
-                "words": [],
-                "utterances": [],
-                "transcript": "",
-                "raw": {},
-            })
-            chunk_offsets.append(chunk.start_seconds)
+            raise
 
     return reassemble_chunks(chunk_results, chunk_offsets), chunks
 
@@ -123,18 +154,15 @@ def run_transcription_job(
             done_callback(result)
 
     try:
-        import concurrent.futures
-
         from pipeline.preprocessor import (
             validate_audio_file, normalize_audio,
             QUALITY_CONFIGS, AUTO_DETECT_KEY, check_ffmpeg,
         )
         from pipeline.chunker import chunk_audio, cleanup_chunks
         from pipeline.transcriber import transcribe_chunk
-        from pipeline.assembler import reassemble_chunks, build_transcript_text
+        from pipeline.assembler import reassemble_chunks
         from pipeline.audio_quality import analyze_audio
         from pipeline.vad_trimmer import trim_silence
-        from pipeline.pyannote_diarizer import diarize, align_speakers
         from core.job_config_manager import merge_and_save
 
         _progress(2, "Checking FFmpeg…")
@@ -247,14 +275,6 @@ def run_transcription_job(
         )
         _log(f"Split into {len(chunks)} chunk(s)")
 
-        use_pyannote = analysis.tier in ("ENHANCED", "RESCUE")
-        pyannote_future = None
-        executor = None
-        if use_pyannote:
-            _log("Starting pyannote diarization (parallel with transcription)…")
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            pyannote_future = executor.submit(diarize, normalized_path)
-
         chunk_results = []
         chunk_offsets = []
         for i, chunk in enumerate(chunks):
@@ -270,44 +290,28 @@ def run_transcription_job(
             )
             chunk_results.append(result)
             chunk_offsets.append(chunk.start_seconds)
+            _log(
+                f"Chunk {i+1} data: "
+                f"{len(result.get('utterances', []))} utterances, "
+                f"{len(result.get('words', []))} words"
+            )
 
         _progress(82, "Assembling transcript…")
         assembled = reassemble_chunks(chunk_results, chunk_offsets)
+        _validate_assembled_result(assembled)
 
         word_count = len(assembled.get("words", []))
         utterance_count = len(assembled.get("utterances", []))
+        raw_utterance_count = len(assembled.get("raw_utterances", []))
         _log(f"Assembled: {word_count} words, {utterance_count} utterances")
-
-        if pyannote_future is not None:
-            try:
-                _progress(85, "Applying pyannote speaker labels…")
-                pyannote_segments = pyannote_future.result(timeout=300)
-                if pyannote_segments:
-                    assembled["utterances"] = align_speakers(
-                        assembled.get("utterances", []),
-                        pyannote_segments,
-                    )
-                    assembled["transcript"] = build_transcript_text(assembled["utterances"])
-                    _log("Pyannote speaker labels applied successfully")
-                else:
-                    _log("Pyannote returned no segments — keeping Deepgram labels")
-            except Exception as pa_exc:
-                _log(f"Pyannote alignment skipped: {pa_exc}")
-            finally:
-                if executor:
-                    executor.shutdown(wait=False)
+        _log(f"Raw utterances: {raw_utterance_count}")
+        _log(f"Chunks: {len(chunks)}")
 
         _progress(90, "Building output files…")
 
-        transcript_text = assembled.get("transcript", "")
+        transcript_text = _build_transcript_from_utterances(assembled.get("utterances", []))
         if not transcript_text.strip():
-            lines = []
-            for u in assembled.get("utterances", []):
-                speaker = u.get("speaker_label") or f"Speaker {u.get('speaker', 0)}"
-                text = (u.get("transcript") or "").strip()
-                if text:
-                    lines.append(f"{speaker}: {text}")
-            transcript_text = "\n\n".join(lines)
+            raise RuntimeError("Transcript text could not be built from utterances")
 
         _progress(95, "Saving files…")
         out_dir = Path(case_path)
@@ -321,9 +325,16 @@ def run_transcription_job(
 
         txt_path = deepgram_dir / txt_name
         json_path = deepgram_dir / json_name
+        raw_txt_path = deepgram_dir / f"{base_name}_{stamp}_raw.txt"
 
-        txt_path.write_text(transcript_text, encoding="utf-8")
-        _log(f"Saved: {txt_path.name}")
+        _safe_write_text(txt_path, transcript_text, _log)
+
+        raw_transcript_text = _build_transcript_from_utterances(
+            assembled.get("raw_utterances", assembled.get("utterances", []))
+        )
+        if not raw_transcript_text.strip():
+            raise RuntimeError("Raw transcript text could not be built from Deepgram utterances")
+        _safe_write_text(raw_txt_path, raw_transcript_text, _log)
 
         json_data = {
             "audio_file": audio_path,
@@ -340,11 +351,10 @@ def run_transcription_job(
             "transcript": transcript_text,
             "chunk_summaries": _build_chunk_summaries(chunks),
             "utterances": assembled.get("utterances", []),
+            "raw_utterances": assembled.get("raw_utterances", []),
             "words": assembled.get("words", []),
         }
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(json_data, f, indent=2, ensure_ascii=False)
-        _log(f"Saved: {json_path.name}")
+        _safe_write_json(json_path, json_data, _log)
 
         raw_json_path = deepgram_dir / f"{base_name}_{stamp}_raw.json"
         raw_data = {
@@ -356,12 +366,14 @@ def run_transcription_job(
             "created_at": datetime.now().isoformat(),
             "chunk_count": len(chunks),
             "deepgram_keyterms_used": merged_keyterms,
+            "transcript": raw_transcript_text,
             "chunk_summaries": _build_chunk_summaries(chunks),
+            "utterances": assembled.get("utterances", []),
+            "raw_utterances": assembled.get("raw_utterances", []),
+            "words": assembled.get("words", []),
             "chunks": assembled.get("raw_chunks", []),
         }
-        with open(raw_json_path, "w", encoding="utf-8") as f:
-            json.dump(raw_data, f, indent=2, ensure_ascii=False)
-        _log(f"Saved raw: {raw_json_path.name}")
+        _safe_write_json(raw_json_path, raw_data, _log)
 
         from core.word_data_loader import CONFIDENCE_LOW
         raw_words = assembled.get("words", [])
@@ -403,6 +415,7 @@ def run_transcription_job(
             "transcript_path": str(txt_path),
             "json_path": str(json_path),
             "raw_json_path": str(raw_json_path),
+            "raw_txt_path": str(raw_txt_path),
             "job_config_path": str(job_config_path) if job_config_path else None,
             "output_dir": str(out_dir),
             "transcript_text": transcript_text,

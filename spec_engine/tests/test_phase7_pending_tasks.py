@@ -120,6 +120,7 @@ def test_process_blocks_logs_additional_stage_snapshots(monkeypatch):
         "02a_blocks_speaker_mapped",
         "03a_blocks_classified",
         "04a_blocks_qa_fixed",
+        "04b_blocks_paragraph_split",
         "05_blocks_final",
     ]
 

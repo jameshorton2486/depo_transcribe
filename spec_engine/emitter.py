@@ -120,6 +120,26 @@ def _split_speaker_text(text: str) -> tuple[str, str]:
     return "", text
 
 
+def _normalize_speaker_label(label: str) -> str:
+    normalized = (label or "").strip().upper().rstrip(":")
+    if normalized == "THE COURT REPORTER":
+        return "THE REPORTER"
+    return normalized
+
+
+def _format_plain_speaker_line(label: str, text: str) -> str:
+    normalized_label = _normalize_speaker_label(label) or "SPEAKER"
+    clean_text = _clean(text)
+    existing_label, content = _split_speaker_text(clean_text)
+
+    if _normalize_speaker_label(existing_label) == normalized_label:
+        if content:
+            return f"\t\t\t{normalized_label}:  {content}"
+        return f"\t\t\t{normalized_label}:"
+
+    return f"\t\t\t{normalized_label}:  {clean_text}"
+
+
 def _validate_emit_input(line_type: LineType, text: str) -> str:
     raw_text = text or ""
     clean_text = _clean(raw_text)
@@ -148,7 +168,8 @@ def _qa_visual_text(prefix: str, text: str) -> str:
 def _speaker_visual_text(text: str) -> tuple[str, str, str]:
     label, content = _split_speaker_text(text)
     if label:
-        return label, content, f"\t\t\t{label}  {content}"
+        normalized_label = _normalize_speaker_label(label) + ":"
+        return normalized_label, content, f"\t\t\t{normalized_label}  {content}"
     return "", text, f"\t\t\t{text}"
 
 
@@ -177,8 +198,8 @@ def emit_blocks(blocks: list) -> str:
         elif block_value == "A":
             lines.append(f"\tA.  {text}")
         elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
-            label = (name or role or "SPEAKER").upper()
-            lines.append(f"\t\t\t{label}:  {text}")
+            label = name or role or "SPEAKER"
+            lines.append(_format_plain_speaker_line(label, text))
         elif block_value in ("PAREN", "PARENTHETICAL", "PN"):
             lines.append(text)
         elif block_value == "FLAG":

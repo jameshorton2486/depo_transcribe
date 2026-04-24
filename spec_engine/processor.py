@@ -11,11 +11,16 @@ from typing import Any, List
 
 from .classifier import classify_blocks
 from .corrections import apply_corrections
+from .deepgram_patterns import apply_deepgram_patterns
+from .flag_rules import generate_scopist_flags
 from .models import Block
+from .nod_corrections import apply_nod_corrections
 from .objections import extract_objections
 from .paragraph_splitter import split_block_text
+from .preamble_rules import apply_preamble_rules
 from .qa_fixer import fix_qa_structure
 from .speaker_mapper import map_speakers
+from .speaker_intelligence import enforce_qa_sequence, infer_speaker_roles
 from .validator import validate_blocks
 
 
@@ -25,6 +30,10 @@ def split_blocks_into_paragraphs(blocks: List[Block]) -> List[Block]:
 
     for block in blocks:
         if not getattr(block, "text", ""):
+            new_blocks.append(block)
+            continue
+
+        if getattr(block, "meta", {}).get("merged_reporter_preamble"):
             new_blocks.append(block)
             continue
 
@@ -69,6 +78,10 @@ def process_blocks(
         _log.log_step("Starting corrections", block_count=len(blocks))
 
     blocks = apply_corrections(blocks, job_config)
+    blocks = apply_deepgram_patterns(blocks)
+    blocks = apply_nod_corrections(blocks, job_config)
+    blocks = apply_preamble_rules(blocks)
+    blocks = generate_scopist_flags(blocks)
 
     if _log:
         _log.snapshot("02_blocks_corrected", blocks)
@@ -76,6 +89,8 @@ def process_blocks(
         _log.log_step("Corrections complete")
 
     blocks = map_speakers(blocks, job_config)
+    blocks = infer_speaker_roles(blocks, job_config)
+    blocks = enforce_qa_sequence(blocks, job_config)
     if not all(
         getattr(block, "speaker_role", None) is not None
         and getattr(block, "speaker_name", None) is not None

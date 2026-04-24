@@ -64,8 +64,8 @@ def _is_near_silent(file_path: str) -> bool:
                     return max_vol < NEAR_SILENT_THRESHOLD_DB
                 except (IndexError, ValueError):
                     continue
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("volumedetect failed for %s: %s", file_path, exc)
     return False
 
 

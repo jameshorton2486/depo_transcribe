@@ -15,13 +15,22 @@ import re
 import subprocess
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
 from core.confidence_docx_exporter import export_confidence_docx
+from core.job_config_manager import load_job_config, merge_and_save
 from core.vlc_player import VLCPlayer
 from core.word_data_loader import get_flagged_summary, get_confidence_tier, load_words_for_transcript
+from ui.tab_transcribe import (
+    _build_ui_speaker_defaults,
+    _build_ui_speaker_reference_text,
+    _normalize_ui_speaker_map,
+    _normalize_ui_speaker_suggestion,
+)
 
 _CONFIDENCE_STOP_WORDS = frozenset({
     "a", "an", "the",
@@ -47,6 +56,285 @@ COLOR_AMBER = "#B8860B"
 COLOR_RED = "#CC2200"
 
 _TRANSCRIPTION_PROGRESS_RE = re.compile(r'chunk\s+(\d+)\s+of\s+(\d+)', re.IGNORECASE)
+_SPEAKER_LABEL_RE = re.compile(r'(^|\n)(Speaker\s+(\d+)):\s*', re.IGNORECASE)
+_SHORT_ANSWER_RE = re.compile(r"^(yes|no|correct|okay|ok|uh-huh|mm-hmm|right)\.?$", re.IGNORECASE)
+_OATH_KEYWORD_RE = re.compile(
+    r"\b(raise your right hand|do you swear|under penalty of perjury|court reporter|csr)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_speaker_ids(text: str) -> list[str]:
+    speaker_ids = {match.group(3) for match in _SPEAKER_LABEL_RE.finditer(text or "")}
+    return sorted(speaker_ids, key=int)
+
+
+def _normalize_transcript_speaker_map(raw: dict | None) -> dict[int, str]:
+    return _normalize_ui_speaker_map(raw)
+
+
+def _apply_speaker_map_to_text(text: str, speaker_map: dict[int, str]) -> str:
+    def _replace(match: re.Match) -> str:
+        speaker_id = int(match.group(3))
+        replacement = speaker_map.get(speaker_id)
+        if not replacement:
+            return match.group(0)
+        prefix = match.group(1) or ""
+        return f"{prefix}{replacement}: "
+
+    return _SPEAKER_LABEL_RE.sub(_replace, text or "")
+
+
+def _build_progressive_speaker_defaults(
+    transcript_text: str,
+    saved_map: dict[int, str] | None,
+    suggestion: dict[str, object] | None,
+) -> dict[str, str]:
+    speaker_ids = _extract_speaker_ids(transcript_text)
+    return _build_ui_speaker_defaults(speaker_ids, saved_map or {}, suggestion or {})
+
+
+def _format_attorney_dropdown_label(name: str) -> str:
+    normalized = " ".join(str(name or "").split()).strip()
+    if not normalized:
+        return ""
+
+    parts = normalized.split()
+    if not parts:
+        return ""
+
+    title = ""
+    first_token = parts[0].rstrip(".").lower()
+    if first_token in {"mr", "ms", "mrs", "dr"}:
+        title = first_token.upper() + "."
+
+    last_name = parts[-1].upper()
+    if not title:
+        title = "MR."
+
+    return f"{title} {last_name}"
+
+
+def _build_speaker_options(config_data: dict[str, Any] | None) -> list[str]:
+    options: list[str] = [
+        "Select speaker...",
+        "THE REPORTER",
+        "THE WITNESS",
+        "UNKNOWN SPEAKER",
+    ]
+    seen = set(options)
+
+    def _add(value: str) -> None:
+        normalized = " ".join(str(value or "").split()).strip().upper()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            options.append(normalized)
+
+    ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
+    if not isinstance(ufm, dict):
+        ufm = {}
+
+    reporter_name = str(ufm.get("reporter_name") or "").strip()
+    witness_name = str(ufm.get("witness_name") or "").strip()
+    if reporter_name:
+        _add("THE REPORTER")
+    if witness_name:
+        _add("THE WITNESS")
+
+    for counsel_key in ("plaintiff_counsel", "defense_counsel"):
+        counsel_entries = ufm.get(counsel_key, [])
+        if not isinstance(counsel_entries, list):
+            continue
+        for counsel in counsel_entries:
+            if not isinstance(counsel, dict):
+                continue
+            label = _format_attorney_dropdown_label(counsel.get("name", ""))
+            if label:
+                _add(label)
+
+    suggestion = _normalize_ui_speaker_suggestion(
+        config_data.get("speaker_map_suggestion", {}) if isinstance(config_data, dict) else {}
+    )
+    for key in ("ordering_attorney", "filing_attorney"):
+        label = _format_attorney_dropdown_label(suggestion.get(key, ""))
+        if label:
+            _add(label)
+    for name in suggestion.get("copy_attorneys", []):
+        label = _format_attorney_dropdown_label(name)
+        if label:
+            _add(label)
+
+    return options
+
+
+def _build_nod_backed_speaker_labels(config_data: dict[str, Any] | None) -> set[str]:
+    labels: set[str] = set()
+
+    ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
+    if not isinstance(ufm, dict):
+        ufm = {}
+
+    if str(ufm.get("reporter_name") or "").strip():
+        labels.add("THE REPORTER")
+    if str(ufm.get("witness_name") or "").strip():
+        labels.add("THE WITNESS")
+
+    for counsel_key in ("plaintiff_counsel", "defense_counsel"):
+        counsel_entries = ufm.get(counsel_key, [])
+        if not isinstance(counsel_entries, list):
+            continue
+        for counsel in counsel_entries:
+            if not isinstance(counsel, dict):
+                continue
+            label = _format_attorney_dropdown_label(counsel.get("name", ""))
+            if label:
+                labels.add(label)
+
+    suggestion = _normalize_ui_speaker_suggestion(
+        config_data.get("speaker_map_suggestion", {}) if isinstance(config_data, dict) else {}
+    )
+    for key in ("ordering_attorney", "filing_attorney"):
+        label = _format_attorney_dropdown_label(suggestion.get(key, ""))
+        if label:
+            labels.add(label)
+    for name in suggestion.get("copy_attorneys", []):
+        label = _format_attorney_dropdown_label(name)
+        if label:
+            labels.add(label)
+
+    return labels
+
+
+def _strip_speaker_confidence_label(value: str) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized:
+        return ""
+    return normalized.split(" (", 1)[0].upper()
+
+
+def _confidence_label(score: float) -> str:
+    if score >= 0.7:
+        return "High"
+    if score >= 0.4:
+        return "Medium"
+    return "Low"
+
+
+def _extract_speaker_blocks(text: str, speaker_id: str | int) -> list[str]:
+    normalized_id = str(speaker_id).strip()
+    if not normalized_id:
+        return []
+
+    pattern = re.compile(
+        rf"Speaker\s+{re.escape(normalized_id)}:\s*(.*?)(?=\n\s*Speaker\s+\d+:\s*|\Z)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    blocks: list[str] = []
+    for match in pattern.finditer(text or ""):
+        block_text = " ".join((match.group(1) or "").split()).strip()
+        if block_text:
+            blocks.append(block_text)
+    return blocks
+
+
+def _compute_speaker_confidence(
+    speaker_id: str | int,
+    option_label: str,
+    transcript_text: str,
+    config_data: dict[str, Any] | None,
+) -> float:
+    canonical = _strip_speaker_confidence_label(option_label)
+    if not canonical or canonical in {"SELECT SPEAKER...", "UNKNOWN SPEAKER"}:
+        return 0.0
+
+    blocks = _extract_speaker_blocks(transcript_text, speaker_id)
+    if not blocks:
+        return 0.0
+
+    score = 0.0
+    upper_blocks = [block.upper() for block in blocks]
+    question_count = sum(1 for block in blocks if block.rstrip().endswith("?"))
+    short_answer_count = sum(1 for block in blocks if _SHORT_ANSWER_RE.match(block.strip()))
+    oath_count = sum(1 for block in blocks if _OATH_KEYWORD_RE.search(block))
+
+    ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
+    if not isinstance(ufm, dict):
+        ufm = {}
+
+    nod_labels = _build_nod_backed_speaker_labels(config_data)
+    if canonical in nod_labels:
+        score += 0.5
+
+    if canonical.startswith(("MR.", "MS.", "MRS.", "DR.")) and question_count >= max(1, len(blocks) // 2):
+        score += 0.3
+    if canonical == "THE WITNESS" and short_answer_count >= max(1, len(blocks) // 3):
+        score += 0.2
+    if canonical == "THE REPORTER" and oath_count > 0:
+        score += 0.3
+
+    if canonical == "THE WITNESS":
+        witness_name = str(ufm.get("witness_name") or "").strip().upper()
+        if witness_name and any(part in " ".join(upper_blocks) for part in witness_name.split() if len(part) >= 4):
+            score += 0.5
+
+    if canonical.startswith(("MR.", "MS.", "MRS.", "DR.")):
+        last_name = canonical.split()[-1]
+        if last_name and any(last_name in block for block in upper_blocks):
+            score += 0.5
+
+    return min(score, 1.0)
+
+
+def _format_speaker_option_with_confidence(
+    speaker_id: str | int,
+    option_label: str,
+    transcript_text: str,
+    config_data: dict[str, Any] | None,
+) -> str:
+    canonical = _strip_speaker_confidence_label(option_label)
+    if canonical in {"", "SELECT SPEAKER..."}:
+        return "Select speaker..."
+    score = _compute_speaker_confidence(speaker_id, canonical, transcript_text, config_data)
+    return f"{canonical} ({_confidence_label(score)})"
+
+
+def _build_speaker_dropdown_values(
+    speaker_id: str | int,
+    transcript_text: str,
+    config_data: dict[str, Any] | None,
+) -> list[str]:
+    values = ["Select speaker..."]
+    for option in _build_speaker_options(config_data):
+        canonical = _strip_speaker_confidence_label(option)
+        if canonical in {"", "SELECT SPEAKER..."}:
+            continue
+        values.append(
+            _format_speaker_option_with_confidence(
+                speaker_id=speaker_id,
+                option_label=canonical,
+                transcript_text=transcript_text,
+                config_data=config_data,
+            )
+        )
+    return values
+
+
+def _choose_best_speaker_option(
+    speaker_id: str | int,
+    transcript_text: str,
+    config_data: dict[str, Any] | None,
+) -> str:
+    best_option = ""
+    best_score = -1.0
+    for option in _build_speaker_options(config_data):
+        canonical = _strip_speaker_confidence_label(option)
+        if canonical in {"", "SELECT SPEAKER...", "UNKNOWN SPEAKER"}:
+            continue
+        score = _compute_speaker_confidence(speaker_id, canonical, transcript_text, config_data)
+        if score > best_score:
+            best_score = score
+            best_option = canonical
+    return best_option
 
 
 class TranscriptTab(ctk.CTkFrame):
@@ -71,6 +359,15 @@ class TranscriptTab(ctk.CTkFrame):
         self._current_word_idx: int = -1
         self.review_state: dict[int, str] = {}
         self._current_review_idx: int = -1
+        self._case_root: str | None = None
+        self._speaker_entries: dict[str, Any] = {}
+        self._speaker_map_suggestion: dict[str, object] = {}
+        self._saved_speaker_map: dict[int, str] = {}
+        self._speaker_map_verified: bool = False
+        self._speaker_mapping_dirty: bool = False
+        self._mapping_source_text: str = ""
+        self._selected_speaker_label: str | None = None
+        self._job_config_data: dict[str, Any] = {}
 
         self._player: VLCPlayer | None = None
         self._player_ready = False
@@ -273,6 +570,62 @@ class TranscriptTab(ctk.CTkFrame):
         self._progress_label.pack(side="left", fill="x", expand=True)
         self._progress_frame.pack(fill="x", padx=14, pady=(0, 2))
         self._progress_frame.pack_forget()
+
+        self._speaker_map_card = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=6)
+        self._speaker_map_title_row = ctk.CTkFrame(self._speaker_map_card, fg_color="transparent")
+        self._speaker_map_title_row.pack(fill="x", padx=10, pady=(8, 4))
+        ctk.CTkLabel(
+            self._speaker_map_title_row,
+            text="Speaker Mapping (Global)",
+            font=ctk.CTkFont(size=14, weight="bold"),
+        ).pack(side="left")
+        self._speaker_map_status = ctk.CTkLabel(
+            self._speaker_map_title_row,
+            text="No transcript loaded",
+            font=ctk.CTkFont(size=11),
+            text_color="#7D8FA3",
+        )
+        self._speaker_map_status.pack(side="left", padx=(10, 0))
+        self._speaker_map_btn_row = ctk.CTkFrame(self._speaker_map_card, fg_color="transparent")
+        self._speaker_map_btn_row.pack(fill="x", padx=10, pady=(0, 4))
+        self._auto_detect_speakers_btn = ctk.CTkButton(
+            self._speaker_map_btn_row,
+            text="Auto Detect Speakers",
+            width=150,
+            command=self._auto_detect_speaker_mapping,
+        )
+        self._auto_detect_speakers_btn.pack(side="left", padx=(0, 6))
+        self._apply_speakers_btn = ctk.CTkButton(
+            self._speaker_map_btn_row,
+            text="Apply Mapping",
+            width=120,
+            fg_color="#1558C0",
+            hover_color="#0F3E8A",
+            command=self._apply_progressive_speaker_mapping,
+        )
+        self._apply_speakers_btn.pack(side="left", padx=(0, 6))
+        self._confirm_speakers_btn = ctk.CTkButton(
+            self._speaker_map_btn_row,
+            text="Confirm Speaker Mapping",
+            width=170,
+            fg_color="#1A6B3A",
+            hover_color="#145230",
+            command=self._confirm_progressive_speaker_mapping,
+        )
+        self._confirm_speakers_btn.pack(side="left")
+        self._speaker_hint_label = ctk.CTkLabel(
+            self._speaker_map_card,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="#7DAACC",
+            anchor="w",
+            justify="left",
+        )
+        self._speaker_hint_label.pack(fill="x", padx=10, pady=(0, 4))
+        self._speaker_rows_frame = ctk.CTkFrame(self._speaker_map_card, fg_color="transparent")
+        self._speaker_rows_frame.pack(fill="x", padx=10, pady=(0, 8))
+        self._speaker_map_card.pack(fill="x", padx=14, pady=(0, 6))
+        self._speaker_map_card.pack_forget()
 
         self._bottom_panel = ctk.CTkFrame(self, fg_color="#0F1A24", corner_radius=0)
 
@@ -876,6 +1229,7 @@ class TranscriptTab(ctk.CTkFrame):
             return
         try:
             content = self._read_transcript(filepath)
+            self._case_root = str(Path(filepath).parent.parent)
             self._current_path = filepath
             self._corrected_path = None
             self._review_docx_path = None
@@ -888,6 +1242,7 @@ class TranscriptTab(ctk.CTkFrame):
             self._original_text = content
             self._processed_text = None
             self._canonical_text = content
+            self._mapping_source_text = content
             self._textbox.edit_modified(False)
             self._textbox._textbox.edit_modified(False)
             self._textbox._textbox.edit_reset()
@@ -907,10 +1262,203 @@ class TranscriptTab(ctk.CTkFrame):
                 self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
             except AttributeError:
                 pass
+            self._load_progressive_speaker_state(filepath)
             self._load_low_confidence_words(filepath)
             self._load_word_data(filepath)
         except Exception as exc:
             self._path_label.configure(text=f"Failed to load: {exc}", text_color="#CC4444")
+
+    def _load_progressive_speaker_state(self, filepath: str) -> None:
+        self._speaker_entries.clear()
+        self._speaker_mapping_dirty = False
+        self._selected_speaker_label = None
+        self._case_root = str(Path(filepath).parent.parent)
+        config_data = load_job_config(self._case_root)
+        self._job_config_data = config_data if isinstance(config_data, dict) else {}
+        ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
+        self._saved_speaker_map = _normalize_transcript_speaker_map(
+            ufm.get("speaker_map", {}) if isinstance(ufm, dict) else {}
+        )
+        self._speaker_map_suggestion = _normalize_ui_speaker_suggestion(
+            config_data.get("speaker_map_suggestion", {}) if isinstance(config_data, dict) else {}
+        )
+        self._speaker_map_verified = bool(ufm.get("speaker_map_verified", False)) if isinstance(ufm, dict) else False
+        self._refresh_speaker_mapping_panel()
+
+    def _refresh_speaker_mapping_panel(self) -> None:
+        for widget in self._speaker_rows_frame.winfo_children():
+            widget.destroy()
+        self._speaker_entries.clear()
+
+        speaker_ids = _extract_speaker_ids(self._mapping_source_text or self._canonical_text)
+        if not speaker_ids:
+            self._speaker_map_card.pack_forget()
+            return
+
+        defaults = _build_progressive_speaker_defaults(
+            self._mapping_source_text or self._canonical_text,
+            self._saved_speaker_map,
+            self._speaker_map_suggestion,
+        )
+        reference_text = _build_ui_speaker_reference_text(self._speaker_map_suggestion)
+        self._speaker_hint_label.configure(
+            text=(f"NOD suggestions: {reference_text}" if reference_text else "Assign speakers gradually, then apply globally.")
+        )
+
+        for sid in speaker_ids:
+            speaker_options = _build_speaker_dropdown_values(
+                speaker_id=sid,
+                transcript_text=self._mapping_source_text or self._canonical_text,
+                config_data=self._job_config_data,
+            )
+            row = ctk.CTkFrame(self._speaker_rows_frame, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(
+                row,
+                text=f"Speaker {sid}:",
+                width=100,
+                anchor="w",
+                font=ctk.CTkFont(weight="bold"),
+            ).pack(side="left", padx=(0, 8))
+            entry = ctk.CTkComboBox(
+                row,
+                values=speaker_options,
+                state="readonly" if speaker_options else "normal",
+                width=260,
+            )
+            entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            default_label = defaults.get(f"Speaker {sid}", "")
+            if default_label:
+                entry.set(
+                    _format_speaker_option_with_confidence(
+                        speaker_id=sid,
+                        option_label=default_label,
+                        transcript_text=self._mapping_source_text or self._canonical_text,
+                        config_data=self._job_config_data,
+                    )
+                )
+            else:
+                best_option = _choose_best_speaker_option(
+                    speaker_id=sid,
+                    transcript_text=self._mapping_source_text or self._canonical_text,
+                    config_data=self._job_config_data,
+                )
+                if best_option:
+                    entry.set(
+                        _format_speaker_option_with_confidence(
+                            speaker_id=sid,
+                            option_label=best_option,
+                            transcript_text=self._mapping_source_text or self._canonical_text,
+                            config_data=self._job_config_data,
+                        )
+                    )
+                elif speaker_options:
+                    entry.set("Select speaker...")
+            if self._speaker_map_verified:
+                entry.configure(state="disabled")
+            self._speaker_entries[f"Speaker {sid}"] = entry
+
+        self._speaker_map_status.configure(
+            text=(
+                "Confirmed"
+                if self._speaker_map_verified
+                else ("Updated — click Apply Mapping" if self._speaker_mapping_dirty else "Draft mapping")
+            ),
+            text_color="#44FF44" if self._speaker_map_verified else "#CCAA44",
+        )
+        self._auto_detect_speakers_btn.configure(state="disabled" if self._speaker_map_verified else "normal")
+        self._apply_speakers_btn.configure(state="disabled" if self._speaker_map_verified else "normal")
+        self._confirm_speakers_btn.configure(state="disabled" if self._speaker_map_verified else "normal")
+        self._speaker_map_card.pack(fill="x", padx=14, pady=(0, 6), before=self._textbox)
+
+    @staticmethod
+    def _set_speaker_entry_value(entry: Any, value: str) -> None:
+        entry.configure(state="normal")
+        if hasattr(entry, "delete") and hasattr(entry, "insert"):
+            entry.delete(0, "end")
+            entry.insert(0, value)
+            return
+        if hasattr(entry, "set"):
+            entry.set(value)
+
+    def _collect_progressive_speaker_map(self) -> dict[int, str]:
+        speaker_map: dict[int, str] = {}
+        for original_label, entry in self._speaker_entries.items():
+            replacement = _strip_speaker_confidence_label(entry.get())
+            if not replacement or replacement == "SELECT SPEAKER...":
+                continue
+            try:
+                sid = int(original_label.replace("Speaker ", "").strip())
+            except ValueError:
+                continue
+            speaker_map[sid] = replacement.upper()
+        return speaker_map
+
+    def _persist_progressive_speaker_map(self, speaker_map: dict[int, str], verified: bool) -> None:
+        if not self._case_root:
+            return
+        config_data = load_job_config(self._case_root)
+        ufm = dict(config_data.get("ufm_fields", {})) if isinstance(config_data, dict) else {}
+        ufm["speaker_map"] = {str(k): v for k, v in speaker_map.items()}
+        ufm["speaker_map_verified"] = bool(verified)
+        merge_and_save(self._case_root, ufm_fields=ufm)
+
+    def _auto_detect_speaker_mapping(self) -> None:
+        defaults = _build_progressive_speaker_defaults(
+            self._mapping_source_text or self._canonical_text,
+            self._saved_speaker_map,
+            self._speaker_map_suggestion,
+        )
+        for speaker_label, entry in self._speaker_entries.items():
+            value = defaults.get(speaker_label, "")
+            if value:
+                speaker_id = speaker_label.replace("Speaker ", "").strip()
+                self._set_speaker_entry_value(
+                    entry,
+                    _format_speaker_option_with_confidence(
+                        speaker_id=speaker_id,
+                        option_label=value,
+                        transcript_text=self._mapping_source_text or self._canonical_text,
+                        config_data=self._job_config_data,
+                    ),
+                )
+        self._speaker_mapping_dirty = True
+        self._speaker_map_status.configure(text="Auto-detected suggestions loaded", text_color="#7DD8E8")
+        self.append_log("Speaker auto-detect populated mapping suggestions.")
+
+    def _apply_progressive_speaker_mapping(self) -> None:
+        speaker_map = self._collect_progressive_speaker_map()
+        if not speaker_map:
+            self.set_status("Assign at least one speaker label first.", "#FFAA44")
+            return
+        self._saved_speaker_map = dict(speaker_map)
+        self._speaker_map_verified = False
+        self._speaker_mapping_dirty = False
+        self._persist_progressive_speaker_map(speaker_map, verified=False)
+
+        remapped_text = _apply_speaker_map_to_text(self._mapping_source_text or self._canonical_text, speaker_map)
+        self._apply_text_update(remapped_text)
+        self._canonical_text = remapped_text
+        self._processed_text = remapped_text
+        self._speaker_map_status.configure(text="Draft mapping applied", text_color="#CCAA44")
+        self.set_status("Draft speaker mapping applied. Confirm before final export.", "#CCAA44")
+        self.append_log(
+            "Speaker mapping applied: "
+            + ", ".join(f"Speaker {sid} → {label}" for sid, label in sorted(speaker_map.items()))
+        )
+
+    def _confirm_progressive_speaker_mapping(self) -> None:
+        speaker_map = self._collect_progressive_speaker_map()
+        if not speaker_map:
+            self.set_status("Assign at least one speaker before confirming.", "#FFAA44")
+            return
+        self._saved_speaker_map = dict(speaker_map)
+        self._speaker_map_verified = True
+        self._speaker_mapping_dirty = False
+        self._persist_progressive_speaker_map(speaker_map, verified=True)
+        self._refresh_speaker_mapping_panel()
+        self.set_status("Speaker mapping confirmed.", "#44FF44")
+        self.append_log("Speaker mapping confirmed and locked for final export.")
 
     def _read_transcript(self, filepath: str) -> str:
         if filepath.lower().endswith(".docx"):
@@ -2631,6 +3179,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         count = result.get("correction_count", 0)
         flags = result.get("flag_count", 0)
+        draft_mode = bool(result.get("draft_mode", False))
         self.append_log(
             f"Done: {count} correction(s), {flags} scopist flag(s). "
             f"File: {corrected_path or self._current_path}"
@@ -2643,9 +3192,15 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
         self.set_status(
-            f"✓ Corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
-            "  Use 'AI Correct' in the Corrections tab to run the optional AI pass.",
-            "#44FF44",
+            (
+                f"{'Draft' if draft_mode else '✓'} corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
+                + (
+                    "  Speaker mapping is not confirmed yet."
+                    if draft_mode
+                    else "  Use 'AI Correct' in the Corrections tab to run the optional AI pass."
+                )
+            ),
+            "#CCAA44" if draft_mode else "#44FF44",
         )
 
     def _start_ai_correction(self, corrected_text: str) -> None:

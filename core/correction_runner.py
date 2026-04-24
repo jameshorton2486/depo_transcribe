@@ -344,8 +344,11 @@ def run_correction_job(
             from spec_engine.models import JobConfig
             job_config = JobConfig()
 
-        if not job_config.speaker_map_verified:
-            raise RuntimeError("Speaker map must be verified before running corrections.")
+        draft_mode = not bool(job_config.speaker_map_verified)
+        if draft_mode:
+            _log("Speaker map not verified — running corrections in draft mode.")
+        else:
+            _log("Speaker map verified — running corrections in final mode.")
 
         _log("Running corrections pipeline...")
         with RunLogger(cause_number=job_config.cause_number or Path(transcript_path).stem) as run_logger:
@@ -380,6 +383,7 @@ def run_correction_job(
             "corrected_at": datetime.now().isoformat(),
             "correction_count": correction_count,
             "flag_count": flag_count,
+            "draft_mode": draft_mode,
             "corrections": all_corrections,
         }
         with open(corrections_path, "w", encoding="utf-8") as fh:
@@ -394,6 +398,7 @@ def run_correction_job(
             corrections=correction_count,
             flags=flag_count,
             spellings=len(job_config.confirmed_spellings),
+            draft_mode=draft_mode,
             output=Path(corrected_path).name,
         )
 
@@ -404,6 +409,7 @@ def run_correction_job(
             "corrected_text": corrected_text,
             "correction_count": correction_count,
             "flag_count": flag_count,
+            "draft_mode": draft_mode,
             "error": None,
         })
 

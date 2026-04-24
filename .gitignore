@@ -5,6 +5,9 @@ __pycache__/
 .env
 temp/
 logs/
+# runtime outputs
+app_output.txt
+deepgram_output.txt
 output/
 jobs/*.json
 jobs/*.pkl
