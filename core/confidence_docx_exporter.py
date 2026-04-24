@@ -104,5 +104,20 @@ def export_confidence_docx(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     log(f"Saving review DOCX: {target.name}")
-    doc.save(target)
+
+    # doc.save raises PermissionError when the target file is already open
+    # in Word (or any application holding a write lock). Re-raise with a
+    # message that names the file and tells the user what to do.
+    try:
+        doc.save(target)
+    except PermissionError:
+        raise PermissionError(
+            f"Cannot save '{target.name}' - the file is open in another "
+            f"application (e.g., Microsoft Word). Close the file and try again."
+        )
+    except OSError as exc:
+        raise OSError(
+            f"Failed to save confidence review DOCX to '{target}': {exc}"
+        ) from exc
+
     return str(target)
