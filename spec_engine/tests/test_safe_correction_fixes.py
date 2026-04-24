@@ -13,8 +13,20 @@ def test_medical_injection_not_objection():
 
 
 def test_curtory_to_cursory():
-    text, _, _ = clean_block("Penalty of curtory.", _cfg())
+    # Generic standalone "curtory" still resolves to "cursory".
+    text, _, _ = clean_block("A curtory review was done.", _cfg())
     assert "cursory" in text.lower()
+
+
+def test_penalty_of_curtory_to_perjury():
+    # In the "penalty of" oath context, "curtory"/"cursory" is a Deepgram
+    # garble of "perjury". The context-specific rule fires before the
+    # generic curtory->cursory rule, so the final text has "perjury",
+    # not the nonsensical "penalty of cursory".
+    text, _, _ = clean_block("Penalty of curtory.", _cfg())
+    assert "perjury" in text.lower()
+    text, _, _ = clean_block("Under penalty of cursory.", _cfg())
+    assert "perjury" in text.lower()
 
 
 def test_leaving_not_global():

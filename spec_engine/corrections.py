@@ -262,6 +262,12 @@ TEXAS_DEPOSITION_SEEDS = {
     "Mia Bardo": "Miah Bardot",
     "Mia Bardell": "Miah Bardot",
     "Mia Bordeau": "Miah Bardot",
+    # Additional Deepgram garbles of "Miah Bardot" - 'Bardeau' (e-a-u) is
+    # distinct from 'Bordeau' (o-r-d) above.
+    "Mia Bardeau": "Miah Bardot",
+    "Lea Bardot": "Miah Bardot",
+    "Neobardeau": "Miah Bardot",
+    "Miyamardeau": "Miah Bardot",
     "Nadia Ivonne": "Nadia Yvonne",
 }
 
@@ -459,6 +465,13 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Mhmm variants → mm-hmm (capitalize_first() handles sentence-start case)
     (r'\b[Mm]hmm\b',  'mm-hmm'),
     (r'\b[Mm]mhm\b',  'mm-hmm'),
+    # "penalty of curtory/cursory" is a Deepgram garble of the oath phrase
+    # "penalty of perjury". This context-specific rule must fire BEFORE the
+    # generic 'curtory -> cursory' pattern below, otherwise "curtory" is
+    # consumed first and the oath phrase becomes "penalty of cursory".
+    # Standalone uses ("a curtory review" etc.) still resolve correctly via
+    # the second rule.
+    (r'\bpenalty\s+of\s+(?:curtory|cursory)\b', 'penalty of perjury'),
     (r'\bcurtory\b', 'cursory'),
 
     # Brooke Army Medical Center
@@ -467,6 +480,10 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Deepgram word splits
     (r'\bvideo\s+grapher\b',     'videographer'),
     (r'\bcourt\s+report\s*er\b', 'court reporter'),
+    # "court border" - Deepgram garble of the reporter introduction phrase
+    # ("I am Miah Bardot, court border licensed in Texas"). Fires safely
+    # because "court border" has no legitimate meaning in legal prose.
+    (r'\bcourt\s+border\b', 'court reporter'),
 
     # Standalone subpoena garbles
     (r'\bsubpeona\b', 'subpoena'),
@@ -984,6 +1001,12 @@ def fix_universal_legal_phrases(text: str) -> str:
         (r'\bsame\s+effect\s+as\s+a\s+weapon\s+in\s+the\s+courthouse\b', 'same force and effect as if given in open court'),
         (r'\bsame\s+force\s+and\s+effect\s+as\s+a\s+weapon\b', 'same force and effect as if given in open court'),
         (r'\bThey\s+do\.(?=\s+Thank you\b)', 'I do.'),
+        # Standalone block-level "They do." - Deepgram garble of the witness's
+        # oath response. The ^...$ anchors (without re.MULTILINE, which is not
+        # set in sub() calls here) fire only when the entire block text is
+        # exactly "They do." so longer blocks like "They do have the right..."
+        # are not touched.
+        (r'^They\s+do\.$', 'I do.'),
         (r'\bdo\s+you\s+have\s+to\s+stay\s+ahead\b', 'do you have to stand'),
         (r'\byou\s+have\s+to\s+stay\s+ahead\b', 'you have to stand'),
         (r'\bcourt\s+reporter\s+license\s+in\s+Texas\b', 'court reporter, licensed in Texas'),
@@ -1543,6 +1566,15 @@ def fix_csr_number_digits(text: str) -> str:
         working = segment
         for pattern, replacer in patterns:
             working = pattern.sub(replacer, working)
+        # Strip a trailing ". <single digit>" artifact after an already-resolved
+        # CSR number. Deepgram occasionally appends an extra digit token once
+        # the main number has already been collapsed to "CSR No. NNNNN". Must
+        # run AFTER the spoken-digit collapse above.
+        working = re.sub(
+            r'(CSR\s+No\.\s+\d{4,6})\.\s+\d\b',
+            r'\1',
+            working,
+        )
         return working
 
     return _apply_outside_protected_segments(text, _replace)
@@ -2132,6 +2164,12 @@ def normalize_sentence_spacing(
 
     Ellipsis is normalized to spaced form without changing pause semantics.
     """
+    # Replace non-breaking spaces (\xa0) that occasionally arrive from
+    # Deepgram / PDF parsing with regular double spaces. Must run first so
+    # downstream rules only see regular ASCII whitespace.
+    if '\xa0' in text:
+        text = text.replace('\xa0', '  ')
+
     if re.fullmatch(r"Objection\.\s+Form\.\.?", text, flags=re.IGNORECASE):
         return "Objection. Form."
 
