@@ -307,6 +307,8 @@ def run_correction_job(
             transcript=Path(transcript_path).name,
         )
 
+        _log(f"Using correction runner module: {Path(__file__).resolve()}")
+
         _log("Locating Deepgram JSON...")
         json_path = _find_deepgram_json(transcript_path)
 

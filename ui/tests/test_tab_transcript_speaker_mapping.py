@@ -1,5 +1,6 @@
 from ui.tab_transcript import (
     _apply_speaker_map_to_text,
+    _build_transcript_context_status,
     _build_speaker_dropdown_values,
     _build_speaker_options,
     _build_progressive_speaker_defaults,
@@ -10,6 +11,7 @@ from ui.tab_transcript import (
     _format_attorney_dropdown_label,
     _format_speaker_option_with_confidence,
     _normalize_transcript_speaker_map,
+    _resolve_case_root_for_transcript,
     _strip_speaker_confidence_label,
 )
 
@@ -143,3 +145,23 @@ def test_format_speaker_option_with_confidence_appends_label():
     result = _format_speaker_option_with_confidence("1", "MR. BENAVIDES", transcript_text, config_data)
 
     assert result == "MR. BENAVIDES (High)"
+
+
+def test_resolve_case_root_for_transcript_detects_deepgram_layout():
+    result = _resolve_case_root_for_transcript(
+        r"C:\Depositions\2026\Apr\2024-CI-28593\leifer_jack\Deepgram\test.txt"
+    )
+
+    assert result == (r"C:\Depositions\2026\Apr\2024-CI-28593\leifer_jack", True)
+
+
+def test_build_transcript_context_status_reports_missing_config():
+    result = _build_transcript_context_status({})
+
+    assert result == ("No case configuration found — limited corrections will run.", "#CCAA44")
+
+
+def test_build_transcript_context_status_reports_draft_mode():
+    result = _build_transcript_context_status({"ufm_fields": {"speaker_map_verified": False}})
+
+    assert result == ("Case configuration loaded — Mode: Draft.", "#CCAA44")

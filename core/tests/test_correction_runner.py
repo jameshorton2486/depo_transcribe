@@ -4,6 +4,7 @@ Smoke test for core/correction_runner.py.
 Does NOT make network calls. Tests only pure-Python logic.
 """
 import json
+import logging
 import os
 import tempfile
 import pytest
@@ -331,6 +332,31 @@ def test_run_correction_job_allows_unverified_speaker_map_in_draft_mode(monkeypa
 
         assert results[0]["success"] is True
         assert results[0]["draft_mode"] is True
+
+
+def test_run_correction_job_logs_module_path(monkeypatch, caplog):
+    from core.correction_runner import run_correction_job
+
+    caplog.set_level(logging.INFO)
+
+    monkeypatch.setattr(
+        "core.correction_runner._load_job_config_for_transcript",
+        lambda _path: {"ufm_fields": {"speaker_map_verified": False}, "confirmed_spellings": {}},
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        txt_path = os.path.join(tmpdir, "source.txt")
+        json_path = os.path.join(tmpdir, "source.json")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write("RAW INPUT")
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump({"utterances": [{"speaker": 1, "transcript": "RAW INPUT", "words": []}]}, f)
+
+        results = []
+        run_correction_job(txt_path, done_callback=lambda r: results.append(r))
+
+        assert results[0]["success"] is True
+        assert "Using correction runner module:" in caplog.text
 
 
 def test_run_correction_job_rejects_json_without_utterances(monkeypatch):

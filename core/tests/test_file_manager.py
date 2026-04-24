@@ -17,6 +17,12 @@ def test_build_case_path_uses_required_structure():
     assert path.endswith(expected)
 
 
+def test_build_case_path_accepts_long_form_month_dates():
+    path = build_case_path("C:\\Depositions", "2025CI19595", "Coger", "Matthew", "April 10, 2026")
+    expected = os.path.join("2026", "Apr", "2025CI19595", "coger_matthew")
+    assert path.endswith(expected)
+
+
 def test_create_case_folders_creates_required_subfolders(tmp_path):
     create_case_folders(str(tmp_path / "2026" / "Mar" / "2025CI19595" / "coger_matthew"))
     assert (tmp_path / "2026" / "Mar" / "2025CI19595" / "coger_matthew" / "source_docs").is_dir()

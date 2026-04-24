@@ -337,6 +337,40 @@ def _choose_best_speaker_option(
     return best_option
 
 
+def _resolve_case_root_for_transcript(filepath: str) -> tuple[str | None, bool]:
+    path = Path(filepath)
+    parent = path.parent
+
+    if parent.name.lower() == "deepgram":
+        return str(parent.parent), True
+
+    if (parent / "Deepgram").is_dir() and (parent / "source_docs").is_dir():
+        return str(parent), True
+
+    return None, False
+
+
+def _build_transcript_context_status(config_data: dict[str, Any] | None) -> tuple[str, str]:
+    if not isinstance(config_data, dict) or not config_data:
+        return (
+            "No case configuration found — limited corrections will run.",
+            "#CCAA44",
+        )
+
+    ufm = config_data.get("ufm_fields", {})
+    if not isinstance(ufm, dict) or not ufm:
+        return (
+            "Case configuration loaded, but UFM fields are missing — draft corrections only.",
+            "#CCAA44",
+        )
+
+    mode = "Final" if ufm.get("speaker_map_verified") else "Draft"
+    return (
+        f"Case configuration loaded — Mode: {mode}.",
+        "#44FF44" if mode == "Final" else "#CCAA44",
+    )
+
+
 class TranscriptTab(ctk.CTkFrame):
     """Transcript review workspace with audio sync and confidence markup."""
 
@@ -1229,7 +1263,7 @@ class TranscriptTab(ctk.CTkFrame):
             return
         try:
             content = self._read_transcript(filepath)
-            self._case_root = str(Path(filepath).parent.parent)
+            self._case_root, has_case_context = _resolve_case_root_for_transcript(filepath)
             self._current_path = filepath
             self._corrected_path = None
             self._review_docx_path = None
@@ -1263,6 +1297,13 @@ class TranscriptTab(ctk.CTkFrame):
             except AttributeError:
                 pass
             self._load_progressive_speaker_state(filepath)
+            context_text, context_color = _build_transcript_context_status(self._job_config_data)
+            self.append_log(context_text)
+            if not has_case_context:
+                self.append_log("Transcript is outside a detected case folder — speaker persistence is limited.")
+                self.set_status("Loaded transcript outside case folder — limited corrections will run.", "#CCAA44")
+            else:
+                self.set_status(context_text, context_color)
             self._load_low_confidence_words(filepath)
             self._load_word_data(filepath)
         except Exception as exc:
@@ -1272,8 +1313,9 @@ class TranscriptTab(ctk.CTkFrame):
         self._speaker_entries.clear()
         self._speaker_mapping_dirty = False
         self._selected_speaker_label = None
-        self._case_root = str(Path(filepath).parent.parent)
-        config_data = load_job_config(self._case_root)
+        resolved_case_root, _ = _resolve_case_root_for_transcript(filepath)
+        self._case_root = resolved_case_root
+        config_data = load_job_config(self._case_root) if self._case_root else {}
         self._job_config_data = config_data if isinstance(config_data, dict) else {}
         ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
         self._saved_speaker_map = _normalize_transcript_speaker_map(

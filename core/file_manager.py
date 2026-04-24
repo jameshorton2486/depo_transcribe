@@ -18,6 +18,8 @@ MONTH_ABBR = {
 
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
 
+_DATE_FORMATS = ("%m/%d/%Y", "%B %d, %Y")
+
 
 def build_case_path(
     base_folder: str,
@@ -27,9 +29,14 @@ def build_case_path(
     deposition_date: str | None = None,
 ) -> str:
     if deposition_date:
-        try:
-            dt = datetime.strptime(deposition_date, "%m/%d/%Y")
-        except ValueError:
+        dt = None
+        for fmt in _DATE_FORMATS:
+            try:
+                dt = datetime.strptime(deposition_date, fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
             logger.warning("Invalid date format '%s', using today.", deposition_date)
             dt = datetime.today()
     else:
