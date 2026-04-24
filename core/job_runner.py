@@ -75,6 +75,19 @@ def _transcribe_prepared_audio(
     return reassemble_chunks(chunk_results, chunk_offsets), chunks
 
 
+def _build_chunk_summaries(chunks: list) -> list[dict]:
+    summaries: list[dict] = []
+    for chunk in chunks:
+        summaries.append(
+            {
+                "file_path": getattr(chunk, "file_path", ""),
+                "start_seconds": getattr(chunk, "start_seconds", 0.0),
+                "end_seconds": getattr(chunk, "end_seconds", 0.0),
+            }
+        )
+    return summaries
+
+
 def run_transcription_job(
     audio_path: str,
     model: str,
@@ -315,10 +328,17 @@ def run_transcription_job(
         json_data = {
             "audio_file": audio_path,
             "model": model,
+            "audio_quality": quality,
+            "audio_tier": analysis.tier if analysis else "",
             "utt_split": utt_split,
             "created_at": datetime.now().isoformat(),
             "duration_sec": v["duration"],
             "word_count": word_count,
+            "utterance_count": utterance_count,
+            "chunk_count": len(chunks),
+            "deepgram_keyterms_used": merged_keyterms,
+            "transcript": transcript_text,
+            "chunk_summaries": _build_chunk_summaries(chunks),
             "utterances": assembled.get("utterances", []),
             "words": assembled.get("words", []),
         }
@@ -330,8 +350,13 @@ def run_transcription_job(
         raw_data = {
             "audio_file": audio_path,
             "model": model,
+            "audio_quality": quality,
+            "audio_tier": analysis.tier if analysis else "",
             "utt_split": utt_split,
             "created_at": datetime.now().isoformat(),
+            "chunk_count": len(chunks),
+            "deepgram_keyterms_used": merged_keyterms,
+            "chunk_summaries": _build_chunk_summaries(chunks),
             "chunks": assembled.get("raw_chunks", []),
         }
         with open(raw_json_path, "w", encoding="utf-8") as f:

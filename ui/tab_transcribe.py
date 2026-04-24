@@ -13,6 +13,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 
@@ -40,6 +41,152 @@ _ENTRY_BORDER = "#1E3A5F"
 _HEADER_BG = "#1E3A5F"
 _AMBER = "#B8860B"
 _AMBER_DARK = "#2A1A00"
+
+
+def _normalize_ui_speaker_map(raw: dict | None) -> dict[int, str]:
+    """Normalize persisted speaker_map keys to int IDs for UI use."""
+    normalized: dict[int, str] = {}
+    if not isinstance(raw, dict):
+        return normalized
+
+    for key, value in raw.items():
+        try:
+            speaker_id = int(str(key).strip())
+        except (TypeError, ValueError):
+            continue
+
+        label = str(value or "").strip().upper()
+        if label:
+            normalized[speaker_id] = label
+
+    return normalized
+
+
+def _normalize_ui_speaker_suggestion(raw: dict | None) -> dict[str, Any]:
+    """Keep only supported speaker suggestion fields in a stable shape."""
+    if not isinstance(raw, dict):
+        return {}
+
+    normalized: dict[str, Any] = {}
+    for key in (
+        "reporter",
+        "witness",
+        "deponent",
+        "ordering_attorney",
+        "filing_attorney",
+    ):
+        value = str(raw.get(key) or "").strip()
+        if value:
+            normalized[key] = value
+
+    copy_attorneys = raw.get("copy_attorneys", [])
+    if isinstance(copy_attorneys, list):
+        cleaned = [str(item).strip() for item in copy_attorneys if str(item).strip()]
+        if cleaned:
+            normalized["copy_attorneys"] = cleaned
+
+    return normalized
+
+
+def _build_ui_speaker_defaults(
+    speaker_ids: list[str],
+    saved_map: dict[int, str] | dict[str, str] | None,
+    suggestion: dict[str, Any] | None,
+) -> dict[str, str]:
+    """
+    Build UI defaults for speaker entry rows.
+
+    Priority:
+    1. Exact saved speaker_map entries from prior confirmation
+    2. Ordered NOD suggestions as editable defaults only
+    """
+    defaults: dict[str, str] = {}
+    normalized_saved = _normalize_ui_speaker_map(saved_map)
+
+    for sid_text in speaker_ids:
+        try:
+            speaker_id = int(str(sid_text).strip())
+        except (TypeError, ValueError):
+            continue
+        if speaker_id in normalized_saved:
+            defaults[f"Speaker {sid_text}"] = normalized_saved[speaker_id]
+
+    if defaults:
+        return defaults
+
+    normalized_suggestion = _normalize_ui_speaker_suggestion(suggestion)
+    ordered_defaults: list[str] = []
+
+    if normalized_suggestion.get("reporter"):
+        ordered_defaults.append("THE REPORTER")
+
+    for key in ("ordering_attorney", "filing_attorney"):
+        name = str(normalized_suggestion.get(key) or "").strip()
+        if name:
+            ordered_defaults.append(name.upper())
+
+    for name in normalized_suggestion.get("copy_attorneys", []):
+        value = str(name).strip().upper()
+        if value:
+            ordered_defaults.append(value)
+
+    if normalized_suggestion.get("witness") or normalized_suggestion.get("deponent"):
+        ordered_defaults.append("THE WITNESS")
+
+    deduped_defaults: list[str] = []
+    seen: set[str] = set()
+    for value in ordered_defaults:
+        if value not in seen:
+            seen.add(value)
+            deduped_defaults.append(value)
+
+    for sid_text, default_value in zip(speaker_ids, deduped_defaults):
+        defaults[f"Speaker {sid_text}"] = default_value
+
+    return defaults
+
+
+def _build_ui_speaker_reference_text(suggestion: dict[str, Any] | None) -> str:
+    """Build a compact read-only hint from NOD speaker suggestions."""
+    normalized = _normalize_ui_speaker_suggestion(suggestion)
+    parts: list[str] = []
+
+    reporter_name = str(normalized.get("reporter") or "").strip()
+    witness_name = str(normalized.get("witness") or normalized.get("deponent") or "").strip()
+
+    if reporter_name:
+        parts.append(f"Reporter: {reporter_name.upper()}")
+    if witness_name:
+        parts.append(f"Witness: {witness_name.upper()}")
+
+    attorney_names: list[str] = []
+    for key in ("ordering_attorney", "filing_attorney"):
+        name = str(normalized.get(key) or "").strip()
+        if name:
+            attorney_names.append(name.upper())
+    for name in normalized.get("copy_attorneys", []):
+        value = str(name).strip().upper()
+        if value:
+            attorney_names.append(value)
+
+    if attorney_names:
+        deduped_attorneys = list(dict.fromkeys(attorney_names))
+        parts.append("Attorneys: " + "; ".join(deduped_attorneys))
+
+    return "  |  ".join(parts)
+
+
+def _build_ui_quickfill_labels(suggestion: dict[str, Any] | None) -> list[str]:
+    """Return canonical safe labels that can be applied with one click."""
+    normalized = _normalize_ui_speaker_suggestion(suggestion)
+    labels: list[str] = []
+
+    if normalized.get("reporter"):
+        labels.append("THE REPORTER")
+    if normalized.get("witness") or normalized.get("deponent"):
+        labels.append("THE WITNESS")
+
+    return labels
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -683,6 +830,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_output_dir: str = ""
         self._running = False
         self._speaker_entries: dict[str, ctk.CTkEntry] = {}
+        self._speaker_map_suggestion: dict[str, Any] = {}
+        self._saved_speaker_map: dict[int, str] = {}
         self._extracted_case_data: dict = {}
         self._ufm_fields: dict = {}
         self._reporter_notes_text: str = ""
@@ -1109,6 +1258,16 @@ class TranscribeTab(ctk.CTkFrame):
             text_color="gray",
         ).pack(anchor="w", padx=12, pady=(0, 6))
 
+        self._speaker_hint_label = ctk.CTkLabel(
+            self._speaker_card,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="#7DAACC",
+            justify="left",
+            wraplength=760,
+        )
+        self._speaker_hint_label.pack(anchor="w", padx=12, pady=(0, 6))
+
         # Dynamic rows — rebuilt each time a transcript completes
         self._speaker_rows_frame = ctk.CTkFrame(
             self._speaker_card, fg_color="transparent"
@@ -1187,6 +1346,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._reporter_notes_text = ""
         self._pdf_keyterms = []
         self._confirmed_spellings = {}
+        self._speaker_map_suggestion = {}
+        self._saved_speaker_map = {}
         self._last_pdf_path = None
         self._last_reporter_notes_path = None
         self._extracted_case_data = {}
@@ -1222,6 +1383,14 @@ class TranscribeTab(ctk.CTkFrame):
         """Restore persisted transcription settings from job_config.json."""
         if not isinstance(config_data, dict):
             return
+
+        self._speaker_map_suggestion = _normalize_ui_speaker_suggestion(
+            config_data.get("speaker_map_suggestion", {})
+        )
+        ufm = config_data.get("ufm_fields", {})
+        self._saved_speaker_map = _normalize_ui_speaker_map(
+            ufm.get("speaker_map", {}) if isinstance(ufm, dict) else {}
+        )
 
         model = config_data.get("model")
         if model in {"nova-3", "nova-3-medical"}:
@@ -2170,23 +2339,72 @@ class TranscribeTab(ctk.CTkFrame):
             widget.destroy()
         self._speaker_entries.clear()
 
+        reference_text = _build_ui_speaker_reference_text(self._speaker_map_suggestion)
+        self._speaker_hint_label.configure(
+            text=(
+                f"NOD suggestions loaded.  {reference_text}  |  Review before applying."
+                if reference_text
+                else ""
+            )
+        )
+
         # Find all unique speaker IDs in the transcript
         speakers = sorted(set(re.findall(r'Speaker (\d+):', self._transcript_text)))
+        suggested_defaults = _build_ui_speaker_defaults(
+            speakers,
+            self._saved_speaker_map,
+            self._speaker_map_suggestion,
+        )
+        quickfill_labels = _build_ui_quickfill_labels(self._speaker_map_suggestion)
 
         for sid in speakers:
             row = ctk.CTkFrame(self._speaker_rows_frame, fg_color="transparent")
             row.pack(fill="x", pady=2)
 
+            main_row = ctk.CTkFrame(row, fg_color="transparent")
+            main_row.pack(fill="x")
+
             ctk.CTkLabel(
-                row, text=f"Speaker {sid}:", width=100, anchor="w",
+                main_row, text=f"Speaker {sid}:", width=100, anchor="w",
                 font=ctk.CTkFont(weight="bold"),
             ).pack(side="left", padx=(0, 8))
 
-            entry = ctk.CTkEntry(row, placeholder_text="e.g. THE REPORTER")
+            entry = ctk.CTkEntry(main_row, placeholder_text="e.g. THE REPORTER")
             entry.pack(side="left", fill="x", expand=True)
+            default_label = suggested_defaults.get(f"Speaker {sid}", "")
+            if default_label:
+                entry.insert(0, default_label)
             self._speaker_entries[f"Speaker {sid}"] = entry
 
+            if quickfill_labels:
+                actions_row = ctk.CTkFrame(row, fg_color="transparent")
+                actions_row.pack(fill="x", padx=(108, 0), pady=(4, 0))
+
+                ctk.CTkLabel(
+                    actions_row,
+                    text="Quick fill:",
+                    font=ctk.CTkFont(size=11),
+                    text_color="#7DAACC",
+                ).pack(side="left", padx=(0, 6))
+
+                for label in quickfill_labels:
+                    ctk.CTkButton(
+                        actions_row,
+                        text=label,
+                        height=24,
+                        width=max(96, len(label) * 7),
+                        fg_color="#22384F",
+                        hover_color="#2D4A69",
+                        font=ctk.CTkFont(size=11),
+                        command=lambda e=entry, value=label: self._set_speaker_entry_value(e, value),
+                    ).pack(side="left", padx=(0, 6))
+
         self._speaker_card.pack(fill="both", expand=True, pady=(0, 10))
+
+    @staticmethod
+    def _set_speaker_entry_value(entry: ctk.CTkEntry, value: str):
+        entry.delete(0, "end")
+        entry.insert(0, value)
 
     def _apply_and_save_labels(self):
         """

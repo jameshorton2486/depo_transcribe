@@ -59,6 +59,7 @@ class IntakeParsedResult:
     vocabulary_terms: list[VocabularyTerm] = field(default_factory=list)
     all_proper_nouns: list[str] = field(default_factory=list)
     confirmed_spellings: dict[str, str] = field(default_factory=dict)
+    keyterm_map: dict[str, dict[str, str]] = field(default_factory=dict)
     speaker_map_suggestion: dict[str, Any] = field(default_factory=dict)
     entity_counts: dict[str, int] = field(default_factory=dict)
     term_count: int = 0
@@ -299,6 +300,20 @@ LEGAL_PHRASE_LEXICON = (
     "Pursuant to",
 )
 
+OCR_NORMALIZATIONS = {
+    "ASCUNSION": "ASCUNCION",
+}
+
+
+def _clean_extracted_text(text: str) -> str:
+    cleaned = text or ""
+    for wrong, correct in OCR_NORMALIZATIONS.items():
+        cleaned = cleaned.replace(wrong, correct)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\s*\n\s*", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
 
 def _strip_markdown_fences(text: str) -> str:
     cleaned = (text or "").strip()
@@ -443,6 +458,66 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
         seen.add(key)
         out.append(value)
     return out
+
+
+def _extract_county_state_from_court(court: str | None) -> tuple[str | None, str | None]:
+    text = _coerce_str(court) or ""
+    match = re.search(r"([A-Z][A-Za-z]+)\s+County,\s+([A-Z][A-Za-z]+)", text, re.IGNORECASE)
+    if not match:
+        return None, None
+    return f"{match.group(1).title()} County", match.group(2).title()
+
+
+def _build_structured_keyterm_map(
+    cause_number: str | None,
+    court: str | None,
+    plaintiffs: list[str],
+    defendants: list[str],
+    deponents: list[dict],
+    ordering_attorney: dict,
+    filing_attorney: dict,
+    copy_attorneys: list[dict],
+    all_proper_nouns: list[str],
+) -> dict[str, dict[str, str]]:
+    keyterm_map: dict[str, dict[str, str]] = {
+        "names": {},
+        "locations": {},
+        "legal": {
+            "cost number": "Cause Number",
+            "cop number": "Cause Number",
+        },
+    }
+
+    name_candidates: list[str] = []
+    name_candidates.extend(plaintiffs)
+    name_candidates.extend(defendants)
+    name_candidates.extend(
+        _coerce_str(deponent.get("name")) or "" for deponent in deponents
+    )
+    for attorney in (ordering_attorney, filing_attorney):
+        name_candidates.append(_coerce_str(attorney.get("name")) or "")
+    name_candidates.extend(_coerce_str(item.get("name")) or "" for item in copy_attorneys)
+    name_candidates.extend(term for term in all_proper_nouns if " " in term)
+
+    for name in _dedupe_preserve(name_candidates):
+        parts = [part for part in name.split() if part]
+        if not parts:
+            continue
+        last = re.sub(r"[^A-Za-z'-]", "", parts[-1]).lower()
+        if len(last) >= 3:
+            keyterm_map["names"][last] = name
+
+    county, state = _extract_county_state_from_court(court)
+    if county == "Bexar County":
+        keyterm_map["locations"]["bear county"] = county
+    elif county:
+        keyterm_map["locations"][county.lower()] = county
+    if state:
+        keyterm_map["locations"][state.lower()] = state
+    if cause_number:
+        keyterm_map["legal"][cause_number.lower()] = cause_number
+
+    return keyterm_map
 
 
 def _extract_dates(text: str) -> set[str]:
@@ -592,7 +667,7 @@ def parse_intake_document(
 
     if extracted_text is not None:
         log("[IntakeParser] Using pre-extracted text")
-        text = extracted_text.strip()
+        text = _clean_extracted_text(extracted_text)
         text = re.sub(r",\s*\n\s*(Jr\.?|Sr\.?|III|IV)\b", r", \1", text)
     else:
         log(f"[IntakeParser] Reading PDF: {filepath}")
@@ -605,7 +680,7 @@ def parse_intake_document(
                     page_text = page.extract_text() or ""
                     if page_text.strip():
                         text_parts.append(page_text)
-            text = "\n\n".join(text_parts).strip()
+            text = _clean_extracted_text("\n\n".join(text_parts))
             text = re.sub(r",\s*\n\s*(Jr\.?|Sr\.?|III|IV)\b", r", \1", text)
         except Exception as exc:
             logger.error("[IntakeParser] PDF read failed: %s", exc)
@@ -688,6 +763,17 @@ def parse_intake_document(
         vocabulary_terms=vocabulary_terms,
         all_proper_nouns=filtered_terms,
         confirmed_spellings=final_spellings,
+        keyterm_map=_build_structured_keyterm_map(
+            cause_number=_coerce_str(data.get("cause_number")),
+            court=_coerce_str(data.get("court")),
+            plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
+            defendants=_coerce_list_of_str(data.get("defendants")),
+            deponents=_coerce_deponents(data),
+            ordering_attorney=_coerce_dict(data.get("ordering_attorney")),
+            filing_attorney=_coerce_dict(data.get("filing_attorney")),
+            copy_attorneys=_coerce_list_of_dict(data.get("copy_attorneys")),
+            all_proper_nouns=filtered_terms,
+        ),
         speaker_map_suggestion=_build_speaker_map_suggestion(
             plaintiffs=_coerce_list_of_str(data.get("plaintiffs")),
             defendants=_coerce_list_of_str(data.get("defendants")),

@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from core.config import MAX_KEYTERMS
 from core.intake_parser import (
     STANDARD_LEGAL_SPELLINGS,
+    _clean_extracted_text,
     _normalize_confirmed_spellings,
     _strip_markdown_fences,
     filter_keyterms,
@@ -154,6 +155,14 @@ def test_normalize_confirmed_spellings_keeps_unknown_target_when_needed():
     assert result["Macao"] == "Macao"
 
 
+def test_clean_extracted_text_normalizes_known_ocr_name_variant():
+    raw = "JAYPEE ASCUNSION\nvs.\nSTONE"
+
+    cleaned = _clean_extracted_text(raw)
+
+    assert "ASCUNCION" in cleaned
+
+
 def test_parse_intake_document_uses_preextracted_text_without_pdf_read(monkeypatch):
     def _fail_open(_path):
         raise AssertionError("pdfplumber should not be used when extracted_text is supplied")
@@ -270,3 +279,47 @@ def test_parse_intake_document_builds_speaker_map_and_entity_counts(monkeypatch)
     assert result.entity_counts["dates"] == 1
     assert result.entity_counts["times"] == 1
     assert result.entity_counts["keyterms"] == 3
+
+
+def test_parse_intake_document_builds_structured_keyterm_map(monkeypatch):
+    json_text = (
+        '{"cause_number":"2024-CI-27841","court":"In the 131st Judicial District Court of Bexar County, Texas",'
+        '"case_style":"Jaypee Ascuncion v. Gregory Ernest Stone",'
+        '"deposition_date":"04/22/2026","deposition_method":"Via Zoom",'
+        '"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,'
+        '"signature_waived":false,"video_recorded":false,'
+        '"plaintiffs":["Jaypee Ascuncion","Joanna Ascuncion"],'
+        '"defendants":["Gregory Ernest Stone"],'
+        '"deponents":[{"name":"Gregory Ernest Stone","role":"deponent"}],'
+        '"ordering_attorney":{"name":"Thomas D. Jones","firm":"Law Offices of Thomas D. Jones, P.C."},'
+        '"filing_attorney":{"name":"Hector M. Benavides","firm":"Holly D Shull & Associates"},'
+        '"copy_attorneys":[],"ordered_by":"SA Legal Solutions","reporter_name":"Miah Bardot",'
+        '"reporter_csr":null,"reporter_firm":"SA Legal Solutions","reporter_address":null,'
+        '"vocabulary_terms":[],'
+        '"all_proper_nouns":["Gregory Ernest Stone","Thomas D. Jones","Hector M. Benavides","Bexar County"],'
+        '"confirmed_spellings":{}}'
+    )
+
+    class _FakeMessages:
+        @staticmethod
+        def create(**kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text=json_text)])
+
+    class _FakeAnthropic:
+        def __init__(self, api_key=None):
+            self.messages = _FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+
+    result = parse_intake_document(
+        "ignored.pdf",
+        extracted_text="CAUSE NO. 2024-CI-27841\nBEXAR COUNTY, TEXAS\nGREGORY ERNEST STONE",
+    )
+
+    assert result is not None
+    assert result.keyterm_map["names"]["stone"] == "Gregory Ernest Stone"
+    assert result.keyterm_map["names"]["jones"] == "Thomas D. Jones"
+    assert result.keyterm_map["names"]["benavides"] == "Hector M. Benavides"
+    assert result.keyterm_map["locations"]["bear county"] == "Bexar County"
+    assert result.keyterm_map["legal"]["cost number"] == "Cause Number"

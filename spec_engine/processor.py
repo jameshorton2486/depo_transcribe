@@ -6,15 +6,47 @@ This is the primary place where block intelligence is orchestrated.
 
 from __future__ import annotations
 
+import copy
 from typing import Any, List
 
 from .classifier import classify_blocks
 from .corrections import apply_corrections
 from .models import Block
 from .objections import extract_objections
+from .paragraph_splitter import split_block_text
 from .qa_fixer import fix_qa_structure
 from .speaker_mapper import map_speakers
 from .validator import validate_blocks
+
+
+def split_blocks_into_paragraphs(blocks: List[Block]) -> List[Block]:
+    new_blocks: list[Block] = []
+    splittable_types = {"Q", "A", "SPEAKER", "COLLOQUY", "SP"}
+
+    for block in blocks:
+        if not getattr(block, "text", ""):
+            new_blocks.append(block)
+            continue
+
+        block_type = getattr(getattr(block, "block_type", None), "value", getattr(block, "block_type", None))
+        if block_type not in splittable_types:
+            new_blocks.append(block)
+            continue
+
+        segments = split_block_text(block.text)
+        if len(segments) == 1:
+            new_blocks.append(block)
+            continue
+
+        for segment in segments:
+            segment = segment.strip()
+            if not segment:
+                continue
+            new_block = copy.deepcopy(block)
+            new_block.text = segment
+            new_blocks.append(new_block)
+
+    return new_blocks
 
 
 def process_blocks(
@@ -71,6 +103,17 @@ def process_blocks(
     if _log:
         _log.snapshot("04a_blocks_qa_fixed", blocks)
         _log.log_step("Q/A structure complete")
+
+    blocks_before_split = list(blocks)
+    blocks = split_blocks_into_paragraphs(blocks)
+
+    if _log:
+        _log.snapshot("04b_blocks_paragraph_split", blocks)
+        _log.log_step(
+            "Paragraph split complete",
+            original_blocks=len(blocks_before_split),
+            new_blocks=len(blocks),
+        )
 
     blocks = extract_objections(blocks, job_config)
     blocks = classify_blocks(blocks, job_config)
