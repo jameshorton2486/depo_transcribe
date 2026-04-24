@@ -20,7 +20,7 @@ RULES_VERSION = 1
 VERBATIM_PROTECTED = frozenset([
     "uh", "um", "ah", "uh-huh", "uh-uh",
     "yeah", "yep", "yup", "nope", "nah",
-    "mm-hmm", "gonna", "wanna",
+    "mm-hmm", "mhmm", "gonna", "wanna", "gotta",
 ])
 
 
