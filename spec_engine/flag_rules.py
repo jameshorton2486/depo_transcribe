@@ -33,8 +33,12 @@ def _make_flag_block(source_block: Block, flag_number: int, description: str, bl
     flag_block.text = f"[SCOPIST: FLAG {flag_number}: {description}]"
     flag_block.raw_text = flag_block.text
     flag_block.block_type = BlockType.FLAG
+    # Build the FLAG block's meta fresh rather than spreading source_block.meta.
+    # Spreading carried over the 'corrections' list populated by
+    # apply_corrections(), so _serialize_corrections() in correction_runner.py
+    # (which scans every block including FLAG blocks) counted each correction
+    # once for the source block and once for every FLAG generated from it.
     flag_block.meta = {
-        **(getattr(source_block, "meta", {}) or {}),
         "is_scopist_flag": True,
         "source_block_index": block_index,
     }
