@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import time as _time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -26,6 +27,65 @@ from typing import Any, Callable
 from app_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PIPELINE CONTROL
+# ══════════════════════════════════════════════════════════════════════════════
+# Per-stage switches for the deterministic correction pipeline.
+# Set to False to skip a stage during debugging or to isolate a problem.
+#
+# In this codebase, the deterministic Layers 1-4 (deepgram patterns, NOD
+# corrections, preamble rules, scopist flags) live INSIDE spec_engine/processor
+# — they run as part of process_blocks() and cannot be toggled individually
+# from here. The only top-level kill switch is LAYER_5_SPEC_ENGINE.
+#
+# The AI correction pass (ai_corrector.py) is NOT controlled here. It runs
+# only when the user clicks "AI Correct" in the Corrections tab.
+# ══════════════════════════════════════════════════════════════════════════════
+
+PIPELINE_CONFIG: dict[str, bool] = {
+    # Full spec_engine pipeline: corrections, classifier, qa_fixer,
+    # objections, speaker_mapper, validator, etc. Disabling this produces
+    # output without Q/A structure or speaker labels.
+    "LAYER_5_SPEC_ENGINE": True,
+}
+
+
+def _elapsed_ms(start: float) -> int:
+    """Return elapsed milliseconds since a perf_counter() start timestamp."""
+    return int((_time.perf_counter() - start) * 1000)
+
+
+def _print_pipeline_audit_header(
+    transcript_path: str,
+    job_config_data: dict,
+    draft_mode: bool,
+    log_fn: Callable[[str], None],
+) -> None:
+    """Print a header summarizing what will run before the pipeline starts."""
+    ufm = (job_config_data or {}).get("ufm_fields", {}) or {}
+    cause = ufm.get("cause_number") or "(not set)"
+    witness = ufm.get("witness_name") or "(not set)"
+    spellings = len((job_config_data or {}).get("confirmed_spellings", {}) or {})
+    keyterms = len((job_config_data or {}).get("deepgram_keyterms", []) or [])
+
+    sep = "-" * 60
+    log_fn(sep)
+    log_fn("DEPO-PRO CORRECTION PIPELINE")
+    log_fn(sep)
+    log_fn(f"  FILE     : {Path(transcript_path).name}")
+    log_fn(f"  CAUSE    : {cause}")
+    log_fn(f"  WITNESS  : {witness}")
+    log_fn(f"  SPELLINGS: {spellings} confirmed  |  KEYTERMS: {keyterms}")
+    log_fn(f"  MODE     : {'draft (speaker map unverified)' if draft_mode else 'final'}")
+    log_fn(sep)
+    log_fn("LAYERS:")
+    for key, enabled in PIPELINE_CONFIG.items():
+        status = "ON " if enabled else "OFF"
+        label = key.replace("_", " ").title()
+        log_fn(f"  [{status}] {label}")
+    log_fn(sep)
 
 
 def format_blocks_to_text(blocks: list) -> str:
@@ -295,6 +355,7 @@ def run_correction_job(
             done_callback(result)
 
     session_id = None
+    pipeline_start = _time.perf_counter()
 
     try:
         from spec_engine.block_builder import build_blocks_from_deepgram
@@ -309,53 +370,67 @@ def run_correction_job(
 
         _log(f"Using correction runner module: {Path(__file__).resolve()}")
 
-        _log("Locating Deepgram JSON...")
-        json_path = _find_deepgram_json(transcript_path)
-
-        if json_path:
-            _log(f"Loading Deepgram JSON: {Path(json_path).name}")
-            with open(json_path, "r", encoding="utf-8") as fh:
-                deepgram_data = json.load(fh)
-            if "utterances" not in deepgram_data:
-                raise RuntimeError(
-                    "Deepgram JSON missing 'utterances'. Ensure 'utterances=True' is enabled."
-                )
-            blocks = build_blocks_from_deepgram(deepgram_data)
-        else:
-            raise RuntimeError(
-                "Deepgram JSON not found. Corrections require utterances-backed Deepgram JSON."
-            )
-
-        if not blocks:
-            raise RuntimeError("No transcript blocks could be generated.")
-
-        _log(f"Loaded {len(blocks)} blocks")
-
+        # ── Load job config first so we can print the audit header ──────────
         _log("Loading case configuration...")
         job_config_data = _load_job_config_for_transcript(transcript_path)
         if job_config_data:
             _log(
-                f"job_config.json loaded: "
+                f"  job_config.json: "
                 f"ufm_fields={len(job_config_data.get('ufm_fields', {}))} keys  "
                 f"spellings={len(job_config_data.get('confirmed_spellings', {}))}  "
                 f"keyterms={len(job_config_data.get('deepgram_keyterms', []))}"
             )
             job_config = _build_job_config_from_ufm(job_config_data)
         else:
-            _log("No job_config.json found — using default JobConfig (no name corrections)")
+            _log("  No job_config.json — using default JobConfig (no name corrections)")
             from spec_engine.models import JobConfig
             job_config = JobConfig()
+            job_config_data = {}
 
         draft_mode = not bool(job_config.speaker_map_verified)
-        if draft_mode:
-            _log("Speaker map not verified — running corrections in draft mode.")
-        else:
-            _log("Speaker map verified — running corrections in final mode.")
+        _print_pipeline_audit_header(
+            transcript_path, job_config_data, draft_mode, _log
+        )
 
-        _log("Running corrections pipeline...")
-        with RunLogger(cause_number=job_config.cause_number or Path(transcript_path).stem) as run_logger:
-            corrected_blocks = process_blocks(blocks, job_config, run_logger=run_logger)
-        _log(f"Pipeline complete: {len(corrected_blocks)} blocks processed")
+        # ── Layer 0 — build raw blocks from Deepgram JSON ───────────────────
+        t0 = _time.perf_counter()
+        _log("Layer 0 | block_builder.py - Loading Deepgram JSON...")
+        json_path = _find_deepgram_json(transcript_path)
+
+        if not json_path:
+            raise RuntimeError(
+                "Deepgram JSON not found. Corrections require utterances-backed Deepgram JSON."
+            )
+
+        _log(f"  JSON file: {Path(json_path).name}")
+        with open(json_path, "r", encoding="utf-8") as fh:
+            deepgram_data = json.load(fh)
+        if "utterances" not in deepgram_data:
+            raise RuntimeError(
+                "Deepgram JSON missing 'utterances'. Ensure 'utterances=True' is enabled."
+            )
+        blocks = build_blocks_from_deepgram(deepgram_data)
+        if not blocks:
+            raise RuntimeError("No transcript blocks could be generated.")
+        _log(f"  Layer 0 complete - {len(blocks)} raw blocks  ({_elapsed_ms(t0)}ms)")
+
+        # ── Layer 5 — spec_engine full pipeline ────────────────────────────
+        if PIPELINE_CONFIG["LAYER_5_SPEC_ENGINE"]:
+            t5 = _time.perf_counter()
+            _log("Layer 5 | processor.py - spec_engine pipeline starting...")
+            _log("  corrections / deepgram_patterns / nod_corrections / preamble_rules")
+            _log("  flag_rules / speaker_mapper / speaker_intelligence / classifier")
+            _log("  qa_fixer / paragraph_splitter / objections / validator")
+            with RunLogger(cause_number=job_config.cause_number or Path(transcript_path).stem) as run_logger:
+                corrected_blocks = process_blocks(blocks, job_config, run_logger=run_logger)
+            _log(
+                f"  Layer 5 complete - {len(corrected_blocks)} blocks  "
+                f"({_elapsed_ms(t5)}ms)"
+            )
+        else:
+            _log("Layer 5 | SKIPPED (LAYER_5_SPEC_ENGINE = False)")
+            _log("  WARNING: output has no Q/A structure, speaker labels, or objection extraction")
+            corrected_blocks = list(blocks)
 
         all_corrections = _serialize_corrections(corrected_blocks)
         correction_count = len(all_corrections)
@@ -365,8 +440,14 @@ def run_correction_job(
         )
         _log(f"Corrections applied: {correction_count}  |  Scopist flags: {flag_count}")
 
-        _log("Formatting corrected transcript...")
+        # ── Layer 6 — format ──────────────────────────────────────────────
+        t6 = _time.perf_counter()
+        _log("Layer 6 | emitter.py - Formatting transcript...")
         corrected_text = format_blocks_to_text(corrected_blocks)
+        _log(
+            f"  Layer 6 complete - {len(corrected_text):,} chars  "
+            f"({_elapsed_ms(t6)}ms)"
+        )
 
         folder = Path(transcript_path).parent
         stem = Path(transcript_path).stem
@@ -391,7 +472,15 @@ def run_correction_job(
         with open(corrections_path, "w", encoding="utf-8") as fh:
             json.dump(corrections_data, fh, indent=2, ensure_ascii=False)
 
-        _log(f"✓ Correction complete — {correction_count} corrections, {flag_count} flags")
+        total_ms = _elapsed_ms(pipeline_start)
+        sep = "-" * 60
+        _log(sep)
+        _log("PIPELINE COMPLETE")
+        _log(f"  Corrections : {correction_count}")
+        _log(f"  Flags       : {flag_count}")
+        _log(f"  Time        : {total_ms}ms")
+        _log(sep)
+        _log(f"Correction complete - {correction_count} corrections, {flag_count} flags")
 
         end_pipeline_session(
             session_id, "CORRECTIONS",
