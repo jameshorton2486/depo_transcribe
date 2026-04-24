@@ -10,7 +10,6 @@ All requests use direct HTTP via httpx.
 
 import os
 import json
-import random
 import subprocess
 import time
 from pathlib import Path
@@ -27,8 +26,6 @@ from config import (
 
 logger = get_logger(__name__)
 
-PROCESSING_SEED = 42
-STABILITY_MODE = True
 STRICT_MERGE = True
 SKIP_SILENCE = False
 MAX_RETRIES = 3
@@ -43,8 +40,6 @@ ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
 NEAR_SILENT_THRESHOLD_DB = -55.0
 REQUEST_DEBUG_PREFIX = "DEEPGRAM PARAMS:"
-RAW_UTTERANCE_DEBUG_PREFIX = "RAW UTTERANCE SAMPLE:"
-MERGED_UTTERANCE_DEBUG_PREFIX = "MERGED UTTERANCE SAMPLE:"
 REQUIRED_DEEPGRAM_FLAGS = {
     "utterances": "true",
     "diarize": "true",
@@ -52,7 +47,28 @@ REQUIRED_DEEPGRAM_FLAGS = {
     "punctuate": "true",
 }
 
-random.seed(PROCESSING_SEED)
+# Transient HTTP failures that should trigger a retry. 401/403 are excluded
+# — a bad API key will never become good by retrying.
+_RETRYABLE_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+# httpx exception types that indicate transient network problems.
+_RETRYABLE_HTTPX_ERRORS = (
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+    httpx.ConnectError,
+)
+
+# Shape of the return dict shared by every code path (including silence-skip)
+# so downstream consumers never hit KeyError on merged_utterances/raw_utterances.
+_EMPTY_RESULT: Dict[str, Any] = {
+    "words": [],
+    "utterances": [],
+    "merged_utterances": [],
+    "raw_utterances": [],
+    "transcript": "",
+    "raw": {},
+}
 
 
 def _coerce_float(value: Any, default: float = 0.0) -> float:
@@ -60,15 +76,6 @@ def _coerce_float(value: Any, default: float = 0.0) -> float:
         if value is None:
             return default
         return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_int(value: Any, default: int = 0) -> int:
-    try:
-        if value is None:
-            return default
-        return int(value)
     except (TypeError, ValueError):
         return default
 
@@ -358,6 +365,35 @@ def validate_deepgram_params(params: dict) -> dict:
     return validated
 
 
+def _is_retryable_error(exc: Exception, status_code: int | None = None) -> bool:
+    """
+    Decide whether a failed Deepgram call warrants a retry.
+
+    Retries: httpx timeout/network/protocol/connect errors, and HTTP
+    429/5xx responses (server-side transients).
+    Does not retry: 401/403 (auth — never recovers) or ValueError raised
+    by this module (programming/data error — never recovers).
+    """
+    if status_code is not None:
+        if status_code in {401, 403}:
+            return False
+        if status_code in _RETRYABLE_STATUS_CODES:
+            return True
+
+    if isinstance(exc, _RETRYABLE_HTTPX_ERRORS):
+        return True
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRYABLE_STATUS_CODES
+
+    if isinstance(exc, ValueError):
+        return False
+
+    # Unknown exception — retry conservatively so a transient issue is not
+    # reported as a hard failure on attempt 1.
+    return True
+
+
 def _transcribe_direct(
     audio_file_path: str,
     model: str = "nova-3",
@@ -429,7 +465,7 @@ def _transcribe_direct(
             logger.info("Chunk included: NO (skip-silence mode enabled)")
             if progress_callback:
                 progress_callback(f"Skipped silent chunk: {chunk_name} (safe skip mode)")
-            return {"words": [], "utterances": [], "transcript": "", "raw": {}}
+            return dict(_EMPTY_RESULT)
         logger.info("Chunk included: YES")
     else:
         logger.info("Chunk included: YES")
@@ -465,7 +501,19 @@ def _transcribe_direct(
             logger.info("Utterances received: %s", len(raw_utterances))
             print(f"Utterances received: {len(raw_utterances)}")
 
-            alt = results["channels"][0]["alternatives"][0]
+            channels = results.get("channels")
+            if not channels or not isinstance(channels, list):
+                raise RuntimeError(
+                    f"Deepgram response missing 'channels'. "
+                    f"chunk={chunk_name}  keys={list(results.keys())}"
+                )
+            alternatives = channels[0].get("alternatives")
+            if not alternatives or not isinstance(alternatives, list):
+                raise RuntimeError(
+                    f"Deepgram response missing 'alternatives' in channel[0]. "
+                    f"chunk={chunk_name}"
+                )
+            alt = alternatives[0]
             words = [
                 {
                     "word":            w.get("word", ""),
@@ -542,15 +590,19 @@ def _transcribe_direct(
         except Exception as exc:
             last_exc = exc
             elapsed = time.time() - t0
-            is_timeout = (
-                isinstance(exc, httpx.TimeoutException)
-                or "timed out" in str(exc).lower()
-            )
+            status = getattr(getattr(exc, "response", None), "status_code", None)
             logger.error(
-                "Direct attempt %s/%s FAILED chunk=%s elapsed=%.2fs error=%s",
-                attempt, MAX_RETRIES, chunk_name, elapsed, exc,
+                "Direct attempt %s/%s FAILED chunk=%s elapsed=%.2fs "
+                "status=%s error=%s",
+                attempt, MAX_RETRIES, chunk_name, elapsed, status, exc,
             )
-            if attempt < MAX_RETRIES and is_timeout:
+            if attempt < MAX_RETRIES and _is_retryable_error(exc, status):
+                if progress_callback:
+                    progress_callback(
+                        f"Deepgram error ({type(exc).__name__}) - "
+                        f"retrying in {RETRY_DELAY_SECONDS}s "
+                        f"(attempt {attempt + 1}/{MAX_RETRIES})"
+                    )
                 time.sleep(RETRY_DELAY_SECONDS)
                 continue
             break
