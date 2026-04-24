@@ -8,6 +8,8 @@ chunks by comparing timestamps. The last word timestamp of chunk N is used
 as the cutoff for the start of chunk N+1.
 """
 
+import re
+from difflib import SequenceMatcher
 from typing import Any, Dict, List
 
 from config import CHUNK_OVERLAP_SECONDS
@@ -24,6 +26,9 @@ ROLE_SEQUENCE = [
     "THE INTERPRETER",
 ]
 
+_OVERLAP_WORD_RE = re.compile(r"^\W+|\W+$")
+_CONTINUATION_TRAILING_PUNCTUATION = {",", ":", ";", "--", "—"}
+
 
 def _count_utterance_words(utterance: Dict) -> int:
     words = utterance.get("words") or []
@@ -37,6 +42,206 @@ def _build_speaker_role_map(utterances: List[Dict]) -> Dict[int, str]:
         int(u.get("speaker", 0) or 0) for u in utterances
     ))
     return {sid: f"Speaker {sid}" for sid in speaker_ids}
+
+
+def _normalize_overlap_token(token: str) -> str:
+    return _OVERLAP_WORD_RE.sub("", (token or "").strip().lower())
+
+
+def _ends_with_terminal_punctuation(text: str) -> bool:
+    stripped = (text or "").rstrip()
+    if not stripped:
+        return False
+    return stripped.endswith((".", "?", "!"))
+
+
+def _is_same_speaker_continuation(previous: Dict, candidate: Dict) -> bool:
+    """
+    Detect a same-speaker continuation across adjacent chunk boundaries.
+
+    This is intentionally conservative: it only joins fragments that are close
+    in time and where the previous fragment clearly does not look complete.
+    """
+    if previous.get("speaker") != candidate.get("speaker"):
+        return False
+
+    prev_text = (previous.get("transcript") or "").strip()
+    curr_text = (candidate.get("transcript") or "").strip()
+    if not prev_text or not curr_text:
+        return False
+
+    if _ends_with_terminal_punctuation(prev_text):
+        return False
+
+    gap = float(candidate.get("start", 0.0) or 0.0) - float(previous.get("end", 0.0) or 0.0)
+    if gap < 0 or gap > 1.0:
+        return False
+
+    if prev_text.endswith(tuple(_CONTINUATION_TRAILING_PUNCTUATION)):
+        return True
+
+    first_char = curr_text[0]
+    if not first_char.islower():
+        return False
+
+    return len(prev_text.split()) >= 3
+
+
+def is_near_duplicate(
+    prev_tail: List[str],
+    curr_head: List[str],
+    threshold: float = 0.96,
+) -> bool:
+    prev_str = " ".join(prev_tail).strip().lower()
+    curr_str = " ".join(curr_head).strip().lower()
+    if not prev_str or not curr_str:
+        return False
+    ratio = SequenceMatcher(None, prev_str, curr_str).ratio()
+    return ratio >= threshold
+
+
+def _find_overlap_word_count(
+    prev_text: str,
+    curr_text: str,
+    max_overlap_words: int = 25,
+) -> int:
+    prev_words = prev_text.split()
+    curr_words = curr_text.split()
+    if not prev_words or not curr_words:
+        return 0
+
+    normalized_prev = [_normalize_overlap_token(word) for word in prev_words]
+    normalized_curr = [_normalize_overlap_token(word) for word in curr_words]
+
+    max_k = min(max_overlap_words, len(normalized_prev), len(normalized_curr))
+
+    for k in range(max_k, 0, -1):
+        prev_tail = normalized_prev[-k:]
+        curr_head = normalized_curr[:k]
+
+        if not all(prev_tail) or not all(curr_head):
+            continue
+
+        if prev_tail == curr_head:
+            return k
+
+    for k in range(max_k, 4, -1):
+        prev_tail = normalized_prev[-k:]
+        curr_head = normalized_curr[:k]
+
+        if not all(prev_tail) or not all(curr_head):
+            continue
+
+        if is_near_duplicate(prev_tail, curr_head):
+            return k
+
+    return 0
+
+
+def merge_with_overlap(prev_text: str, curr_text: str, max_overlap_words: int = 25) -> str:
+    """
+    Merge two transcript snippets by removing exact/near-duplicate overlap.
+
+    This is deterministic and only trims a leading overlap from curr_text.
+    """
+    prev_text = (prev_text or "").strip()
+    curr_text = (curr_text or "").strip()
+
+    if not prev_text:
+        return curr_text
+    if not curr_text:
+        return prev_text
+
+    curr_words = curr_text.split()
+    overlap_count = _find_overlap_word_count(prev_text, curr_text, max_overlap_words=max_overlap_words)
+
+    if overlap_count <= 0:
+        return f"{prev_text} {curr_text}".strip()
+
+    if overlap_count >= len(curr_words):
+        return prev_text
+
+    return f"{prev_text} {' '.join(curr_words[overlap_count:])}".strip()
+
+
+def _merge_adjacent_same_speaker_overlap(
+    merged_utterances: List[Dict],
+    candidate: Dict,
+    max_overlap_words: int = 25,
+) -> bool:
+    """
+    Merge candidate into the previous utterance when the same speaker repeats
+    overlap text across a chunk boundary.
+    """
+    if not merged_utterances:
+        return False
+
+    previous = merged_utterances[-1]
+    if previous.get("speaker") != candidate.get("speaker"):
+        return False
+
+    prev_text = (previous.get("transcript") or "").strip()
+    curr_text = (candidate.get("transcript") or "").strip()
+    if not prev_text or not curr_text:
+        return False
+
+    overlap_count = _find_overlap_word_count(prev_text, curr_text, max_overlap_words=max_overlap_words)
+    if overlap_count <= 0:
+        return False
+
+    merged_text = merge_with_overlap(prev_text, curr_text, max_overlap_words=max_overlap_words)
+    if merged_text == prev_text:
+        previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
+        return True
+
+    previous["transcript"] = merged_text
+    previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
+
+    prev_words = list(previous.get("words") or [])
+    curr_words = list(candidate.get("words") or [])
+    if prev_words and curr_words and overlap_count < len(curr_words):
+        previous["words"] = prev_words + curr_words[overlap_count:]
+    elif prev_words and curr_words and overlap_count >= len(curr_words):
+        previous["words"] = prev_words
+
+    _logger.debug(
+        "[ASSEMBLE] Merged overlap utterance speaker=%s overlap_words=%d",
+        previous.get("speaker"),
+        overlap_count,
+    )
+    return True
+
+
+def _merge_same_speaker_continuation(
+    merged_utterances: List[Dict],
+    candidate: Dict,
+) -> bool:
+    """
+    Merge a same-speaker continuation when a chunk boundary split one sentence
+    into adjacent fragments without duplicated overlap text.
+    """
+    if not merged_utterances:
+        return False
+
+    previous = merged_utterances[-1]
+    if not _is_same_speaker_continuation(previous, candidate):
+        return False
+
+    previous_text = (previous.get("transcript") or "").strip()
+    candidate_text = (candidate.get("transcript") or "").strip()
+    previous["transcript"] = f"{previous_text} {candidate_text}".strip()
+    previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
+
+    prev_words = list(previous.get("words") or [])
+    candidate_words = list(candidate.get("words") or [])
+    if prev_words and candidate_words:
+        previous["words"] = prev_words + candidate_words
+
+    _logger.debug(
+        "[ASSEMBLE] Merged continuation utterance speaker=%s",
+        previous.get("speaker"),
+    )
+    return True
 
 
 def _attach_speaker_labels(
@@ -258,12 +463,20 @@ def reassemble_chunks(
             normalized_speaker = int(speaker) if speaker is not None else None
             if normalized_speaker is not None:
                 normalized_speaker = speaker_remap.get(normalized_speaker, normalized_speaker)
-            all_utterances.append({
+            candidate_utterance = {
                 **u,
                 "speaker": normalized_speaker,
                 "start": u_start,
                 "end":   u_end,
-            })
+            }
+
+            if _merge_adjacent_same_speaker_overlap(all_utterances, candidate_utterance):
+                continue
+
+            if _merge_same_speaker_continuation(all_utterances, candidate_utterance):
+                continue
+
+            all_utterances.append(candidate_utterance)
 
     all_utterances.sort(key=lambda u: u["start"])
     labeled_utterances = _attach_speaker_labels(all_utterances)
