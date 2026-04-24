@@ -62,7 +62,9 @@ def _is_pre_record_chatter(text: str) -> bool:
         return False
     lowered = sanitized.lower()
     for keyword in PRE_RECORD_KEYWORDS:
-        if re.search(rf'\\b{re.escape(keyword)}\\b', lowered):
+        # Raw f-string: \\b is literal "\b" (two chars), not a word boundary.
+        # Use \b so the pattern actually matches word boundaries.
+        if re.search(rf'\b{re.escape(keyword)}\b', lowered):
             return True
     return False
 CONCLUDED_RE   = re.compile(r'deposition\s+(?:is\s+)?concluded', re.IGNORECASE)
