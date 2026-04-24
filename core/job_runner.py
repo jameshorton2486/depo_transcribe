@@ -55,55 +55,6 @@ def _validate_assembled_result(assembled: dict) -> None:
         raise RuntimeError("No words returned from Deepgram")
 
 
-def _transcribe_prepared_audio(
-    prepared_audio_path: str,
-    *,
-    duration_seconds: float,
-    model: str,
-    keyterms: list[str],
-    progress,
-    log,
-    transcribe_chunk,
-    chunk_audio,
-    reassemble_chunks,
-    channel_label: str = "",
-):
-    chunks = chunk_audio(
-        prepared_audio_path,
-        total_duration=duration_seconds,
-        progress_callback=log,
-    )
-    prefix = f"{channel_label} " if channel_label else ""
-    log(f"{prefix}split into {len(chunks)} chunk(s)")
-
-    chunk_results = []
-    chunk_offsets = []
-
-    for i, chunk in enumerate(chunks):
-        pct = 22 + int((i / max(1, len(chunks))) * 58)
-        progress(pct, f"Transcribing {prefix.lower()}chunk {i+1} of {len(chunks)}…".strip())
-        log(f"{prefix}chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s")
-
-        try:
-            result = transcribe_chunk(
-                chunk.file_path,
-                model=model,
-                keyterms=keyterms,
-                progress_callback=log,
-            )
-            chunk_results.append(result)
-            chunk_offsets.append(chunk.start_seconds)
-            log(f"{prefix}chunk {i+1} OK")
-        except Exception as chunk_exc:
-            log(
-                f"ERROR: {prefix}chunk {i+1}/{len(chunks)} failed "
-                f"({chunk.start_seconds:.0f}s–{chunk.end_seconds:.0f}s): {chunk_exc}"
-            )
-            raise
-
-    return reassemble_chunks(chunk_results, chunk_offsets), chunks
-
-
 def _build_chunk_summaries(chunks: list) -> list[dict]:
     summaries: list[dict] = []
     for chunk in chunks:
@@ -149,6 +100,18 @@ def run_transcription_job(
     def _done(result):
         if done_callback:
             done_callback(result)
+
+    # Import CONFIDENCE_LOW up front. Doing this inline near the end of the
+    # try block meant an import failure would abort the job after all the
+    # actual transcription work had completed.
+    try:
+        from core.word_data_loader import CONFIDENCE_LOW
+    except Exception:
+        CONFIDENCE_LOW = 0.85
+
+    # Tracked so that if anything after chunk_audio() raises, we can still
+    # clean up the temp WAV files in the except block.
+    chunks: list | None = None
 
     try:
         from pipeline.preprocessor import (
@@ -368,7 +331,6 @@ def run_transcription_job(
         }
         _safe_write_json(raw_json_path, raw_data, _log)
 
-        from core.word_data_loader import CONFIDENCE_LOW
         raw_words = assembled.get("words", [])
         low_conf_words = [
             {
@@ -397,6 +359,7 @@ def run_transcription_job(
         _log("Saved job_config.json → source_docs/")
 
         cleanup_chunks(chunks)
+        chunks = None  # prevent double-cleanup in the except block below
 
         _progress(100, "Complete ✓")
         _log(f"✓ Transcription complete — {word_count} words")
@@ -418,6 +381,17 @@ def run_transcription_job(
     except Exception as exc:
         _log(f"ERROR: {exc}")
         _progress(0, "Failed")
+
+        # Clean up any chunk temp files created before the failure. Without
+        # this, every failed run leaks its chunk WAVs to disk.
+        if chunks:
+            try:
+                from pipeline.chunker import cleanup_chunks
+                cleanup_chunks(chunks)
+                _log("Cleaned up temp chunk files after error")
+            except Exception as cleanup_exc:
+                _log(f"Chunk cleanup failed: {cleanup_exc}")
+
         _done({
             "success": False,
             "transcript_path": None,
