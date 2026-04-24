@@ -50,7 +50,7 @@ def export_results(
         { "transcript": path, "json": path, "flagged": path, "raw_deepgram": path }
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    print(f"[EXPORT] Writing output files to {OUTPUT_DIR}/")
+    LOGGER.info("[EXPORT] Writing output files to %s/", OUTPUT_DIR)
 
     if case_info is None:
         case_info = {}
@@ -65,22 +65,28 @@ def export_results(
         "meta": {
             "source_file":          source_filename,
             "exported_at":          datetime.now().isoformat(),
-            "word_count":           len(assembled_result["words"]),
-            "utterance_count":      len(assembled_result["utterances"]),
+            "word_count":           len(assembled_result.get("words", [])),
+            "utterance_count":      len(assembled_result.get("utterances", [])),
             "case_name":            case_info.get("case_name", ""),
             "cause_number":         case_info.get("cause_number", ""),
             "deponent_name":        case_info.get("deponent_name", ""),
             "deposition_date":      case_info.get("deposition_date", ""),
             "confidence_threshold": confidence_threshold,
         },
-        "transcript":              assembled_result["transcript"],
-        "words":                   assembled_result["words"],
-        "utterances":              assembled_result["utterances"],
+        "transcript":              assembled_result.get("transcript", ""),
+        "words":                   assembled_result.get("words", []),
+        "utterances":              assembled_result.get("utterances", []),
         "raw_deepgram_response":   assembled_result.get("raw_chunks", []),
     }
 
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(json_output, f, indent=2, ensure_ascii=False)
+    # Wrap each file write so a disk/permission error produces a useful log
+    # message with the target path before re-raising.
+    try:
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(json_output, f, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        LOGGER.error("[EXPORT] Failed to write JSON output %s: %s", json_path, exc)
+        raise
 
     if progress_callback:
         progress_callback(f"JSON written: {os.path.basename(json_path)}")
@@ -98,48 +104,66 @@ def export_results(
         ) or assembled_result.get("transcript", "")
         LOGGER.warning("[EXPORT] No corrected transcript provided — writing raw Deepgram output")
 
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(transcript_content)
+    try:
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(transcript_content)
+    except OSError as exc:
+        LOGGER.error("[EXPORT] Failed to write transcript %s: %s", txt_path, exc)
+        raise
 
     if progress_callback:
         progress_callback(f"Transcript written: {os.path.basename(txt_path)}")
 
     raw_deepgram_path = os.path.join(OUTPUT_DIR, "raw_deepgram.txt")
-    save_raw_deepgram_output(
-        assembled_result.get("raw_utterances", assembled_result.get("utterances", [])),
-        raw_deepgram_path,
-    )
+    try:
+        save_raw_deepgram_output(
+            assembled_result.get("raw_utterances", assembled_result.get("utterances", [])),
+            raw_deepgram_path,
+        )
+    except OSError as exc:
+        LOGGER.error(
+            "[EXPORT] Failed to write raw Deepgram output %s: %s",
+            raw_deepgram_path, exc,
+        )
+        raise
 
     if progress_callback:
         progress_callback(f"Raw Deepgram transcript written: {os.path.basename(raw_deepgram_path)}")
 
     # ── Flagged words ─────────────────────────────────────────────────────────
+    words = assembled_result.get("words", [])
     flagged: List[Dict] = [
-        w for w in assembled_result["words"]
+        w for w in words
         if w.get("confidence", 1.0) < confidence_threshold
     ]
 
     flagged_path = os.path.join(OUTPUT_DIR, f"{prefix}_flagged_words.txt")
-    with open(flagged_path, "w", encoding="utf-8") as f:
-        f.write(f"FLAGGED WORDS — Confidence Below {confidence_threshold}\n")
-        f.write(f"Source: {source_filename}\n")
-        f.write(f"Total flagged: {len(flagged)} of {len(assembled_result['words'])} words\n")
-        f.write("=" * 70 + "\n\n")
-        for w in flagged:
-            ts = format_timestamp(w["start"])
-            f.write(
-                f"[{ts}]  \"{w['word']}\"  "
-                f"confidence={w.get('confidence', 0):.3f}  "
-                f"speaker={w.get('speaker', '?')}\n"
-            )
+    try:
+        with open(flagged_path, "w", encoding="utf-8") as f:
+            f.write(f"FLAGGED WORDS — Confidence Below {confidence_threshold}\n")
+            f.write(f"Source: {source_filename}\n")
+            f.write(f"Total flagged: {len(flagged)} of {len(words)} words\n")
+            f.write("=" * 70 + "\n\n")
+            for w in flagged:
+                ts = format_timestamp(w["start"])
+                f.write(
+                    f"[{ts}]  \"{w['word']}\"  "
+                    f"confidence={w.get('confidence', 0):.3f}  "
+                    f"speaker={w.get('speaker', '?')}\n"
+                )
+    except OSError as exc:
+        LOGGER.error(
+            "[EXPORT] Failed to write flagged words %s: %s", flagged_path, exc
+        )
+        raise
 
     if progress_callback:
         progress_callback(
-            f"Flagged words: {len(flagged)} of {len(assembled_result['words'])} "
+            f"Flagged words: {len(flagged)} of {len(words)} "
             f"below threshold {confidence_threshold}"
         )
 
-    print("[EXPORT] Done")
+    LOGGER.info("[EXPORT] Done")
     return {
         "transcript": txt_path,
         "json": json_path,
