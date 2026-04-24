@@ -220,7 +220,7 @@ class TestObjectionVerbatim:
         assert _clean("Objection.") == "Objection."
 
     def test_objection_form_preserved(self):
-        assert _clean("Objection. Form.") == "Objection. Form."
+        assert _clean("Objection.  Form.") == "Objection.  Form."
 
     def test_objection_foundation_preserved(self):
         assert "Objection.  Foundation." == _clean("Objection. Foundation.")
@@ -237,16 +237,16 @@ class TestObjectionVerbatim:
 
 class TestObjectionGarbleCorrection:
     def test_exit_form_corrected(self):
-        assert _clean("Exit form") == "Objection. Form."
+        assert _clean("Exit form") == "Objection.  Form."
 
     def test_exit_form_with_period_corrected(self):
-        assert _clean("Exit form.") == "Objection. Form."
+        assert _clean("Exit form.") == "Objection.  Form."
 
     def test_action_form_with_period_corrected(self):
-        assert _clean("Action form.") == "Objection. Form."
+        assert _clean("Action form.") == "Objection.  Form."
 
     def test_objection_form_with_period_corrected(self):
-        assert _clean("Objection form.") == "Objection. Form."
+        assert _clean("Objection form.") == "Objection.  Form."
 
 
 class TestBlockCapitalization:

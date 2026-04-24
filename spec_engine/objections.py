@@ -18,7 +18,8 @@ OBJECTION_PATTERNS = [
     r"\baction form\b",
     r"\bobjection form\b",
     # 'objection to form' removed: corrections.py now normalizes all ASR garbles
-    # to "Objection. Form." (two sentences, verbatim). The classifier handles
+    # to "Objection.  Form." (two sentences, two-space separator, verbatim).
+    # The classifier handles
     # correctly-formed text via OBJECTION_START_RE. Re-adding this pattern
     # would fire on already-corrected text.
 ]

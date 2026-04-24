@@ -100,7 +100,7 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
             ),
             Block(
                 speaker_id=3,
-                text="Objection. Form.",
+                text="Objection.  Form.",
                 raw_text="",
                 block_type=BlockType.SPEAKER,
                 speaker_role="OPPOSING_COUNSEL",
@@ -111,7 +111,7 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
         result = format_blocks_to_text(blocks)
         assert "\tQ.  Did you witness the incident?" in result
         assert "\tA.  Yes, I did." in result
-        assert "\t\t\tMR. BOYCE:  Objection. Form." in result
+        assert "\t\t\tMR. BOYCE:  Objection.  Form." in result
 
     def test_empty_blocks_returns_empty_string(self):
         from core.correction_runner import format_blocks_to_text
@@ -154,7 +154,7 @@ class TestFix5C_EmitSpLineSingleSpace:
     def test_two_space_colon_bold_label(self):
         from spec_engine.emitter import create_document, emit_sp_line
         doc = create_document()
-        emit_sp_line(doc, "MR. BOYCE:  Objection. Form.")
+        emit_sp_line(doc, "MR. BOYCE:  Objection.  Form.")
         bold_runs = [r.text for r in doc.paragraphs[0].runs if r.bold]
         assert bold_runs
         assert any("BOYCE" in r for r in bold_runs)
@@ -162,7 +162,7 @@ class TestFix5C_EmitSpLineSingleSpace:
     def test_single_space_colon_bold_label(self):
         from spec_engine.emitter import create_document, emit_sp_line
         doc = create_document()
-        emit_sp_line(doc, "MR. BOYCE: Objection. Form.")
+        emit_sp_line(doc, "MR. BOYCE: Objection.  Form.")
         bold_runs = [r.text for r in doc.paragraphs[0].runs if r.bold]
         assert bold_runs
         assert any("BOYCE" in r for r in bold_runs)
@@ -170,7 +170,7 @@ class TestFix5C_EmitSpLineSingleSpace:
     def test_single_space_text_uses_two_spaces_after_colon_in_output(self):
         from spec_engine.emitter import create_document, emit_sp_line
         doc = create_document()
-        emit_sp_line(doc, "MR. BOYCE: Objection. Form.")
+        emit_sp_line(doc, "MR. BOYCE: Objection.  Form.")
         plain_runs = [r.text for r in doc.paragraphs[0].runs if not r.bold]
         text_runs = [r for r in plain_runs if "Objection" in r]
         assert text_runs
@@ -193,10 +193,10 @@ class TestFix5C_EmitSpLineSingleSpace:
     def test_split_speaker_text_handles_extra_spaces_after_colon(self):
         from spec_engine.emitter import _split_speaker_text
 
-        label, content = _split_speaker_text("MR. BOYCE:   Objection. Form.")
+        label, content = _split_speaker_text("MR. BOYCE:   Objection.  Form.")
 
         assert label == "MR. BOYCE:"
-        assert content == "Objection. Form."
+        assert content == "Objection.  Form."
 
 
 class TestFix5D_SharedTabStopHelper:

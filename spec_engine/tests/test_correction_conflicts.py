@@ -17,7 +17,7 @@ def test_apply_universal_corrections_allows_nonconflicting_chain():
         block_index=0,
     )
 
-    assert result == "Objection. Form. and all right"
+    assert result == "Objection.  Form. and all right"
     assert [record.pattern for record in records] == [
         r'\bAction form\b[.]?',
         r'\balright\b',
@@ -30,12 +30,12 @@ def test_safe_apply_blocks_conflicting_followup_rewrite():
 
     text = safe_apply(
         "Action form",
-        "Objection. Form.",
+        "Objection.  Form.",
         r'\bAction form\b[.]?',
         state,
         records,
         block_index=0,
-        protected_after="Objection. Form.",
+        protected_after="Objection.  Form.",
     )
     blocked = safe_apply(
         text,
@@ -46,7 +46,7 @@ def test_safe_apply_blocks_conflicting_followup_rewrite():
         block_index=0,
     )
 
-    assert blocked == "Objection. Form."
+    assert blocked == "Objection.  Form."
     assert [record.pattern for record in records] == [r'\bAction form\b[.]?']
 
 

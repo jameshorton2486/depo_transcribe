@@ -104,9 +104,21 @@ def _add_run(para, text, bold=False, color=COLOR_BLACK):
 
 
 def _clean(text: str) -> str:
-    """Normalize whitespace and remove any carriage returns/newlines."""
+    """Normalize whitespace and remove any carriage returns/newlines.
+
+    Preserves the two-space separator after sentence-ending punctuation
+    (Morson's Rule 14). A naive " ".join(text.split()) would collapse that
+    deliberate double space to a single space and undo the two-space rule
+    that corrections.py enforces upstream.
+    """
     normalized = (text or "").replace("\r", " ").replace("\n", " ")
-    return " ".join(normalized.split())
+    normalized = normalized.replace("\t", " ")
+    # Cap 3-or-more runs of spaces to 2 (keeps .?! double-space intact).
+    normalized = re.sub(r" {3,}", "  ", normalized)
+    # Collapse runs of exactly 2 spaces to 1 ONLY when they do not follow
+    # sentence-ending punctuation.
+    normalized = re.sub(r"(?<![.?!])  ", " ", normalized)
+    return normalized.strip()
 
 
 def _split_speaker_text(text: str) -> tuple[str, str]:

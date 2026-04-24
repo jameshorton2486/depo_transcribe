@@ -129,7 +129,7 @@ def test_process_blocks_reclassifies_after_objection_extraction(monkeypatch):
     from spec_engine import processor as processor_module
 
     classify_calls = []
-    blocks = [Block(speaker_id=3, text="Objection. Form.", raw_text="")]
+    blocks = [Block(speaker_id=3, text="Objection.  Form.", raw_text="")]
     cfg = {"speaker_map": {3: "MR. BOYCE"}, "speaker_map_verified": True}
 
     monkeypatch.setattr(processor_module, "apply_corrections", lambda current_blocks, *_args, **_kwargs: current_blocks)

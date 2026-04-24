@@ -21,7 +21,7 @@ def test_validate_rules_rejects_verbatim_objection_and_short_regex():
 
     rules, flags = _validate_rules([
         {"type": "exact_replace", "incorrect": "uh", "correct": "er", "priority": 5},
-        {"type": "exact_replace", "incorrect": "Objection form", "correct": "Objection. Form.", "priority": 5},
+        {"type": "exact_replace", "incorrect": "Objection form", "correct": "Objection.  Form.", "priority": 5},
         {"type": "regex_replace", "pattern": "a", "replacement": "A", "priority": 5},
         {"type": "exact_replace", "incorrect": "subpena", "correct": "subpoena", "priority": 7},
     ])

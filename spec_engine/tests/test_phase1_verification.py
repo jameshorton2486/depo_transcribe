@@ -14,7 +14,7 @@ Coverage:
 IMPORTANT — ONE EXISTING TEST MUST BE UPDATED AS PART OF PHASE 1:
   spec_engine/tests/test_block_pipeline_behavior.py::test_objection_extraction_exit_form
   → Currently asserts "Objection to form." (single sentence — wrong per Morson's)
-  → After Fix 1-D must assert "Objection. Form." (two sentences — verbatim)
+  → After Fix 1-D must assert "Objection.  Form." (two sentences — verbatim)
   → test_existing_objection_pipeline_test_needs_update() below will FAIL
     until that test file is updated. This is expected and intentional.
 
@@ -556,8 +556,8 @@ class TestFix1C_ObjectionSpeakerResolution:
         blocks = [
             Block(
                 speaker_id=1,
-                text="I don't recall. Objection. Form.",
-                raw_text="I don't recall. Objection. Form.",
+                text="I don't recall. Objection.  Form.",
+                raw_text="I don't recall. Objection.  Form.",
                 speaker_name="THE WITNESS",
                 speaker_role="WITNESS",
                 block_type=BlockType.ANSWER,
@@ -568,7 +568,7 @@ class TestFix1C_ObjectionSpeakerResolution:
         objection_blocks = [b for b in result if b.meta.get("is_objection")]
 
         assert objection_blocks
-        assert objection_blocks[0].text == "Objection. Form."
+        assert objection_blocks[0].text == "Objection.  Form."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -578,46 +578,46 @@ class TestFix1C_ObjectionSpeakerResolution:
 class TestFix1D_VerbatimObjectionText:
     """
     Fix 1-D: Morson's English Guide for Court Reporters §9.6 requires objections
-    be preserved exactly as spoken. "Objection. Form." (two sentences) is what
+    be preserved exactly as spoken. "Objection.  Form." (two sentences) is what
     attorneys say. "Objection to form." (one sentence) is a fabrication.
 
-    corrections.py UNIVERSAL_CORRECTIONS must produce "Objection. Form." (two sentences).
+    corrections.py UNIVERSAL_CORRECTIONS must produce "Objection.  Form." (two sentences).
     OBJECTION_PATTERNS in objections.py must NOT contain "objection to form".
     """
 
     # ── UNIVERSAL_CORRECTIONS must produce two-sentence form ─────────────────
 
     def test_exit_form_corrects_to_two_sentence_verbatim(self):
-        """'Exit form' (ASR garble) must correct to 'Objection. Form.' — two sentences."""
+        """'Exit form' (ASR garble) must correct to 'Objection.  Form.' — two sentences."""
         records = []
         result = apply_universal_corrections("Exit form", records, block_index=0)
-        assert result == "Objection. Form.", (
-            f"'Exit form' must correct to 'Objection. Form.' (two sentences). "
+        assert result == "Objection.  Form.", (
+            f"'Exit form' must correct to 'Objection.  Form.' (two sentences). "
             f"Got: {result!r}. Morson's §9.6: preserve as spoken."
         )
 
     def test_action_form_corrects_to_two_sentence_verbatim(self):
-        """'Action form' (ASR garble) must correct to 'Objection. Form.'"""
+        """'Action form' (ASR garble) must correct to 'Objection.  Form.'"""
         records = []
         result = apply_universal_corrections("Action form", records, block_index=0)
-        assert result == "Objection. Form.", (
-            f"'Action form' → 'Objection. Form.' required. Got: {result!r}"
+        assert result == "Objection.  Form.", (
+            f"'Action form' → 'Objection.  Form.' required. Got: {result!r}"
         )
 
     def test_action_point_corrects_to_two_sentence_verbatim(self):
-        """'Action point' (ASR garble) must correct to 'Objection. Form.'"""
+        """'Action point' (ASR garble) must correct to 'Objection.  Form.'"""
         records = []
         result = apply_universal_corrections("Action point", records, block_index=0)
-        assert result == "Objection. Form.", (
-            f"'Action point' → 'Objection. Form.' required. Got: {result!r}"
+        assert result == "Objection.  Form.", (
+            f"'Action point' → 'Objection.  Form.' required. Got: {result!r}"
         )
 
     def test_objection_form_garble_corrects_to_two_sentence_verbatim(self):
-        """'Objection form' (ASR garble — space, no period) must correct to 'Objection. Form.'"""
+        """'Objection form' (ASR garble — space, no period) must correct to 'Objection.  Form.'"""
         records = []
         result = apply_universal_corrections("Objection form", records, block_index=0)
-        assert result == "Objection. Form.", (
-            f"'Objection form' → 'Objection. Form.' required. Got: {result!r}"
+        assert result == "Objection.  Form.", (
+            f"'Objection form' → 'Objection.  Form.' required. Got: {result!r}"
         )
 
     def test_none_of_the_garbles_produce_objection_to_form(self):
@@ -631,21 +631,21 @@ class TestFix1D_VerbatimObjectionText:
             result = apply_universal_corrections(garble, records, block_index=0)
             assert "objection to form" not in result.lower(), (
                 f"MORSON'S VIOLATION: '{garble}' produced 'Objection to form.' "
-                f"Got: {result!r}. Must produce 'Objection. Form.' (two sentences)."
+                f"Got: {result!r}. Must produce 'Objection.  Form.' (two sentences)."
             )
 
     # ── clean_block must not alter correctly-spoken objection text ────────────
 
     def test_spoken_objection_form_not_altered_by_clean_block(self):
         """
-        'Objection. Form.' as spoken must pass through clean_block() unchanged.
+        'Objection.  Form.' as spoken must pass through clean_block() unchanged.
         Verbatim rule is absolute — spoken testimony must not be rewritten.
         """
         cfg = _make_coger_config()
-        text = "Objection. Form."
+        text = "Objection.  Form."
         result, records = clean_block(text, cfg, block_index=0)[:2]
-        assert result == "Objection. Form.", (
-            f"clean_block() altered verbatim objection 'Objection. Form.' → {result!r}. "
+        assert result == "Objection.  Form.", (
+            f"clean_block() altered verbatim objection 'Objection.  Form.' → {result!r}. "
             f"Verbatim rule: spoken objections must never be rewritten."
         )
 
@@ -669,7 +669,7 @@ class TestFix1D_VerbatimObjectionText:
     def test_objection_patterns_does_not_contain_objection_to_form(self):
         """
         OBJECTION_PATTERNS in objections.py must not contain 'objection to form'.
-        After Fix 1-D, corrections.py normalizes ASR garbles to 'Objection. Form.'
+        After Fix 1-D, corrections.py normalizes ASR garbles to 'Objection.  Form.'
         The classifier then handles them via OBJECTION_START_RE.
         Having 'objection to form' in OBJECTION_PATTERNS causes double-processing.
         """
@@ -698,7 +698,7 @@ class TestFix1D_VerbatimObjectionText:
         """
         KNOWN CONFLICT: test_block_pipeline_behavior.py::test_objection_extraction_exit_form
         currently asserts 'Objection to form.' in the pipeline output.
-        After Fix 1-D, this is WRONG — it must assert 'Objection. Form.' instead.
+        After Fix 1-D, this is WRONG — it must assert 'Objection.  Form.' instead.
 
         This test INTENTIONALLY FAILS until that file is updated.
         Update instructions:
@@ -707,7 +707,7 @@ class TestFix1D_VerbatimObjectionText:
           Line ~73: Change:
             assert "Objection to form." in text
           To:
-            assert "Objection. Form." in text
+            assert "Objection.  Form." in text
 
         WHY: 'Objection to form.' is a fabrication. Morson's requires two sentences as spoken.
         """
@@ -916,15 +916,15 @@ class TestPhase1Integration_CogerScenario:
 
     def test_coger_objection_text_is_verbatim_two_sentences(self):
         """
-        ASR garbles in the Coger transcript must produce 'Objection. Form.' — two sentences.
+        ASR garbles in the Coger transcript must produce 'Objection.  Form.' — two sentences.
         The broken output had 'Objection to form.' throughout.
         """
         cfg = _make_coger_config()
         garbles = ["Exit form", "Action form", "Objection form", "Action point"]
         for garble in garbles:
             result, _ = clean_block(garble, cfg, block_index=0)[:2]
-            assert "Objection. Form." in result, (
-                f"'{garble}' must produce 'Objection. Form.' Got: {result!r}"
+            assert "Objection.  Form." in result, (
+                f"'{garble}' must produce 'Objection.  Form.' Got: {result!r}"
             )
             assert "Objection to form." not in result, (
                 f"'{garble}' produced 'Objection to form.' — Morson's violation. "
@@ -1005,7 +1005,7 @@ class TestPhase1ExitGate:
             result = apply_universal_corrections(garble, records, block_index=0)
             assert result != "Objection to form.", (
                 f"MORSON'S VIOLATION: '{garble}' produces 'Objection to form.' "
-                f"Fix 1-D must change this to 'Objection. Form.' (two sentences)."
+                f"Fix 1-D must change this to 'Objection.  Form.' (two sentences)."
             )
 
     def test_fresh_jobconfig_speaker_map_verified_is_false(self):

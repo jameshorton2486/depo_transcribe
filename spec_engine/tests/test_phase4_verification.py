@@ -357,7 +357,7 @@ class TestFix4D_MapSpeakersInDocumentBuilder:
     def test_speaker_name_populated_before_classify(self):
         from spec_engine.speaker_mapper import map_speakers
 
-        blocks = [Block(speaker_id=3, text="Objection. Form.", raw_text="")]
+        blocks = [Block(speaker_id=3, text="Objection.  Form.", raw_text="")]
         result = map_speakers(blocks, _coger_cfg())
         assert result[0].speaker_name is not None
         assert result[0].speaker_name != ""

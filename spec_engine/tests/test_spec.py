@@ -1474,10 +1474,10 @@ def test_objection_garble_corrected_to_verbatim_form():
     from spec_engine.corrections import apply_universal_corrections
 
     test_cases = [
-        ("Exit form", "Objection. Form."),
-        ("Action form", "Objection. Form."),
-        ("Action point", "Objection. Form."),
-        ("Objection form", "Objection. Form."),
+        ("Exit form", "Objection.  Form."),
+        ("Action form", "Objection.  Form."),
+        ("Action point", "Objection.  Form."),
+        ("Objection form", "Objection.  Form."),
     ]
     for garble, expected in test_cases:
         records = []
@@ -1496,6 +1496,6 @@ def test_spoken_objection_form_not_rewritten():
     from spec_engine.corrections import clean_block
     from spec_engine.models import JobConfig
 
-    text = "Objection. Form."
+    text = "Objection.  Form."
     result, records = clean_block(text, JobConfig(), block_index=0)[:2]
-    assert result == "Objection. Form."
+    assert result == "Objection.  Form."

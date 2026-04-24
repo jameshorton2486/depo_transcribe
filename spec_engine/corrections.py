@@ -309,9 +309,9 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Eviction\b[.]?',               'Objection.'),
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Definition\b[.]?',             'Objection.'),
 
-    # ── Objection + Form two-word variants → "Objection. Form." ─────────────
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Injection\s+[Ff]orm\b[.]?',   'Objection. Form.'),
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Direction\s+[Ff]orm\b[.]?',   'Objection. Form.'),
+    # ── Objection + Form two-word variants → "Objection.  Form." ─────────────
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Injection\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Direction\s+[Ff]orm\b[.]?',   'Objection.  Form.'),
 
     # ── Form and leading variants → "Form and leading." ──────────────────────
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Former\s+[Ll]eaving\b[.]?',    'Form and leading.'),
@@ -334,10 +334,10 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\b[.]?',               'Objection.'),
     (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\b[.]?',              'Objection.'),
     # Combined forms of the new variants
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Dissection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perception\s+[Ff]orm\b[.]?',    'Objection. Form.'),
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\s+[Ff]orm\b[.]?',     'Objection. Form.'),
-    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\s+[Ff]orm\b[.]?',    'Objection. Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Dissection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Perception\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Addiction\s+[Ff]orm\b[.]?',     'Objection.  Form.'),
+    (r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Deflection\s+[Ff]orm\b[.]?',    'Objection.  Form.'),
     # Standard objection types
     (r'^\s*Objection[,.]?\s+[Nn]on[\s-]?responsive\.?', 'Objection.  Nonresponsive.'),
     (r'^\s*Objection[,.]?\s+[Hh]earsay\.?', 'Objection.  Hearsay.'),
@@ -498,10 +498,10 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bvampires are\b', 'OR fires are'),
     (r'\bright tibral bypass\b', 'right temporal bypass'),
     # ASR garble → verbatim objection form (Morson's: two sentences, as spoken)
-    (r'\bExit form\b[.]?', 'Objection. Form.'),
-    (r'\bAction form\b[.]?', 'Objection. Form.'),
-    (r'\bAction point\b[.]?', 'Objection. Form.'),
-    (r'\bObjection form\b[.]?', 'Objection. Form.'),
+    (r'\bExit form\b[.]?', 'Objection.  Form.'),
+    (r'\bAction form\b[.]?', 'Objection.  Form.'),
+    (r'\bAction point\b[.]?', 'Objection.  Form.'),
+    (r'\bObjection form\b[.]?', 'Objection.  Form.'),
     (r'\bFood\s+safe\s+certification\b', 'food safety certification'),
     (r'\ba\s+a\s+mixture\b', 'a mixture'),
     (r'\btwo\s+day\s+drive\b', 'two-day drive'),
@@ -2171,7 +2171,7 @@ def normalize_sentence_spacing(
         text = text.replace('\xa0', '  ')
 
     if re.fullmatch(r"Objection\.\s+Form\.\.?", text, flags=re.IGNORECASE):
-        return "Objection. Form."
+        return "Objection.  Form."
 
     _ELLIPSIS_TOK = "\x00ELLIPSIS\x00"
     working = text.replace(". . .", _ELLIPSIS_TOK)
