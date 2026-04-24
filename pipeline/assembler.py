@@ -490,17 +490,17 @@ def reassemble_chunks(
 
     if len(chunk_results) == 1:
         result = chunk_results[0]
-        source_utterances = result.get("raw_utterances") or result["utterances"]
+        source_utterances = result.get("raw_utterances") or result.get("utterances", [])
         merged_utterances = merge_utterances(source_utterances)
         labeled_utterances = _attach_speaker_labels(merged_utterances)
         labeled_raw_utterances = _attach_speaker_labels(source_utterances)
         transcript = build_transcript_text(labeled_utterances)
         return {
-            "words":          result["words"],
+            "words":          result.get("words", []),
             "utterances":     labeled_utterances,
             "raw_utterances": labeled_raw_utterances,
-            "transcript":     transcript or result["transcript"],
-            "raw_chunks":     [result["raw"]],
+            "transcript":     transcript or result.get("transcript", ""),
+            "raw_chunks":     [result.get("raw", {})],
         }
 
     all_words: List[Dict] = []
@@ -510,15 +510,19 @@ def reassemble_chunks(
 
     for i, result in enumerate(chunk_results):
         offset = chunk_start_offsets[i]
-        raw_chunks.append(result["raw"])
-        source_utterances = result.get("raw_utterances") or result["utterances"]
+        raw_chunks.append(result.get("raw", {}))
+        source_utterances = result.get("raw_utterances") or result.get("utterances", [])
 
         adjusted_words = [
             {**w, "start": round(w["start"] + offset, 3), "end": round(w["end"] + offset, 3)}
-            for w in result["words"]
+            for w in result.get("words", [])
         ]
 
         utterance_boundary: float | None = None
+        # Track how many words we actually appended to all_words this iteration,
+        # so the speaker-remap slice below covers exactly those words and never
+        # reaches back into words from the previous chunk.
+        words_added_count = 0
 
         if i > 0 and all_words:
             last_ts = all_words[-1]["end"]
@@ -539,10 +543,12 @@ def reassemble_chunks(
                 deduplicated = [w for w in adjusted_words if w["start"] > cutoff]
 
             all_words.extend(deduplicated)
+            words_added_count = len(deduplicated)
             if deduplicated:
                 utterance_boundary = deduplicated[0]["start"]
         else:
             all_words.extend(adjusted_words)
+            words_added_count = len(adjusted_words)
 
         speaker_remap: Dict[int, int] = {}
         if i > 0 and all_utterances:
@@ -556,8 +562,11 @@ def reassemble_chunks(
             if speaker_remap:
                 _logger.info("[ASSEMBLE] Chunk %d speaker remap: %s", i, speaker_remap)
 
-        if speaker_remap:
-            for word in all_words[-len(adjusted_words):]:
+        if speaker_remap and words_added_count > 0:
+            # Use words_added_count, not len(adjusted_words): deduplication
+            # removes overlap words, and slicing by the pre-dedup count would
+            # reach back into words from chunk i-1.
+            for word in all_words[-words_added_count:]:
                 speaker = word.get("speaker")
                 if speaker is None:
                     continue
@@ -624,6 +633,7 @@ def merge_channel_assemblies(channel_assemblies: List[Dict[str, Any]]) -> Dict[s
     """
     merged_words: List[Dict] = []
     merged_utterances: List[Dict] = []
+    merged_raw_utterances: List[Dict] = []
     raw_chunks: List[Dict[str, Any]] = []
 
     for channel_index, assembly in enumerate(channel_assemblies):
@@ -636,18 +646,26 @@ def merge_channel_assemblies(channel_assemblies: List[Dict[str, Any]]) -> Dict[s
         for utterance in assembly.get("utterances", []) or []:
             merged_utterances.append({**utterance, "speaker": channel_index})
 
+        # Collect raw_utterances per channel so the return dict matches the
+        # shape of reassemble_chunks (all five keys always present).
+        for utterance in assembly.get("raw_utterances", []) or []:
+            merged_raw_utterances.append({**utterance, "speaker": channel_index})
+
         for raw in assembly.get("raw_chunks", []) or []:
             raw_chunks.append({"channel": channel_index, "raw": raw})
 
     merged_words.sort(key=lambda w: (float(w.get("start", 0.0) or 0.0), float(w.get("end", 0.0) or 0.0)))
     merged_utterances.sort(key=lambda u: (float(u.get("start", 0.0) or 0.0), float(u.get("end", 0.0) or 0.0)))
+    merged_raw_utterances.sort(key=lambda u: (float(u.get("start", 0.0) or 0.0), float(u.get("end", 0.0) or 0.0)))
 
     labeled_utterances = _attach_speaker_labels(merged_utterances)
+    labeled_raw_utterances = _attach_speaker_labels(merged_raw_utterances)
     transcript = build_transcript_text(labeled_utterances)
 
     return {
         "words": merged_words,
         "utterances": labeled_utterances,
+        "raw_utterances": labeled_raw_utterances,
         "transcript": transcript,
         "raw_chunks": raw_chunks,
     }
