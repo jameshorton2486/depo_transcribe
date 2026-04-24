@@ -43,7 +43,13 @@ VERBATIM_TOKEN_RE = re.compile(
     r'\b(?:uh-huh|uh-uh|uh|um|ah|yeah|yep|yup|nope|nah|gonna|wanna|gotta)\b',
     re.IGNORECASE,
 )
+SPEAKER_PREFIX_RE = re.compile(r"^\s*([A-Z][A-Z .'\-]+:)")
+STUTTER_RE = re.compile(r"\b\w+-\w+\b")
+FALSE_START_RE = re.compile(r"\b\w+\s*--")
 SCOPIST_FLAG_RE = re.compile(r'\[SCOPIST: FLAG \d+:')
+WORD_RE = re.compile(r"\b[\w']+\b")
+MAX_LENGTH_DELTA_RATIO = 0.05
+MAX_WORD_CHANGE_RATIO = 0.15
 
 
 def _protect_verbatim(text: str) -> tuple[str, dict[str, str]]:
@@ -70,6 +76,28 @@ def _all_protected_tokens_preserved(text: str, protected: dict[str, str]) -> boo
     return all(key in text for key in protected)
 
 
+def _extract_speaker_prefix(line: str) -> str:
+    match = SPEAKER_PREFIX_RE.match(line)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_special_verbatim_forms(text: str) -> list[str]:
+    forms = [match.group(0) for match in STUTTER_RE.finditer(text)]
+    forms.extend(match.group(0) for match in FALSE_START_RE.finditer(text))
+    return forms
+
+
+def _preserves_special_verbatim_forms(original: str, candidate: str) -> bool:
+    return _extract_special_verbatim_forms(original) == _extract_special_verbatim_forms(candidate)
+
+
+def _line_preserves_protected_content(original_line: str, candidate_line: str) -> bool:
+    original_prefix = _extract_speaker_prefix(original_line)
+    if original_prefix and original_prefix != _extract_speaker_prefix(candidate_line):
+        return False
+    return _preserves_special_verbatim_forms(original_line, candidate_line)
+
+
 def _line_signature(line: str) -> str:
     stripped = line.lstrip('\t ')
     if not stripped:
@@ -88,14 +116,57 @@ def _preserves_structure(original: str, candidate: str) -> bool:
     candidate_lines = candidate.splitlines()
     if len(original_lines) != len(candidate_lines):
         return False
-    return [
-        _line_signature(line) for line in original_lines
-    ] == [
-        _line_signature(line) for line in candidate_lines
-    ]
+
+    original_signatures = [_line_signature(line) for line in original_lines]
+    candidate_signatures = [_line_signature(line) for line in candidate_lines]
+    if original_signatures != candidate_signatures:
+        return False
+
+    for original_line, candidate_line in zip(original_lines, candidate_lines):
+        original_prefix = _extract_speaker_prefix(original_line)
+        if original_prefix and original_prefix != _extract_speaker_prefix(candidate_line):
+            return False
+
+    return True
 
 
-_DEFAULT_PROMPT_PACK = load_prompt_pack("claude_like_v1")
+def _within_length_delta(original: str, candidate: str, max_ratio: float = MAX_LENGTH_DELTA_RATIO) -> bool:
+    baseline = max(len(original), 1)
+    return abs(len(candidate) - len(original)) / baseline <= max_ratio
+
+
+def _word_change_ratio(original: str, candidate: str) -> float:
+    original_words = WORD_RE.findall(original)
+    candidate_words = WORD_RE.findall(candidate)
+    baseline = max(len(original_words), 1)
+    shared = sum(1 for old, new in zip(original_words, candidate_words) if old == new)
+    delta = max(len(original_words), len(candidate_words)) - shared
+    return delta / baseline
+
+
+def _validate_ai_output(original: str, candidate: str) -> bool:
+    if not _all_protected_tokens_preserved(candidate, _protect_verbatim(original)[1]):
+        return False
+    if not _preserves_special_verbatim_forms(original, candidate):
+        return False
+    if not _preserves_structure(original, candidate):
+        return False
+    if not _within_length_delta(original, candidate):
+        return False
+    if _word_change_ratio(original, candidate) > MAX_WORD_CHANGE_RATIO:
+        return False
+
+    original_lines = original.splitlines()
+    candidate_lines = candidate.splitlines()
+    if len(original_lines) != len(candidate_lines):
+        return False
+    return all(
+        _line_preserves_protected_content(original_line, candidate_line)
+        for original_line, candidate_line in zip(original_lines, candidate_lines)
+    )
+
+
+_DEFAULT_PROMPT_PACK = load_prompt_pack("legal_transcript_v1")
 TRANSCRIPT_CORRECTION_SYSTEM_PROMPT = _DEFAULT_PROMPT_PACK.system_prompt
 
 
@@ -251,6 +322,7 @@ def run_ai_correction(
         message = client.messages.create(
             model=model_name,
             max_tokens=prompt_pack.max_tokens,
+            temperature=prompt_pack.temperature,
             system=prompt_pack.system_prompt,
             messages=[{'role': 'user', 'content': user_prompt}],
         )
@@ -262,14 +334,8 @@ def run_ai_correction(
             continue
 
         corrected_chunk = _restore_verbatim(corrected_protected_chunk, protected)
-
-        if len(corrected_chunk) < len(chunk) * 0.9:
-            _log('AI output too destructive — reverting to original chunk')
-            results.append(chunk)
-            continue
-
-        if not _preserves_structure(chunk, corrected_chunk):
-            _log('AI output changed transcript structure — reverting to original chunk')
+        if not _validate_ai_output(chunk, corrected_chunk):
+            _log('AI output failed validation — reverting to original chunk')
             results.append(chunk)
             continue
 

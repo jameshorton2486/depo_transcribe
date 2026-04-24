@@ -34,7 +34,7 @@ def load_prompt_pack(pack_id: str | None = None) -> PromptPack:
     resolved_id = (
         (pack_id or "").strip()
         or os.environ.get("AI_CORRECTION_PROMPT_PACK", "").strip()
-        or "claude_like_v1"
+        or "legal_transcript_v1"
     )
     path = get_prompt_pack_path(resolved_id)
     with open(path, "r", encoding="utf-8") as fh:

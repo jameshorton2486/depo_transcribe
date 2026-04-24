@@ -1,28 +1,37 @@
 """
-pipeline/processor.py
+Compatibility wrapper for block-based transcript processing.
 
-Block-first transcription pipeline controller.
+The desktop app's live correction path runs through `core/correction_runner.py`.
+This module remains for tests and external callers that need a compact
+Deepgram-JSON -> blocks/text helper.
 
-STATUS NOTE:
-This module is not the authoritative runtime correction entry point for the
-desktop app. The live UI flow uses core/correction_runner.py for deterministic
-corrections and spec_engine/ai_corrector.py for optional AI correction.
+Behavior is intentionally narrow:
+    build_blocks_from_deepgram -> process_blocks -> format_blocks_to_text
 
-Connects Deepgram JSON output to the spec_engine block processing pipeline.
-The active correction path is:
-    build_blocks_from_deepgram  →  process_blocks  →  format_blocks_to_text
-
-The run_pipeline() function remains available for external/test callers.
-The apply_ai flag is legacy and is still ignored in this module.
+Legacy `apply_ai` and `ai_rules` arguments are accepted for compatibility only.
+They do not change behavior in this module.
 """
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict
 
 from spec_engine.block_builder import build_blocks_from_deepgram
 from spec_engine.processor import process_blocks
 from core.correction_runner import format_blocks_to_text
+
+
+def _warn_if_legacy_ai_args_used(apply_ai: bool, ai_rules: Any) -> None:
+    if not apply_ai and ai_rules is None:
+        return
+
+    warnings.warn(
+        "pipeline.processor.run_pipeline() ignores legacy apply_ai/ai_rules "
+        "arguments. AI correction is handled outside this compatibility wrapper.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
 
 def run_pipeline(
@@ -37,21 +46,16 @@ def run_pipeline(
     Args:
         deepgram_json:  Assembled Deepgram result dict with 'utterances' key.
         job_config:     JobConfig instance or dict with confirmed_spellings etc.
-        apply_ai:       Legacy flag — ignored in this module.
-        ai_rules:       Legacy placeholder — ignored.
+        apply_ai:       Legacy compatibility flag. Ignored.
+        ai_rules:       Legacy compatibility placeholder. Ignored.
 
     Returns:
         { "blocks": List[Block], "text": str }
     """
+    _warn_if_legacy_ai_args_used(apply_ai, ai_rules)
+
     blocks = build_blocks_from_deepgram(deepgram_json)
     blocks = process_blocks(blocks, job_config)
-
-    if apply_ai:
-        import logging
-        logging.getLogger(__name__).warning(
-            "run_pipeline: apply_ai=True but this legacy module does not invoke "
-            "spec_engine.ai_corrector. Continuing with deterministic corrections only."
-        )
 
     output = format_blocks_to_text(blocks)
     return {"blocks": blocks, "text": output}

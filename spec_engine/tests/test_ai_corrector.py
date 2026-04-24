@@ -12,6 +12,9 @@ import pytest
 from spec_engine.ai_corrector import (
     TRANSCRIPT_CORRECTION_SYSTEM_PROMPT,
     _protect_verbatim,
+    _validate_ai_output,
+    _preserves_special_verbatim_forms,
+    _preserves_structure,
     _restore_verbatim,
     _split_into_chunks,
     _renumber_scopist_flags,
@@ -118,6 +121,12 @@ class TestPromptSafety:
         assert "Change Q./A. labels" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
         assert "Modify transcript structure in any way" in TRANSCRIPT_CORRECTION_SYSTEM_PROMPT
 
+    def test_speaker_label_change_fails_structure_check(self):
+        original = "MR. SMITH:  Hello."
+        candidate = "THE REPORTER:  Hello."
+
+        assert _preserves_structure(original, candidate) is False
+
 
 class TestVerbatimProtection:
 
@@ -127,6 +136,51 @@ class TestVerbatimProtection:
 
         assert "__VERBATIM_0__" in protected_text
         assert _restore_verbatim(protected_text, protected) == original
+
+    def test_stutter_change_fails_special_verbatim_check(self):
+        original = "I went to the b-bank."
+        candidate = "I went to the bank."
+
+        assert _preserves_special_verbatim_forms(original, candidate) is False
+
+    def test_false_start_change_fails_special_verbatim_check(self):
+        original = "I -- I went there."
+        candidate = "I went there."
+
+        assert _preserves_special_verbatim_forms(original, candidate) is False
+
+
+class TestValidationLayer:
+
+    def test_validate_ai_output_rejects_partial_stutter_removal(self):
+        original = "Q.\tDid you go there?\nA.\tI went to the b-bank."
+        candidate = "Q.\tDid you go there?\nA.\tI went to the bank."
+
+        assert _validate_ai_output(original, candidate) is False
+
+    def test_validate_ai_output_rejects_line_deletion(self):
+        original = "Q.\tDid you go there?\nA.\tI did go there."
+        candidate = "Q.\tDid you go there?"
+
+        assert _validate_ai_output(original, candidate) is False
+
+    def test_validate_ai_output_rejects_single_line_speaker_change(self):
+        original = "MR. SMITH:  Hello.\nA.\tI did go there."
+        candidate = "THE REPORTER:  Hello.\nA.\tI did go there."
+
+        assert _validate_ai_output(original, candidate) is False
+
+    def test_validate_ai_output_rejects_large_rewrite(self):
+        original = "Q.\tDid you go there?\nA.\tI did go there and then I came back."
+        candidate = "Q.\tSummarize this.\nA.\tYes."
+
+        assert _validate_ai_output(original, candidate) is False
+
+    def test_validate_ai_output_rejects_compressed_output(self):
+        original = "Q.\tDid you go there?\nA.\tI did go there and then I came back."
+        candidate = "Q.\tDid you go there?\nA.\tI went."
+
+        assert _validate_ai_output(original, candidate) is False
 
 
 class TestRunAICorrection:
@@ -192,3 +246,42 @@ class TestRunAICorrection:
         text = "Q.\tDid you go there?\nA.\tuh yeah."
 
         assert run_ai_correction(text, {}) == text
+
+    def test_stutter_changing_ai_output_reverts_to_original_chunk(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    return SimpleNamespace(content=[SimpleNamespace(text="Q.\tDid you go there?\nA.\tI went to the bank.")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tb-bank."
+
+        assert run_ai_correction(text, {}) == text
+
+    def test_prompt_pack_temperature_is_passed_to_api(self, monkeypatch):
+        monkeypatch.setattr("spec_engine.ai_corrector._CONFIG_API_KEY", "test-key")
+        captured = {}
+
+        class _FakeClient:
+            def __init__(self, api_key):
+                self.api_key = api_key
+
+            class messages:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return SimpleNamespace(content=[SimpleNamespace(text="Q.\tDid you go there?\nA.\tI did go there.")])
+
+        monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeClient))
+
+        text = "Q.\tDid you go there?\nA.\tI did go there."
+
+        assert run_ai_correction(text, {}) == text
+        assert captured["temperature"] == 0.0
