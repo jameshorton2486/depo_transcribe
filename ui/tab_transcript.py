@@ -353,6 +353,20 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._run_corrections_btn.pack(side="right", padx=(4, 0))
 
+        # Optional Claude AI pass over the current transcript text. Disabled
+        # until a transcript is loaded. Runs in a background thread via
+        # _on_ai_correct_clicked -> _start_ai_correction -> _run_ai_job.
+        self._ai_correct_btn = ctk.CTkButton(
+            header,
+            text="✨ AI Correct",
+            width=130,
+            fg_color="#6B2A8C",
+            hover_color="#4E1E66",
+            state="disabled",
+            command=self._on_ai_correct_clicked,
+        )
+        self._ai_correct_btn.pack(side="right", padx=(4, 0))
+
         self._format_btn = None
 
         self._fnr_toggle_btn = ctk.CTkButton(
@@ -1076,6 +1090,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._copy_debug_btn.configure(state="disabled")
         self._save_btn.configure(state="disabled")
         self._run_corrections_btn.configure(state="disabled")
+        self._ai_correct_btn.configure(state="disabled")
         if self._format_btn is not None:
             self._format_btn.configure(state="disabled")
         self._path_label.configure(text="Processing…", text_color="gray")
@@ -1128,6 +1143,7 @@ class TranscriptTab(ctk.CTkFrame):
             self._copy_debug_btn.configure(state="normal")
             self._save_btn.configure(state="normal")
             self._run_corrections_btn.configure(state="normal")
+            self._ai_correct_btn.configure(state="normal")
             if self._format_btn is not None:
                 self._format_btn.configure(state="normal")
             self.set_status(
@@ -2858,6 +2874,7 @@ class TranscriptTab(ctk.CTkFrame):
             if self._format_btn is not None:
                 self._format_btn.configure(state="disabled", text="Formatting…")
             self._run_corrections_btn.configure(state="disabled")
+            self._ai_correct_btn.configure(state="disabled")
         else:
             if self._format_btn is not None:
                 self._format_btn.configure(
@@ -2867,6 +2884,10 @@ class TranscriptTab(ctk.CTkFrame):
             self._run_corrections_btn.configure(
                 state="normal" if self._current_path else "disabled",
                 text="⚙ Run Corrections",
+            )
+            self._ai_correct_btn.configure(
+                state="normal" if self._current_path else "disabled",
+                text="✨ AI Correct",
             )
 
     def _start_format_transcript(self) -> None:
@@ -2990,6 +3011,7 @@ class TranscriptTab(ctk.CTkFrame):
             return
 
         self._run_corrections_btn.configure(state="disabled", text="Correcting…")
+        self._ai_correct_btn.configure(state="disabled")
         self.set_status("Running corrections pipeline…", "#4499FF")
         self._log_box.configure(state="normal")
         self._log_box.delete("1.0", "end")
@@ -3009,6 +3031,7 @@ class TranscriptTab(ctk.CTkFrame):
         """Called on the main thread when the corrections pipeline finishes."""
         if not result.get("success"):
             self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+            self._ai_correct_btn.configure(state="normal", text="✨ AI Correct")
             err = result.get("error", "unknown error")
             self.set_status(f"Corrections failed: {err[:80]}", "#CC4444")
             self.append_log(f"ERROR: {err}")
@@ -3017,6 +3040,7 @@ class TranscriptTab(ctk.CTkFrame):
         corrected_text = result.get("corrected_text", "")
         if not corrected_text.strip():
             self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+            self._ai_correct_btn.configure(state="normal", text="✨ AI Correct")
             self.set_status("Corrections ran but returned no text.", "#FFAA44")
             return
 
@@ -3054,19 +3078,63 @@ class TranscriptTab(ctk.CTkFrame):
             from config import ANTHROPIC_API_KEY
         except Exception:
             ANTHROPIC_API_KEY = ""
+        ai_available = bool((ANTHROPIC_API_KEY or "").strip())
 
         self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+        self._ai_correct_btn.configure(state="normal", text="✨ AI Correct")
         self.set_status(
             (
                 f"{'Draft' if draft_mode else '✓'} corrections applied — {count} correction(s)  |  {flags} scopist flag(s)."
                 + (
                     "  Speaker mapping is not confirmed yet."
                     if draft_mode
-                    else "  Use 'AI Correct' in the Corrections tab to run the optional AI pass."
+                    else (
+                        "  Click ✨ AI Correct to run the optional Claude pass."
+                        if ai_available
+                        else "  (AI Correct disabled: ANTHROPIC_API_KEY not set.)"
+                    )
                 )
             ),
             "#CCAA44" if draft_mode else "#44FF44",
         )
+
+    def _on_ai_correct_clicked(self) -> None:
+        """Header button: run Claude AI correction on the current transcript."""
+        if self._ai_running:
+            return
+        if not self._current_path or not (self._canonical_text or "").strip():
+            self.set_status("Load a transcript before running AI correction.", "#FFAA44")
+            return
+
+        try:
+            from config import ANTHROPIC_API_KEY
+        except Exception:
+            ANTHROPIC_API_KEY = ""
+        if not (ANTHROPIC_API_KEY or "").strip():
+            self.set_status(
+                "AI correction requires ANTHROPIC_API_KEY in your .env file.",
+                "#CC4444",
+            )
+            return
+
+        proceed = messagebox.askyesno(
+            "Run AI Correction?",
+            "Send the current transcript to Claude for a context-aware pass "
+            "(homophones, proper nouns, scopist flags)?\n\n"
+            "Cost is roughly $0.30 per hour of deposition. Verbatim words "
+            "(uh, um, yeah, etc.) are protected and will not be changed.",
+        )
+        if not proceed:
+            return
+
+        self._ai_correct_btn.configure(state="disabled", text="AI Correcting…")
+        self._run_corrections_btn.configure(state="disabled")
+        self.set_status("Running AI correction pass…", "#4499FF")
+        self._log_box.configure(state="normal")
+        self._log_box.delete("1.0", "end")
+        self._log_box.configure(state="disabled")
+
+        self._start_ai_correction(self._canonical_text)
 
     def _start_ai_correction(self, corrected_text: str) -> None:
         """Launch the Claude correction pass from the Transcript tab."""
@@ -3075,6 +3143,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         if not corrected_text.strip():
             self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+            self._ai_correct_btn.configure(state="normal", text="✨ AI Correct")
             self.set_status("No corrected transcript text available for AI pass.", "#FFAA44")
             return
 
@@ -3114,6 +3183,7 @@ class TranscriptTab(ctk.CTkFrame):
         """Apply the AI pass result back into the Transcript tab."""
         self._ai_running = False
         self._run_corrections_btn.configure(state="normal", text="⚙ Run Corrections")
+        self._ai_correct_btn.configure(state="normal", text="✨ AI Correct")
 
         if result_text and not error:
             try:

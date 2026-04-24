@@ -76,6 +76,31 @@ def test_safe_apply_prints_skip_reason(capsys):
 
 
 def test_transcript_tab_no_longer_auto_runs_ai():
+    """Run Corrections must not auto-chain into AI correction.
+
+    AI is a user-initiated action (the ✨ AI Correct button) and must not
+    fire automatically from _on_corrections_done. The button label string
+    'AI Correcting…' is permitted because it is a button state, not an
+    auto-run marker.
+    """
+    import re
     source = Path("ui/tab_transcript.py").read_text(encoding="utf-8")
+
+    # Old auto-run status string must stay gone
     assert "Running AI review..." not in source
-    assert "AI Correcting…" not in source
+
+    # _on_corrections_done must not call into the AI pipeline
+    match = re.search(
+        r"def _on_corrections_done\(.*?\):(.*?)(?=\n    def |\nclass )",
+        source,
+        re.DOTALL,
+    )
+    assert match, "_on_corrections_done not found in ui/tab_transcript.py"
+    body = match.group(1)
+    assert "_start_ai_correction" not in body, (
+        "_on_corrections_done must not trigger _start_ai_correction; "
+        "AI correction must remain user-initiated."
+    )
+    assert "_on_ai_correct_clicked" not in body, (
+        "_on_corrections_done must not trigger _on_ai_correct_clicked."
+    )
