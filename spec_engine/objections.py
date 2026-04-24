@@ -4,10 +4,13 @@ Objection extraction from structured blocks.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, List
 
 from .models import Block, BlockType
+
+_log = logging.getLogger("spec_engine.objections")
 
 
 OBJECTION_PATTERNS = [
@@ -21,6 +24,25 @@ OBJECTION_PATTERNS = [
 ]
 CORRECTED_OBJECTION_FORM_RE = re.compile(r"\bobjection\.\s+form\.", re.IGNORECASE)
 
+# Instructions like "You can answer" sometimes appear as a separate block
+# immediately after an objection. These get consumed and appended to the
+# objection block to avoid leaving them as unattributed orphan COLLOQUY blocks.
+_YOU_CAN_ANSWER_RE = re.compile(
+    r"^(?:you\s+(?:can|may)\s+answer"
+    r"|go\s+ahead\s+and\s+answer"
+    r"|you\s+can\s+still\s+answer"
+    r"|answer\s+if\s+you\s+(?:can|like)"
+    r"|you\s+can\s+go\s+ahead)\.?$",
+    re.IGNORECASE,
+)
+
+# Reporter label tokens — used to exclude the reporter from objection
+# speaker resolution. Without this, a reporter labeled "Ms. Bardot" would
+# match the attorney token check and be returned as the objection speaker.
+_REPORTER_LABEL_TOKENS = frozenset({
+    "REPORTER", "CSR", "COURT REPORTER", "NOTARY",
+})
+
 
 def _resolve_objection_speaker(job_config: Any) -> str:
     """
@@ -30,12 +52,9 @@ def _resolve_objection_speaker(job_config: Any) -> str:
       1. Speaker map — find the entry with OPPOSING COUNSEL or DEFENSE role
       2. defense_counsel list in JobConfig (dataclass or dict form)
       3. Any attorney-labeled speaker who is NOT the examining attorney
+         AND NOT the reporter
       4. Fallback: "COUNSEL"  (never "MR. UNKNOWN")
     """
-    import logging as _logging
-
-    _log = _logging.getLogger("spec_engine.objections")
-
     speaker_map: dict = {}
     if hasattr(job_config, "speaker_map"):
         speaker_map = getattr(job_config, "speaker_map", {}) or {}
@@ -90,6 +109,10 @@ def _resolve_objection_speaker(job_config: Any) -> str:
 
     for sid, label in speaker_map.items():
         label_upper = (label or "").upper()
+        # Exclude the reporter — "Ms. Bardot" would otherwise match the
+        # attorney token check and be returned as the objection speaker.
+        if any(token in label_upper for token in _REPORTER_LABEL_TOKENS):
+            continue
         is_attorney = any(
             token in label_upper
             for token in ("MR.", "MS.", "MRS.", "DR.", "ATTORNEY", "COUNSEL")
@@ -108,11 +131,39 @@ def _resolve_objection_speaker(job_config: Any) -> str:
 
 
 def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
-    new_blocks: List[Block] = []
-    objection_speaker = _resolve_objection_speaker(job_config)
+    """
+    Extract objection phrases from Q/A blocks and emit them as SPEAKER blocks.
 
-    for block in blocks:
+    Skips blocks that have already been classified as SPEAKER or COLLOQUY —
+    those are already properly attributed, and re-extracting from them would
+    duplicate the objection with the wrong speaker.
+
+    If the block immediately after an extracted objection is a "you can
+    answer" instruction, it is appended to the objection block rather than
+    left as an unattributed orphan.
+    """
+    objection_speaker = _resolve_objection_speaker(job_config)
+    _log.debug(
+        "[OBJECTIONS] processing %d blocks - speaker=%s",
+        len(blocks), objection_speaker,
+    )
+
+    new_blocks: List[Block] = []
+    extracted = 0
+    merged_instructions = 0
+
+    i = 0
+    while i < len(blocks):
+        block = blocks[i]
         text = block.text
+
+        # Skip already-classified speaker turns — CORRECTED_OBJECTION_FORM_RE
+        # would otherwise re-match inside them and re-attribute the objection.
+        if block.block_type in (BlockType.SPEAKER, BlockType.COLLOQUY):
+            new_blocks.append(block)
+            i += 1
+            continue
+
         match = None
         for pattern in OBJECTION_PATTERNS:
             found_match = re.search(pattern, text, re.IGNORECASE)
@@ -126,6 +177,7 @@ def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
 
         if not match:
             new_blocks.append(block)
+            i += 1
             continue
 
         objection_text = match.group(0).strip()
@@ -144,16 +196,31 @@ def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
             )
             new_blocks.append(kept)
 
+        # Consume a following "you can answer" instruction into this objection.
+        objection_suffix = ""
+        if i + 1 < len(blocks):
+            next_block = blocks[i + 1]
+            if _YOU_CAN_ANSWER_RE.match((next_block.text or "").strip()):
+                objection_suffix = "  " + (next_block.text or "").strip()
+                merged_instructions += 1
+                i += 1
+
         new_blocks.append(
             Block(
                 speaker_id=None,
                 raw_text=text,
-                text=objection_text,
+                text=objection_text + objection_suffix,
                 speaker_name=objection_speaker,
                 speaker_role="OPPOSING_COUNSEL",
                 block_type=BlockType.SPEAKER,
                 meta={"source": "objection_extraction", "is_objection": True},
             )
         )
+        extracted += 1
+        i += 1
 
+    _log.debug(
+        "[OBJECTIONS] complete - %d extracted, %d instructions merged, %d->%d blocks",
+        extracted, merged_instructions, len(blocks), len(new_blocks),
+    )
     return new_blocks

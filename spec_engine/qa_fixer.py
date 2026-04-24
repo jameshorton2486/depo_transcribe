@@ -4,28 +4,39 @@ Q/A structure repair for block-based processing.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, List
 
 from .models import Block, BlockType
 
+_log = logging.getLogger("spec_engine.qa_fixer")
+
 
 ANSWER_TOKENS = (
     "yes", "no", "yeah", "yep", "nope",
-    "uh-huh", "uh uh", "mm-hmm", "correct", "right",
+    # corrections.py normalizes "uh uh" → "uh-uh" before qa_fixer runs
+    "uh-huh", "uh-uh", "mm-hmm", "mhmm", "correct", "right",
     "yes,", "no,", "yes sir", "no sir", "yes ma'am", "no ma'am",
     "i do", "i don't", "i do not", "i did", "i did not",
     "i remember", "i recall", "i don't recall", "i don't remember",
 )
 
+# Period-suffixed entries were dead code — _merge_orphaned_continuations
+# strips '.,!?' before the set intersection, so "correct." can never match.
 STANDALONE_ANSWER_WORDS = frozenset({
     "correct", "right", "yes", "no", "true", "false",
     "absolutely", "exactly", "certainly", "agreed", "indeed",
-    "uh-huh", "mm-hmm",
-    "correct.", "right.", "yes.", "no.", "true.", "false.",
-    "absolutely.", "exactly.", "certainly.", "agreed.", "indeed.",
-    "uh-huh.", "mm-hmm.",
+    "uh-huh", "uh-uh", "mm-hmm", "mhmm",
+    "yeah", "yep", "yup", "nope", "nah",
 })
+
+# Filler-only blocks are standalone testimony — must never be merged into a
+# preceding block, or the affirmation/negation is silently deleted.
+_FILLER_ONLY_RE = re.compile(
+    r"^(?:uh[-\s]?huh|uh[-\s]?uh|mm[-\s]?hmm|mhmm|yeah|yep|yup|nope|nah)\.?$",
+    re.IGNORECASE,
+)
 
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will", "were", "was", "have", "has", "had")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
@@ -46,14 +57,15 @@ QUESTION_LEAD_PHRASES = (
     "do you solemnly swear",
     "do you affirm",
 )
+# "and " and "so " removed — witness answers commonly begin with these
+# ("And then he left.", "So I stopped.") and should not be blocked from
+# being recognized as answer fragments.
 COLLOQUY_STARTERS = (
     "let's ",
     "let me ",
     "just ",
     "okay",
     "all right",
-    "and ",
-    "so ",
     "now ",
     "then ",
 )
@@ -226,7 +238,8 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
             continue
 
         text = block.text.strip()
-        match = re.match(r"(.+\?)\s+(.+)", text)
+        # Non-greedy + DOTALL: split on the first '?', not the last.
+        match = re.match(r"(.+?\?)\s+(.+)", text, re.DOTALL)
         if not match:
             new_blocks.append(block)
             continue
@@ -359,6 +372,11 @@ def _merge_orphaned_continuations(blocks: List[Block]) -> List[Block]:
         is_tiny = word_count <= 3
         is_mergeable = block.block_type in mergeable_types
 
+        # Filler-only blocks ("Uh-huh.", "Mm-hmm.") are standalone testimony.
+        if _FILLER_ONLY_RE.match((block.text or "").strip()):
+            result.append(block)
+            continue
+
         if block.block_type == BlockType.ANSWER:
             block_words = {
                 w.strip('.,!?').lower()
@@ -368,7 +386,22 @@ def _merge_orphaned_continuations(blocks: List[Block]) -> List[Block]:
                 result.append(block)
                 continue
 
-        if same_speaker and same_type and is_tiny and is_mergeable:
+        # Don't merge into a previous block that is already a complete
+        # sentence — the tiny block is a separate utterance, not a
+        # continuation. ("I'm done." + "You're sure?" must stay separate.)
+        prev_is_complete = (prev.text or "").rstrip()[-1:] in ".?!"
+
+        if (
+            same_speaker
+            and same_type
+            and is_tiny
+            and is_mergeable
+            and not prev_is_complete
+        ):
+            _log.debug(
+                "[QA_FIXER] Merged continuation: %r + %r",
+                prev.text[-40:], block.text[:40],
+            )
             merged = Block(
                 raw_text=((prev.raw_text or "") + " " + (block.raw_text or "")).strip(),
                 text=((prev.text or "").rstrip() + " " + (block.text or "").lstrip()).strip(),
@@ -427,10 +460,37 @@ def fix_qa_structure(blocks: List[Block], job_config: Any = None) -> List[Block]
     """
     Apply Q/A structural repairs in priority order.
     """
+    input_count = len(blocks)
+    _log.debug("[QA_FIXER] start - %d blocks", input_count)
+
     blocks = _merge_reporter_preamble_blocks(blocks)
+    _log.debug("[QA_FIXER] after reporter preamble merge - %d blocks", len(blocks))
+
+    before = len(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
+    _log.debug("[QA_FIXER] after 1st inline-answer split - %d->%d", before, len(blocks))
+
+    before = len(blocks)
     blocks = split_inline_questions_from_answers(blocks, job_config=job_config)
+    _log.debug("[QA_FIXER] after question-from-answer split - %d->%d", before, len(blocks))
+
+    before = len(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
+    _log.debug("[QA_FIXER] after 2nd inline-answer split - %d->%d", before, len(blocks))
+
+    before = len(blocks)
     blocks = _merge_orphaned_continuations(blocks)
+    _log.debug("[QA_FIXER] after orphan merge - %d->%d", before, len(blocks))
+
+    before = len(blocks)
     blocks = _remove_near_duplicate_blocks(blocks)
+    _log.debug(
+        "[QA_FIXER] after near-dup removal - %d->%d (removed %d)",
+        before, len(blocks), before - len(blocks),
+    )
+
+    _log.debug(
+        "[QA_FIXER] complete - %d -> %d blocks (net %+d)",
+        input_count, len(blocks), len(blocks) - input_count,
+    )
     return blocks
