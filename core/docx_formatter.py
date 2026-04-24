@@ -82,6 +82,11 @@ _A_RE = re.compile(r"^\s*A\.\s*(.*)$")
 _BY_RE = re.compile(r"^\s*(BY\s+.+:)\s*$", re.IGNORECASE)
 _EXAM_RE = re.compile(r"^\s*([A-Z-]*EXAMINATION)\s*$", re.IGNORECASE)
 _SP_RE = re.compile(r"^\s*([^:]+):\s*(.*)$")
+# Label content must be uppercase letters / digits / limited punctuation.
+# Used to reject internal colons (e.g. "At 4:30 PM ...") from being parsed
+# as speaker-label lines.
+_SP_LABEL_OK_RE = re.compile(r"^[A-Z][A-Z0-9 .'\-]*$")
+_SP_CONT_PREFIX = "\t\t\t"
 
 
 def _iter_formatted_lines(text: str) -> Iterable[tuple[LineType, str]]:
@@ -115,7 +120,21 @@ def _iter_formatted_lines(text: str) -> Iterable[tuple[LineType, str]]:
             continue
 
         if match := _SP_RE.match(stripped):
-            yield LineType.SP, f"{match.group(1)}:  {match.group(2).strip()}"
+            label_candidate = match.group(1).strip()
+            # Only treat as a labeled speaker line if the pre-colon text
+            # actually looks like an uppercase speaker label. This keeps a
+            # continuation line like "\t\t\tAt 4:30 PM we started." from
+            # being misparsed as label "At 4", content "30 PM we started."
+            if _SP_LABEL_OK_RE.fullmatch(label_candidate):
+                yield LineType.SP, f"{label_candidate}:  {match.group(2).strip()}"
+                continue
+
+        # SP continuation: emit_blocks writes "\t\t\t{text}" (three tabs, no
+        # label, no colon) when consecutive blocks share a speaker. Route
+        # those to emit_sp_line so the three-tab indent is preserved in the
+        # DOCX output rather than being stripped by the PLAIN path.
+        if raw_line.startswith(_SP_CONT_PREFIX):
+            yield LineType.SP, raw_line[len(_SP_CONT_PREFIX):].rstrip()
             continue
 
         yield LineType.PLAIN, stripped
