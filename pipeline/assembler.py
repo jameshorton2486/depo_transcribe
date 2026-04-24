@@ -27,6 +27,10 @@ ROLE_SEQUENCE = [
 ]
 
 _OVERLAP_WORD_RE = re.compile(r"^\W+|\W+$")
+GAP_THRESHOLD_SECONDS = 1.25
+SHORT_GAP_THRESHOLD_SECONDS = 0.6
+MIN_UTTERANCE_WORDS = 2
+SPEAKER_GLITCH_DURATION_SECONDS = 0.5
 
 
 def _count_utterance_words(utterance: Dict) -> int:
@@ -34,6 +38,178 @@ def _count_utterance_words(utterance: Dict) -> int:
     if words:
         return len(words)
     return len((utterance.get("transcript") or "").split())
+
+
+def _normalize_utterance(utterance: Dict) -> Dict | None:
+    text = " ".join((utterance.get("transcript") or "").split()).strip()
+    if not text:
+        return None
+
+    normalized = {
+        **utterance,
+        "transcript": text,
+        "start": float(utterance.get("start", 0.0) or 0.0),
+        "end": float(utterance.get("end", 0.0) or 0.0),
+    }
+    if normalized.get("speaker") is not None:
+        normalized["speaker"] = int(normalized["speaker"])
+    return normalized
+
+
+def _join_transcript_text(prev_text: str, next_text: str) -> str:
+    return " ".join(part for part in [prev_text.rstrip(), next_text.lstrip()] if part).strip()
+
+
+def _append_utterance_words(target: Dict, source: Dict) -> None:
+    target_words = list(target.get("words") or [])
+    source_words = list(source.get("words") or [])
+    if target_words and source_words:
+        target["words"] = target_words + source_words
+    elif source_words and not target_words:
+        target["words"] = source_words
+
+
+def _merge_two_utterances(current: Dict, following: Dict) -> Dict:
+    merged = {
+        **current,
+        "transcript": _join_transcript_text(
+            current.get("transcript") or "",
+            following.get("transcript") or "",
+        ),
+        "start": float(current.get("start", 0.0) or 0.0),
+        "end": max(
+            float(current.get("end", 0.0) or 0.0),
+            float(following.get("end", 0.0) or 0.0),
+        ),
+    }
+    _append_utterance_words(merged, following)
+    return merged
+
+
+def _is_duplicate_utterance(current: Dict, following: Dict) -> bool:
+    return (
+        current.get("speaker") == following.get("speaker")
+        and (current.get("transcript") or "").strip() == (following.get("transcript") or "").strip()
+    )
+
+
+def _is_speaker_flip_glitch(
+    utterances: List[Dict],
+    index: int,
+    gap_threshold_seconds: float,
+) -> bool:
+    if index <= 0 or index >= len(utterances) - 1:
+        return False
+
+    previous = utterances[index - 1]
+    current = utterances[index]
+    following = utterances[index + 1]
+
+    current_speaker = current.get("speaker")
+    if current_speaker is None:
+        return False
+
+    if previous.get("speaker") != following.get("speaker"):
+        return False
+    if previous.get("speaker") == current_speaker:
+        return False
+
+    duration = float(current.get("end", 0.0) or 0.0) - float(current.get("start", 0.0) or 0.0)
+    if duration >= SPEAKER_GLITCH_DURATION_SECONDS:
+        return False
+
+    gap_before = float(current.get("start", 0.0) or 0.0) - float(previous.get("end", 0.0) or 0.0)
+    gap_after = float(following.get("start", 0.0) or 0.0) - float(current.get("end", 0.0) or 0.0)
+    return gap_before <= gap_threshold_seconds and gap_after <= gap_threshold_seconds
+
+
+def _should_merge_utterances(
+    current: Dict,
+    following: Dict,
+    gap_threshold_seconds: float,
+    short_gap_threshold_seconds: float,
+    min_word_count: int,
+) -> bool:
+    if current.get("speaker") != following.get("speaker"):
+        return False
+
+    gap = float(following.get("start", 0.0) or 0.0) - float(current.get("end", 0.0) or 0.0)
+    if gap < 0:
+        gap = 0.0
+    if gap > gap_threshold_seconds:
+        return False
+
+    current_words = _count_utterance_words(current)
+    following_words = _count_utterance_words(following)
+    if current_words < min_word_count or following_words < min_word_count:
+        return gap <= short_gap_threshold_seconds
+
+    return True
+
+
+def merge_utterances(
+    utterances: List[Dict],
+    gap_threshold_seconds: float = GAP_THRESHOLD_SECONDS,
+    short_gap_threshold_seconds: float = SHORT_GAP_THRESHOLD_SECONDS,
+    min_word_count: int = MIN_UTTERANCE_WORDS,
+) -> List[Dict]:
+    """
+    Deterministically merge adjacent utterances into stable speaker-consistent blocks.
+
+    Input utterances are expected to already be overlap-deduplicated and timestamp-adjusted.
+    """
+    normalized = [
+        normalized_utterance
+        for utterance in utterances
+        if (normalized_utterance := _normalize_utterance(utterance)) is not None
+    ]
+    if not normalized:
+        return []
+
+    normalized.sort(key=lambda u: (u["start"], u["end"]))
+    merged: List[Dict] = []
+    current = normalized[0]
+    index = 1
+
+    while index < len(normalized):
+        candidate = normalized[index]
+
+        if _is_duplicate_utterance(current, candidate):
+            _logger.debug(
+                "[ASSEMBLE] Skipping duplicate utterance speaker=%s text=%r",
+                current.get("speaker"),
+                current.get("transcript"),
+            )
+            index += 1
+            continue
+
+        if _should_merge_utterances(
+            current,
+            candidate,
+            gap_threshold_seconds=gap_threshold_seconds,
+            short_gap_threshold_seconds=short_gap_threshold_seconds,
+            min_word_count=min_word_count,
+        ):
+            current = _merge_two_utterances(current, candidate)
+            index += 1
+            continue
+
+        if _is_speaker_flip_glitch(normalized, index, gap_threshold_seconds):
+            _logger.debug(
+                "[ASSEMBLE] Ignoring speaker flip glitch speaker=%s start=%.3f end=%.3f",
+                candidate.get("speaker"),
+                candidate.get("start"),
+                candidate.get("end"),
+            )
+            index += 1
+            continue
+
+        merged.append(current)
+        current = candidate
+        index += 1
+
+    merged.append(current)
+    return merged
 
 
 def _build_speaker_role_map(utterances: List[Dict]) -> Dict[int, str]:
@@ -315,12 +491,14 @@ def reassemble_chunks(
     if len(chunk_results) == 1:
         result = chunk_results[0]
         source_utterances = result.get("raw_utterances") or result["utterances"]
-        labeled_utterances = _attach_speaker_labels(source_utterances)
+        merged_utterances = merge_utterances(source_utterances)
+        labeled_utterances = _attach_speaker_labels(merged_utterances)
+        labeled_raw_utterances = _attach_speaker_labels(source_utterances)
         transcript = build_transcript_text(labeled_utterances)
         return {
             "words":          result["words"],
             "utterances":     labeled_utterances,
-            "raw_utterances": labeled_utterances,
+            "raw_utterances": labeled_raw_utterances,
             "transcript":     transcript or result["transcript"],
             "raw_chunks":     [result["raw"]],
         }
@@ -416,8 +594,8 @@ def reassemble_chunks(
             all_utterances.append(candidate_utterance)
             all_raw_utterances.append(candidate_utterance)
 
-    all_utterances.sort(key=lambda u: u["start"])
     all_raw_utterances.sort(key=lambda u: u["start"])
+    all_utterances = merge_utterances(all_raw_utterances)
     labeled_utterances = _attach_speaker_labels(all_utterances)
     labeled_raw_utterances = _attach_speaker_labels(all_raw_utterances)
     full_transcript = build_transcript_text(labeled_utterances)
