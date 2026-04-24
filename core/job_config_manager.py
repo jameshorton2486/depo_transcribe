@@ -20,7 +20,6 @@ EXPECTED STRUCTURE
 ------------------
 {
     "version": 1,
-    "utt_split": 1.2,
     "ufm_fields": {
         "cause_number":    "2025-CI-19595",
         "witness_name":    "Matthew Coger",
@@ -180,7 +179,6 @@ def merge_and_save(case_root: str, **sections: Any) -> Path | None:
         ufm_fields            (dict)  — UFM page fields
         confirmed_spellings   (dict)  — Deepgram → correct spelling map
         low_confidence_words  (list)  — words below confidence threshold
-        utt_split             (float) — Deepgram utterance split setting
 
     Any section key passed as None is ignored (existing value preserved).
 

@@ -7,27 +7,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from core.job_config_manager import load_job_config, merge_and_save
 
 
-def test_merge_and_save_persists_utt_split(tmp_path):
-    merge_and_save(str(tmp_path), utt_split=0.7)
-
-    data = load_job_config(str(tmp_path))
-
-    assert data["utt_split"] == 0.7
-
-
 def test_merge_and_save_persists_transcription_settings(tmp_path):
     merge_and_save(
         str(tmp_path),
         model="nova-3-medical",
         audio_quality="Aggressive (noisy/poor audio)",
-        utt_split=1.2,
     )
 
     data = load_job_config(str(tmp_path))
 
     assert data["model"] == "nova-3-medical"
     assert data["audio_quality"] == "Aggressive (noisy/poor audio)"
-    assert data["utt_split"] == 1.2
 
 
 def test_load_job_config_preserves_deepgram_keyterms(tmp_path):

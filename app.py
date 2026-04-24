@@ -25,6 +25,10 @@ def _ensure_runtime_dirs() -> None:
 
 
 def main() -> None:
+    from app_logging import rotate_startup_logs
+
+    rotate_startup_logs()
+
     _bootstrap_paths()
     _ensure_runtime_dirs()
 

@@ -60,7 +60,6 @@ def _transcribe_prepared_audio(
     *,
     duration_seconds: float,
     model: str,
-    utt_split: float,
     keyterms: list[str],
     progress,
     log,
@@ -89,7 +88,6 @@ def _transcribe_prepared_audio(
             result = transcribe_chunk(
                 chunk.file_path,
                 model=model,
-                utt_split=utt_split,
                 keyterms=keyterms,
                 progress_callback=log,
             )
@@ -123,7 +121,6 @@ def run_transcription_job(
     audio_path: str,
     model: str,
     quality: str,
-    utt_split: float,
     base_dir: str,
     cause_number: str = "",
     last_name: str = "",
@@ -180,7 +177,6 @@ def run_transcription_job(
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
         merged_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
-        _log(f"Utterance split: {utt_split:.2f}")
         if merged_keyterms:
             _log(f"Deepgram keyterms: {len(merged_keyterms)} (includes defaults)")
 
@@ -284,7 +280,6 @@ def run_transcription_job(
             result = transcribe_chunk(
                 chunk.file_path,
                 model=model,
-                utt_split=utt_split,
                 keyterms=merged_keyterms,
                 progress_callback=_log,
             )
@@ -341,7 +336,6 @@ def run_transcription_job(
             "model": model,
             "audio_quality": quality,
             "audio_tier": analysis.tier if analysis else "",
-            "utt_split": utt_split,
             "created_at": datetime.now().isoformat(),
             "duration_sec": v["duration"],
             "word_count": word_count,
@@ -362,7 +356,6 @@ def run_transcription_job(
             "model": model,
             "audio_quality": quality,
             "audio_tier": analysis.tier if analysis else "",
-            "utt_split": utt_split,
             "created_at": datetime.now().isoformat(),
             "chunk_count": len(chunks),
             "deepgram_keyterms_used": merged_keyterms,
@@ -396,7 +389,6 @@ def run_transcription_job(
             # values rather than overwriting them with empty dicts/lists.
             model=model,
             audio_quality=quality,
-            utt_split=utt_split,
             ufm_fields=ufm_fields if ufm_fields else None,
             confirmed_spellings=confirmed_spellings if confirmed_spellings else None,
             low_confidence_words=low_conf_words if low_conf_words else None,

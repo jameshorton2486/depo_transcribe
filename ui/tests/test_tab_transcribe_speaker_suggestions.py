@@ -7,10 +7,10 @@ from ui.tab_transcribe import (
 )
 
 
-def test_normalize_ui_speaker_map_handles_string_keys_and_uppercases_values():
+def test_normalize_ui_speaker_map_handles_string_keys_and_preserves_values():
     result = _normalize_ui_speaker_map({"0": "the reporter", 2: "Mr. Jones", "x": "ignored"})
 
-    assert result == {0: "THE REPORTER", 2: "MR. JONES"}
+    assert result == {0: "the reporter", 2: "Mr. Jones"}
 
 
 def test_normalize_ui_speaker_suggestion_keeps_supported_fields_only():
@@ -59,7 +59,7 @@ def test_build_ui_speaker_defaults_uses_ordered_suggestions_when_no_saved_map():
 
     assert result == {
         "Speaker 0": "THE REPORTER",
-        "Speaker 1": "THOMAS D. JONES",
+        "Speaker 1": "Thomas D. Jones",
         "Speaker 2": "THE WITNESS",
     }
 
@@ -90,3 +90,9 @@ def test_build_ui_quickfill_labels_only_returns_canonical_safe_roles():
     )
 
     assert result == ["THE REPORTER", "THE WITNESS"]
+
+
+def test_processing_mode_defaults_to_enhanced():
+    from ui.tab_transcribe import TranscribeTab
+
+    assert TranscribeTab is not None

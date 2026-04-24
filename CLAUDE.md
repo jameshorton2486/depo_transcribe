@@ -247,7 +247,7 @@ re-reading the reason column and confirming the domain impact.
 | Keyterms kept in pipeline | Boosts case-specific names (Coger, Murphy Oil, 2025CI19595) | Without keyterms, proper nouns have higher error rates |
 | afftdn over neural denoisers | Neural denoisers increase WER for ML models | They sound better but hurt Deepgram accuracy |
 | 24kHz sample rate | Preserves 4-8kHz sibilant band for name disambiguation | Lower rates lose consonant distinction (Coger vs Coker) |
-| smart_format=false | Keeps Deepgram from rewriting dates/currency while filler_words remain enabled | Turning it on increases formatting drift for legal transcript review |
+| smart_format=true | Uses Deepgram's formatting for dates/currency while filler words remain enabled | Turning it off reduces parity with the desired transcript output |
 | Two correction passes (Python then AI) | Python = fast + free for deterministic patterns; AI = context-dependent cases only | Merging them makes simple fixes slow and expensive |
 | CorrectionRecord on every change | Audit trail for corrections log and diff viewer | Without it, changes are invisible to the court reporter |
 | run_logger.py for snapshots | Single tracing system | Do not create additional ad-hoc logging systems |
@@ -516,7 +516,7 @@ Replacing content corrupts the file on save (prior regression — do not repeat)
 3. `_save_transcript()` saves `_canonical_text`, not raw textbox
 4. Rule order in `clean_block()` — 14 rules — MUST NOT change
 5. Character replacement — MUST shift all subsequent word map offsets
-6. `smart_format` stays OFF while `filler_words` stays ON for Nova-3
+6. `smart_format` stays ON while `filler_words` stays ON for Nova-3
 
 ---
 
@@ -678,14 +678,13 @@ Exceptions — keep as numerals:
 
 ```python
 model        = "nova-3"   # or "nova-3-medical"
-smart_format = "false"
+smart_format = "true"
 punctuate    = "true"
-paragraphs   = "false"
+paragraphs   = "true"
 diarize      = "true"
 utterances   = "true"
 filler_words = "true"
-numerals     = "false"
-utt_split    = 1.2        # adjustable in UI
+numerals     = "true"
 keyterms     = [...]      # up to 100, from NOD PDF / reporter notes
 ```
 

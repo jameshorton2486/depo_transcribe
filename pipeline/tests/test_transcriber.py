@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pipeline import transcriber
 
 
-def test_transcribe_chunk_sends_utt_split_to_deepgram(monkeypatch, tmp_path):
+def test_transcribe_chunk_does_not_send_utt_split_to_deepgram(monkeypatch, tmp_path):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"audio")
 
@@ -52,11 +52,11 @@ def test_transcribe_chunk_sends_utt_split_to_deepgram(monkeypatch, tmp_path):
     monkeypatch.setattr(transcriber.httpx, "post", fake_post)
     monkeypatch.setattr(transcriber, "merge_utterances", lambda utterances, gap_threshold_seconds, min_word_count: utterances)
 
-    transcriber.transcribe_chunk(str(audio_path), utt_split=0.7)
+    transcriber.transcribe_chunk(str(audio_path))
 
     params = parse_qs(urlparse(captured["url"]).query)
 
-    assert params["utt_split"] == ["0.7"]
+    assert "utt_split" not in params
 
 
 def test_transcribe_chunk_uses_legal_safe_defaults(monkeypatch, tmp_path):
@@ -180,7 +180,6 @@ def test_normalize_params_preserves_false_values_and_all_keys():
         {
             "utterances": True,
             "paragraphs": False,
-            "utt_split": 1.2,
             "language": "en",
         }
     )
@@ -188,7 +187,6 @@ def test_normalize_params_preserves_false_values_and_all_keys():
     assert params == {
         "utterances": "true",
         "paragraphs": "false",
-        "utt_split": 1.2,
         "language": "en",
     }
 
@@ -266,6 +264,7 @@ def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_pat
             "transcript": "Well,",
             "confidence": 0.99,
             "words": [],
+            "low_confidence": False,
         },
         {
             "speaker": 0,
@@ -274,6 +273,7 @@ def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_pat
             "transcript": "I do two things.",
             "confidence": 0.99,
             "words": [],
+            "low_confidence": False,
         },
     ]
     merged_utterances = [
@@ -284,6 +284,7 @@ def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_pat
             "transcript": "Well, I do two things.",
             "confidence": 0.99,
             "words": [],
+            "low_confidence": False,
         },
     ]
 
@@ -321,6 +322,210 @@ def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_pat
 
     assert result["raw_utterances"] == raw_utterances
     assert result["utterances"] == merged_utterances
+
+
+def test_transcribe_chunk_processes_near_silent_chunks_in_safe_mode(monkeypatch, tmp_path):
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"audio")
+
+    post_called = {"value": False}
+
+    def fake_post(url, content=None, headers=None, timeout=None):
+        post_called["value"] = True
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "results": {
+                    "channels": [
+                        {
+                            "alternatives": [
+                                {
+                                    "transcript": "Quiet testimony.",
+                                    "words": [],
+                                }
+                            ]
+                        }
+                    ],
+                    "utterances": [
+                        {
+                            "speaker": 0,
+                            "start": 0.0,
+                            "end": 1.0,
+                            "transcript": "Quiet testimony.",
+                            "confidence": 0.99,
+                            "words": [],
+                        }
+                    ],
+                }
+            },
+        )
+
+    monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
+    monkeypatch.setattr(transcriber.httpx, "post", fake_post)
+    monkeypatch.setattr(transcriber, "_probe_max_volume_db", lambda path: -60.0)
+    monkeypatch.setattr(
+        transcriber,
+        "merge_utterances",
+        lambda utterances, gap_threshold_seconds, min_word_count: utterances,
+    )
+
+    result = transcriber.transcribe_chunk(str(audio_path))
+
+    assert post_called["value"] is True
+    assert result["utterances"]
+    assert result["raw_utterances"]
+    assert (tmp_path / "sample_raw_utterances.json").exists()
+    assert (tmp_path / "sample_merged_utterances.json").exists()
+
+
+def test_merge_utterances_does_not_cross_speakers():
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 0.4,
+            "transcript": "Hello there.",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 1,
+            "start": 0.5,
+            "end": 1.0,
+            "transcript": "Different speaker.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    result = transcriber.merge_utterances(utterances)
+
+    assert len(result) == 2
+    assert result[0]["speaker"] == 0
+    assert result[1]["speaker"] == 1
+
+
+def test_merge_utterances_merges_same_speaker_short_gap():
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 0.4,
+            "transcript": "This is",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 0,
+            "start": 0.7,
+            "end": 1.1,
+            "transcript": "a test.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    result = transcriber.merge_utterances(utterances)
+
+    assert len(result) == 1
+    assert result[0]["transcript"] == "This is a test."
+    assert result[0]["start"] == 0.0
+    assert result[0]["end"] == 1.1
+
+
+def test_merge_utterances_marks_low_confidence():
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 0.4,
+            "transcript": "Quiet testimony.",
+            "confidence": 0.81,
+            "words": [],
+        }
+    ]
+
+    result = transcriber.merge_utterances(utterances)
+
+    assert result[0]["low_confidence"] is True
+
+
+def test_smooth_speakers_corrects_short_flip_glitch():
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 0.4,
+            "transcript": "Hello there.",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 1,
+            "start": 0.45,
+            "end": 0.7,
+            "transcript": "Yes.",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 0,
+            "start": 0.75,
+            "end": 1.2,
+            "transcript": "Continue.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    result = transcriber.smooth_speakers(utterances)
+
+    assert result[1]["speaker"] == 0
+
+
+def test_transcribe_chunk_rejects_empty_merged_output(monkeypatch, tmp_path):
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"audio")
+
+    def fake_post(url, content=None, headers=None, timeout=None):
+        return SimpleNamespace(
+            status_code=200,
+            text="",
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "results": {
+                    "channels": [
+                        {
+                            "alternatives": [
+                                {
+                                    "transcript": "Test transcript.",
+                                    "words": [],
+                                }
+                            ]
+                        }
+                    ],
+                    "utterances": [
+                        {
+                            "speaker": 0,
+                            "start": 0.0,
+                            "end": 1.0,
+                            "transcript": "Test transcript.",
+                            "confidence": 0.99,
+                            "words": [],
+                        }
+                    ],
+                }
+            },
+        )
+
+    monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
+    monkeypatch.setattr(transcriber.httpx, "post", fake_post)
+    monkeypatch.setattr(transcriber, "merge_utterances", lambda *args, **kwargs: [])
+
+    with pytest.raises(RuntimeError, match="No utterances returned"):
+        transcriber.transcribe_chunk(str(audio_path))
 
 
 def test_transcribe_chunk_rejects_missing_utterances(monkeypatch, tmp_path):

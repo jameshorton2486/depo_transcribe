@@ -5,6 +5,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 LOG_DIR = Path(__file__).resolve().parent / "logs"
+ARCHIVE_DIR = LOG_DIR / "archive"
 MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 3
 
@@ -68,6 +69,37 @@ def _setup_root_logger():
     root.addHandler(_make_rotating_handler("app.log", logging.INFO))
     root.addHandler(_make_rotating_handler("errors.log", logging.ERROR))
     root.addHandler(_make_rotating_handler("pipeline.log", logging.DEBUG))
+
+
+def rotate_startup_logs() -> list[Path]:
+    """
+    Move current run logs into logs/archive/ before a fresh app launch.
+
+    Returns the archive paths created during rotation.
+    """
+    LOG_DIR.mkdir(exist_ok=True)
+    ARCHIVE_DIR.mkdir(exist_ok=True)
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archived_paths: list[Path] = []
+
+    for log_file in LOG_DIR.glob("*.log"):
+        if not log_file.is_file():
+            continue
+
+        archive_path = ARCHIVE_DIR / f"{log_file.stem}_{stamp}{log_file.suffix}"
+        counter = 1
+        while archive_path.exists():
+            archive_path = ARCHIVE_DIR / f"{log_file.stem}_{stamp}_{counter}{log_file.suffix}"
+            counter += 1
+
+        try:
+            log_file.replace(archive_path)
+        except PermissionError:
+            continue
+        archived_paths.append(archive_path)
+
+    return archived_paths
 
 
 def get_logger(name: str) -> logging.Logger:

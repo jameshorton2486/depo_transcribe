@@ -55,7 +55,7 @@ def _normalize_ui_speaker_map(raw: dict | None) -> dict[int, str]:
         except (TypeError, ValueError):
             continue
 
-        label = str(value or "").strip().upper()
+        label = " ".join(str(value or "").split()).strip()
         if label:
             normalized[speaker_id] = label
 
@@ -123,10 +123,10 @@ def _build_ui_speaker_defaults(
     for key in ("ordering_attorney", "filing_attorney"):
         name = str(normalized_suggestion.get(key) or "").strip()
         if name:
-            ordered_defaults.append(name.upper())
+            ordered_defaults.append(" ".join(name.split()).strip())
 
     for name in normalized_suggestion.get("copy_attorneys", []):
-        value = str(name).strip().upper()
+        value = " ".join(str(name).split()).strip()
         if value:
             ordered_defaults.append(value)
 
@@ -187,6 +187,21 @@ def _build_ui_quickfill_labels(suggestion: dict[str, Any] | None) -> list[str]:
         labels.append("THE WITNESS")
 
     return labels
+
+
+_SPEAKER_LINE_RE = re.compile(r"(^|\n)(Speaker\s+(\d+)):\s*", re.MULTILINE)
+
+
+def _apply_speaker_labels_to_text(text: str, speaker_map: dict[int, str]) -> str:
+    def _replace(match: re.Match) -> str:
+        speaker_id = int(match.group(3))
+        replacement = speaker_map.get(speaker_id)
+        if not replacement:
+            return match.group(0)
+        prefix = match.group(1) or ""
+        return f"{prefix}{replacement}: "
+
+    return _SPEAKER_LINE_RE.sub(_replace, text or "")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -844,6 +859,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._correction_mode: bool = False
         self._loaded_transcript_path: str | None = None
         self._loaded_case_folder: str | None = None
+        self._case_files_expanded: bool = True
 
         self._build_ui()
 
@@ -852,7 +868,7 @@ class TranscribeTab(ctk.CTkFrame):
     def _build_ui(self):
         # ── Fixed amber footer — CREATE TRANSCRIPT (full width) ───────────────
         footer = ctk.CTkFrame(self, fg_color="transparent", height=48)
-        footer.pack(fill="x", side="bottom", padx=10, pady=(2, 4))
+        footer.pack(fill="x", side="bottom", padx=10, pady=(1, 3))
         footer.pack_propagate(False)
 
         self._create_btn = ctk.CTkButton(
@@ -867,11 +883,11 @@ class TranscribeTab(ctk.CTkFrame):
         self._create_btn.pack(fill="x")
 
         container = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=10, pady=(2, 0))
+        container.pack(fill="both", expand=True, padx=10, pady=(1, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
         file_card = ctk.CTkFrame(container)
-        file_card.pack(fill="x", pady=(0, 3))
+        file_card.pack(fill="x", pady=(0, 2))
 
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
         file_row.pack(fill="x", padx=8, pady=3)
@@ -904,7 +920,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── "or" separator ─────────────────────────────────────────────────
         sep_row = ctk.CTkFrame(container, fg_color="transparent")
-        sep_row.pack(fill="x", pady=(0, 4))
+        sep_row.pack(fill="x", pady=(0, 2))
         ctk.CTkLabel(
             sep_row,
             text="───  or open an existing transcript to review / correct  ───",
@@ -914,24 +930,24 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── Load Existing Transcript card ──────────────────────────────────
         self._load_card = ctk.CTkFrame(container, border_width=1, border_color="#1A3A4A")
-        self._load_card.pack(fill="x", pady=(0, 3))
+        self._load_card.pack(fill="x", pady=(0, 2))
 
         load_inner = ctk.CTkFrame(self._load_card, fg_color="transparent")
-        load_inner.pack(fill="x", padx=8, pady=3)
+        load_inner.pack(fill="x", padx=8, pady=2)
 
         load_hdr = ctk.CTkFrame(load_inner, fg_color="transparent")
-        load_hdr.pack(fill="x", pady=(0, 6))
+        load_hdr.pack(fill="x", pady=(0, 4))
 
         ctk.CTkLabel(
             load_hdr,
-            text="Load Existing Transcript",
+            text="Existing Transcript",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="white",
         ).pack(side="left")
 
         ctk.CTkLabel(
             load_hdr,
-            text="Restore a prior case to review or correct",
+            text="Review or correct an existing transcript",
             font=ctk.CTkFont(size=13),
             text_color="#445566",
         ).pack(side="left", padx=(12, 0))
@@ -951,7 +967,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._clear_load_btn.pack(side="right")
 
         load_file_row = ctk.CTkFrame(load_inner, fg_color="transparent")
-        load_file_row.pack(fill="x", pady=(0, 4))
+        load_file_row.pack(fill="x", pady=(0, 3))
 
         self._load_path_entry = ctk.CTkEntry(
             load_file_row,
@@ -1024,10 +1040,10 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2: Settings Row ──────────────────────────────────────────
         settings_card = ctk.CTkFrame(container)
-        settings_card.pack(fill="x", pady=(0, 3))
+        settings_card.pack(fill="x", pady=(0, 2))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
-        settings_row.pack(fill="x", padx=8, pady=3)
+        settings_row.pack(fill="x", padx=8, pady=2)
         settings_row.columnconfigure(0, weight=0)
         settings_row.columnconfigure(1, weight=1)
         settings_row.columnconfigure(2, weight=0)
@@ -1045,37 +1061,14 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._model_combo.pack(fill="x", pady=(2, 0))
 
-        split_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
-        split_inner.grid(row=0, column=1, sticky="ew", padx=(0, 12))
-        split_hdr = ctk.CTkFrame(split_inner, fg_color="transparent")
-        split_hdr.pack(fill="x")
-        ctk.CTkLabel(split_hdr, text="Utterance Split", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
-        self._utt_split_var = ctk.DoubleVar(value=1.2)
-        self._utt_split_label = ctk.CTkLabel(
-            split_hdr,
-            text="1.20",
-            font=ctk.CTkFont(size=13),
-            text_color="gray",
-        )
-        self._utt_split_label.pack(side="right")
-        ctk.CTkSlider(
-            split_inner,
-            from_=0.3,
-            to=2.0,
-            number_of_steps=17,
-            variable=self._utt_split_var,
-            command=lambda v: self._utt_split_label.configure(text=f"{float(v):.2f}"),
-        ).pack(fill="x", pady=(4, 0))
-
         quality_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
-        quality_inner.grid(row=0, column=2, sticky="ew")
-        ctk.CTkLabel(quality_inner, text="Audio Quality", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
-        self._quality_var = ctk.StringVar(value="Auto-detect (recommended)")
+        quality_inner.grid(row=0, column=1, sticky="ew")
+        ctk.CTkLabel(quality_inner, text="Processing Mode", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        self._quality_var = ctk.StringVar(value="ENHANCED (fair audio)")
         self._quality_combo = ctk.CTkComboBox(
             quality_inner,
             values=[
-                "Auto-detect (recommended)",
-                "CLEAN (good/excellent audio)",
+                "Default",
                 "ENHANCED (fair audio)",
                 "RESCUE (noisy/poor audio)",
             ],
@@ -1094,14 +1087,14 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
-        case_card.pack(fill="x", pady=(0, 3))
+        case_card.pack(fill="x", pady=(0, 2))
 
         case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
-        case_inner.pack(fill="x", padx=8, pady=(3, 2))
+        case_inner.pack(fill="x", padx=8, pady=(2, 1))
         case_inner.columnconfigure((0, 1, 2, 3), weight=1)
 
         base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 6))
+        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4))
         ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
         base_row = ctk.CTkFrame(base_frame, fg_color="transparent")
         base_row.pack(fill="x", pady=(2, 0))
@@ -1155,26 +1148,35 @@ class TranscribeTab(ctk.CTkFrame):
             case_card, text="", font=ctk.CTkFont(size=13),
             text_color="gray", wraplength=860, anchor="w",
         )
-        self._path_preview_label.pack(anchor="w", padx=8, pady=(2, 6))
+        self._path_preview_label.pack(anchor="w", padx=8, pady=(1, 4))
         self._update_path_preview()
 
-        # ── 5. Source Documents / Output ─────────────────────────────────────
+        # ── 5. Case Files / Output ───────────────────────────────────────────
         source_docs_card = ctk.CTkFrame(container)
-        source_docs_card.pack(fill="x", pady=(0, 3))
+        source_docs_card.pack(fill="x", pady=(0, 2))
 
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
-        kt_inner.pack(fill="x", padx=8, pady=(3, 3))
+        kt_inner.pack(fill="x", padx=8, pady=(2, 2))
 
-        # ── 5a. Source documents sub-section ─────────────────────────────────
-        src_lbl = ctk.CTkLabel(
-            kt_inner,
-            text="Source Documents",
-            font=ctk.CTkFont(size=13, weight="bold"),
+        self._case_files_header = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        self._case_files_header.pack(fill="x", pady=(0, 3))
+        self._case_files_toggle_btn = ctk.CTkButton(
+            self._case_files_header,
+            text="▼ Case Files",
+            anchor="w",
+            fg_color="transparent",
+            hover_color="#132334",
+            text_color="white",
+            border_width=0,
+            command=self._toggle_case_files_panel,
         )
-        src_lbl.pack(anchor="w", pady=(0, 4))
+        self._case_files_toggle_btn.pack(side="left", fill="x", expand=True)
 
-        src_btn_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
-        src_btn_row.pack(fill="x", pady=(0, 2))
+        self._case_files_body = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        self._case_files_body.pack(fill="x", pady=(0, 1))
+
+        src_btn_row = ctk.CTkFrame(self._case_files_body, fg_color="transparent")
+        src_btn_row.pack(fill="x", pady=(0, 1))
 
         self._upload_pdf_btn = ctk.CTkButton(
             src_btn_row,
@@ -1202,9 +1204,9 @@ class TranscribeTab(ctk.CTkFrame):
 
         # Extraction status label (shown after PDF upload or scan)
         self._extract_status_label = ctk.CTkLabel(
-            kt_inner,
+            self._case_files_body,
             text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color="gray",
             wraplength=820,
             anchor="w",
@@ -1212,13 +1214,13 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._extract_status_label.pack(anchor="w", pady=(2, 0))
         self._review_btn = ctk.CTkButton(
-            kt_inner,
+            self._case_files_body,
             text="\U0001f4cb Review & Edit",
             width=135,
             state="disabled",
             command=self._open_review_dialog,
         )
-        self._review_btn.pack(anchor="e", pady=(4, 4))
+        self._review_btn.pack(anchor="e", pady=(2, 3))
 
         # ── 5b. Output action buttons ────────────────────────────────────────
         output_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
@@ -1327,6 +1329,22 @@ class TranscribeTab(ctk.CTkFrame):
             )
             self._current_case_path = None
 
+    def _set_case_files_panel_expanded(self, expanded: bool) -> None:
+        self._case_files_expanded = bool(expanded)
+        if hasattr(self, "_case_files_toggle_btn"):
+            self._case_files_toggle_btn.configure(
+                text="▼ Case Files" if self._case_files_expanded else "▶ Case Files"
+            )
+        if not hasattr(self, "_case_files_body"):
+            return
+        if self._case_files_expanded:
+            self._case_files_body.pack(fill="x", pady=(0, 1))
+        else:
+            self._case_files_body.pack_forget()
+
+    def _toggle_case_files_panel(self) -> None:
+        self._set_case_files_panel_expanded(not self._case_files_expanded)
+
     def _get_current_save_path(self):
         return self._current_case_path or ""
 
@@ -1354,10 +1372,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._current_case_path = None
         self._last_transcript_path = None
         self._model_var.set("nova-3")
-        self._quality_var.set("Auto-detect (recommended)")
+        self._quality_var.set("ENHANCED (fair audio)")
         self._audio_tier_label.configure(text="", text_color="gray")
-        self._utt_split_var.set(1.2)
-        self._utt_split_label.configure(text="1.20")
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",
@@ -1372,6 +1388,7 @@ class TranscribeTab(ctk.CTkFrame):
             fg_color=_DEFAULT_BUTTON_COLOR,
         )
         self._review_loaded_btn.configure(state="disabled")
+        self._set_case_files_panel_expanded(True)
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
         self._extract_status_label.configure(
@@ -1404,11 +1421,6 @@ class TranscribeTab(ctk.CTkFrame):
             "Aggressive (noisy/poor audio)",
         }:
             self._quality_var.set(audio_quality)
-
-        utt_split = config_data.get("utt_split")
-        if isinstance(utt_split, (int, float)):
-            self._utt_split_var.set(float(utt_split))
-            self._utt_split_label.configure(text=f"{float(utt_split):.2f}")
         if hasattr(self, "_load_meta_frame"):
             self._load_meta_frame.pack_forget()
         if hasattr(self, "_load_action_frame"):
@@ -2208,13 +2220,10 @@ class TranscribeTab(ctk.CTkFrame):
                 )
                 return
 
-            selected_utt_split = float(self._utt_split_var.get())
-            self._selected_utt_split = selected_utt_split
             self._append_transcript_log("Transcription started")
-            self._append_transcript_log(f"Utterance split selected in UI: {selected_utt_split:.2f}")
             self._append_transcript_log("Processing audio...")
             self._extract_status_label.configure(
-                text=f"Transcription started.  Utterance split: {selected_utt_split:.2f}",
+                text="Transcription started.",
                 text_color="#44FF44",
             )
 
@@ -2244,7 +2253,6 @@ class TranscribeTab(ctk.CTkFrame):
         from core.keyterm_extractor import extract_keyterms_from_text, merge_keyterms
 
         self._create_case_folders_now()
-        selected_utt_split = float(getattr(self, "_selected_utt_split", self._utt_split_var.get()))
         reporter_terms = extract_keyterms_from_text(self._reporter_notes_text or "")
         final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, reporter_terms)
         if final_keyterms:
@@ -2254,7 +2262,6 @@ class TranscribeTab(ctk.CTkFrame):
             audio_path=self._selected_file,
             model=self._model_var.get(),
             quality=self._quality_var.get(),
-            utt_split=selected_utt_split,
             base_dir=self._base_dir_var.get(),
             cause_number=self._cause_var.get(),
             last_name=self._lastname_var.get(),
@@ -2426,22 +2433,16 @@ class TranscribeTab(ctk.CTkFrame):
         # e.g. {0: "THE VIDEOGRAPHER", 1: "THE WITNESS", 2: "MR. GARCIA"}
         speaker_map: dict[int, str] = {}
         for original_label, entry in self._speaker_entries.items():
-            replacement = entry.get().strip()
+            replacement = " ".join(entry.get().split()).strip()
             if replacement:
                 try:
                     sid = int(original_label.replace("Speaker ", "").strip())
-                    speaker_map[sid] = replacement.upper()
+                    speaker_map[sid] = replacement
                 except ValueError:
                     pass
 
         # ── 1. Text replacement in the .txt file ─────────────────────────────
-        text = self._transcript_text
-        for original_label, entry in self._speaker_entries.items():
-            replacement = entry.get().strip()
-            if replacement:
-                text = text.replace(
-                    f"{original_label}:", f"{replacement.upper()}:"
-                )
+        text = _apply_speaker_labels_to_text(self._transcript_text, speaker_map)
 
         try:
             Path(self._current_txt_path).write_text(text, encoding="utf-8")

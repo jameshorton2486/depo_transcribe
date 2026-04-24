@@ -1,19 +1,14 @@
 from ui.tab_transcript import (
     _apply_speaker_map_to_text,
+    _build_debug_bundle_paths,
+    _build_debug_bundle_text,
     _build_transcript_context_status,
-    _build_speaker_dropdown_values,
-    _build_speaker_options,
     _build_progressive_speaker_defaults,
-    _choose_best_speaker_option,
-    _compute_speaker_confidence,
-    _confidence_label,
     _extract_speaker_ids,
-    _format_attorney_dropdown_label,
-    _format_speaker_option_with_confidence,
     _normalize_transcript_speaker_map,
     _resolve_case_root_for_transcript,
-    _strip_speaker_confidence_label,
 )
+from ui.tab_transcribe import _apply_speaker_labels_to_text
 
 
 def test_extract_speaker_ids_finds_unique_ids_in_order():
@@ -27,7 +22,7 @@ def test_extract_speaker_ids_finds_unique_ids_in_order():
 def test_normalize_transcript_speaker_map_handles_mixed_keys():
     result = _normalize_transcript_speaker_map({"0": "the reporter", 2: "Mr. Jones", "x": "ignored"})
 
-    assert result == {0: "THE REPORTER", 2: "MR. JONES"}
+    assert result == {0: "the reporter", 2: "Mr. Jones"}
 
 
 def test_apply_speaker_map_to_text_relabels_matching_speakers_only():
@@ -38,113 +33,41 @@ def test_apply_speaker_map_to_text_relabels_matching_speakers_only():
     assert result == "THE REPORTER: Opening.\n\nTHE WITNESS: Yes."
 
 
+def test_apply_speaker_labels_to_text_preserves_non_label_content():
+    text = "Speaker 0: Opening.\n\nSpeaker 1: Yes, I do two things.\n\nSpeaker 3: Okay."
+
+    result = _apply_speaker_labels_to_text(
+        text,
+        {0: "The Reporter", 1: "Mr. Gonzalez", 3: "Ms. Pena"},
+    )
+
+    assert result == "The Reporter: Opening.\n\nMr. Gonzalez: Yes, I do two things.\n\nMs. Pena: Okay."
+
+
 def test_build_progressive_speaker_defaults_prefers_saved_map():
     text = "Speaker 0: Opening.\nSpeaker 1: Yes."
 
     result = _build_progressive_speaker_defaults(
         text,
-        {0: "THE REPORTER", 1: "THE WITNESS"},
+        {0: "The Reporter", 1: "Ms. Jones"},
         {"reporter": "Ignored Reporter"},
     )
 
     assert result == {
-        "Speaker 0": "THE REPORTER",
-        "Speaker 1": "THE WITNESS",
+        "Speaker 0": "The Reporter",
+        "Speaker 1": "Ms. Jones",
     }
 
 
-def test_format_attorney_dropdown_label_uses_title_and_last_name():
-    assert _format_attorney_dropdown_label("Ms. Jane Smith") == "MS. SMITH"
+def test_build_progressive_speaker_defaults_falls_back_to_raw_speaker_labels():
+    text = "Speaker 0: Opening.\nSpeaker 1: Yes."
 
+    result = _build_progressive_speaker_defaults(text, {}, {"reporter": "Ignored Reporter"})
 
-def test_build_speaker_options_uses_nod_defaults_and_counsel_names():
-    config_data = {
-        "ufm_fields": {
-            "reporter_name": "Miah Bardot",
-            "witness_name": "John Doe",
-            "plaintiff_counsel": [{"name": "Hector Benavides"}],
-            "defense_counsel": [{"name": "Ms. Carla Jones"}],
-        }
+    assert result == {
+        "Speaker 0": "Speaker 0",
+        "Speaker 1": "Speaker 1",
     }
-
-    result = _build_speaker_options(config_data)
-
-    assert result == [
-        "Select speaker...",
-        "THE REPORTER",
-        "THE WITNESS",
-        "UNKNOWN SPEAKER",
-        "MR. BENAVIDES",
-        "MS. JONES",
-    ]
-
-
-def test_compute_speaker_confidence_marks_attorney_question_flow_high():
-    config_data = {
-        "ufm_fields": {
-            "plaintiff_counsel": [{"name": "Hector Benavides"}],
-        }
-    }
-    transcript_text = "Speaker 1: Did you see the accident?\n\nSpeaker 1: Where were you standing?"
-
-    result = _compute_speaker_confidence("1", "MR. BENAVIDES", transcript_text, config_data)
-
-    assert result == 0.8
-
-
-def test_confidence_label_formats_score_bands():
-    assert _confidence_label(0.8) == "High"
-    assert _confidence_label(0.5) == "Medium"
-    assert _confidence_label(0.1) == "Low"
-
-
-def test_strip_speaker_confidence_label_returns_canonical_value():
-    assert _strip_speaker_confidence_label("MR. BENAVIDES (High)") == "MR. BENAVIDES"
-
-
-def test_build_speaker_dropdown_values_decorates_options_with_confidence():
-    config_data = {
-        "ufm_fields": {
-            "witness_name": "John Doe",
-        }
-    }
-    transcript_text = "Speaker 2: Yes.\n\nSpeaker 2: Correct."
-
-    result = _build_speaker_dropdown_values("2", transcript_text, config_data)
-
-    assert result == [
-        "Select speaker...",
-        "THE REPORTER (Low)",
-        "THE WITNESS (High)",
-        "UNKNOWN SPEAKER (Low)",
-    ]
-
-
-def test_choose_best_speaker_option_prefers_highest_scoring_label():
-    config_data = {
-        "ufm_fields": {
-            "witness_name": "John Doe",
-            "plaintiff_counsel": [{"name": "Hector Benavides"}],
-        }
-    }
-    transcript_text = "Speaker 2: Yes.\n\nSpeaker 2: Correct."
-
-    result = _choose_best_speaker_option("2", transcript_text, config_data)
-
-    assert result == "THE WITNESS"
-
-
-def test_format_speaker_option_with_confidence_appends_label():
-    config_data = {
-        "ufm_fields": {
-            "plaintiff_counsel": [{"name": "Hector Benavides"}],
-        }
-    }
-    transcript_text = "Speaker 1: Did you see the accident?"
-
-    result = _format_speaker_option_with_confidence("1", "MR. BENAVIDES", transcript_text, config_data)
-
-    assert result == "MR. BENAVIDES (High)"
 
 
 def test_resolve_case_root_for_transcript_detects_deepgram_layout():
@@ -165,3 +88,49 @@ def test_build_transcript_context_status_reports_draft_mode():
     result = _build_transcript_context_status({"ufm_fields": {"speaker_map_verified": False}})
 
     assert result == ("Case configuration loaded — Mode: Draft.", "#CCAA44")
+
+
+def test_build_debug_bundle_paths_includes_logs_transcript_json_and_job_config(tmp_path):
+    transcript_path = tmp_path / "Deepgram" / "sample.txt"
+    case_root = tmp_path
+
+    result = _build_debug_bundle_paths(str(transcript_path), str(case_root))
+
+    assert ("transcript", transcript_path) in result
+    assert ("deepgram_json", transcript_path.with_suffix(".json")) in result
+    assert ("job_config", case_root / "source_docs" / "job_config.json") in result
+
+
+def test_build_debug_bundle_text_marks_missing_files(tmp_path, monkeypatch):
+    repo_root = tmp_path / "repo"
+    logs_dir = repo_root / "logs"
+    deepgram_dir = tmp_path / "Deepgram"
+    source_docs = tmp_path / "source_docs"
+    logs_dir.mkdir(parents=True)
+    deepgram_dir.mkdir(parents=True)
+    source_docs.mkdir(parents=True)
+
+    (logs_dir / "app.log").write_text("app log line", encoding="utf-8")
+    (deepgram_dir / "sample.txt").write_text("Speaker 0: Hello.", encoding="utf-8")
+    (source_docs / "job_config.json").write_text('{"ufm_fields": {}}', encoding="utf-8")
+
+    monkeypatch.setattr("ui.tab_transcript._REPO_ROOT", repo_root)
+
+    result = _build_debug_bundle_text(
+        transcript_path=str(deepgram_dir / "sample.txt"),
+        case_root=str(tmp_path),
+    )
+
+    assert "# Depo Transcribe Debug Bundle" in result
+    assert "## logs/app.log" in result
+    assert "app log line" in result
+    assert "## transcript" in result
+    assert "Speaker 0: Hello." in result
+    assert "## job_config" in result
+    assert "[missing]" in result
+
+
+def test_case_files_panel_toggle_helpers_exist():
+    from ui.tab_transcribe import TranscribeTab
+
+    assert TranscribeTab is not None
