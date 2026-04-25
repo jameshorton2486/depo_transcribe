@@ -866,12 +866,10 @@ class TranscribeTab(ctk.CTkFrame):
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Fixed amber footer — CREATE TRANSCRIPT (full width, compact) ─────
-        # Footer height matches the button height so there is no empty space
-        # above or below the button. pady (0, 1) removes the 1px gap that
-        # used to sit between the scrollable container and the button.
+        # ── Amber action footer — CREATE TRANSCRIPT (defined now, packed
+        #     at the end of _build_ui so it sits immediately under the
+        #     last content card with no empty area above it). ──────────────
         footer = ctk.CTkFrame(self, fg_color="transparent", height=32)
-        footer.pack(fill="x", side="bottom", padx=8, pady=(0, 1))
         footer.pack_propagate(False)
 
         self._create_btn = ctk.CTkButton(
@@ -885,8 +883,15 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._create_btn.pack(fill="both", expand=True)
 
-        container = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=10, pady=(1, 0))
+        # Plain frame, NOT scrollable. The previous CTkScrollableFrame with
+        # expand=True allocated all leftover vertical space to the canvas,
+        # which left ~500px of empty scrollable area between the last card
+        # and the footer when content was short. A plain frame sized to its
+        # content removes that gap. Content fits comfortably on the default
+        # window; if a freak case has 20+ speakers the speaker card may
+        # extend past the visible area, but that is rare.
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(side="top", fill="x", padx=10, pady=(1, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
         file_card = ctk.CTkFrame(container)
@@ -1292,6 +1297,11 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._apply_and_save_labels,
         )
         self._apply_save_btn.pack(anchor="e", padx=12, pady=(8, 10))
+
+        # Pack the action footer LAST so it sits immediately beneath the
+        # last content card. side='top' here (not 'bottom') is what removes
+        # the empty area above the button.
+        footer.pack(side="top", fill="x", padx=8, pady=(2, 1))
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
