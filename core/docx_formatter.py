@@ -162,6 +162,104 @@ def build_output_docx_path(source_path: str) -> str:
     return str(path.with_name(f"{stem}_formatted.docx"))
 
 
+def build_full_output_docx_path(source_path: str) -> str:
+    path = Path(source_path)
+    stem = path.stem
+    if stem.endswith("_corrected"):
+        stem = stem[:-len("_corrected")]
+    return str(path.with_name(f"{stem}_full.docx"))
+
+
+def build_full_docx_from_text(
+    text: str,
+    job_config,
+) -> Document:
+    """
+    Compose a full deposition Document with title page, caption,
+    witness-intro lines, transcript body, and certificate of reporter.
+
+    This is the "Full DOCX" path. The shallow build_docx_from_transcript_text
+    path renders just the body and is what the existing Generate DOCX button
+    produces. The full path here matches what spec_engine.document_builder.
+    process_transcript produces, but starts from corrected.txt + job_config
+    instead of a Deepgram-output DOCX, so it can be invoked from the
+    Corrections tab without an upstream DOCX intermediate.
+
+    Page writers (write_title_page, write_caption, write_certificate) are
+    the same functions process_transcript calls — same output for the
+    formal pages.
+    """
+    # Imports are local so this module doesn't pull spec_engine.pages
+    # transitively when only the shallow path is used.
+    from spec_engine.document_builder import _build_witness_intro_lines
+    from spec_engine.emitter import add_page_break, create_document, emit_line
+    from spec_engine.pages.caption import write_caption
+    from spec_engine.pages.certificate import write_certificate
+    from spec_engine.pages.title_page import write_title_page
+
+    doc = create_document()
+
+    # Page 1: Title page (caption + cause + parties + court block)
+    write_title_page(doc, job_config)
+    add_page_break(doc)
+
+    # Page 2: Appearances / caption
+    write_caption(doc, job_config)
+    add_page_break(doc)
+
+    # Witness intro: "{WITNESS}, having been first duly sworn, …"
+    # plus the EXAMINATION header and BY MR./MS. line. Skipped only when
+    # the body already contains an EXAMINATION header (audio-driven path).
+    body_lines = list(_iter_formatted_lines(text))
+    intro = _build_witness_intro_lines(job_config, body_lines)
+    for line_type, line_text in intro:
+        emit_line(doc, line_type, line_text)
+
+    # Body
+    for line_type, line_text in body_lines:
+        emit_line(doc, line_type, line_text)
+
+    # Final page: Reporter's Certificate
+    add_page_break(doc)
+    write_certificate(doc, job_config)
+
+    return doc
+
+
+def format_full_transcript_to_docx(
+    source_path: str,
+    job_config,
+    output_path: str | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+) -> str:
+    """
+    Convert a corrected transcript (.txt) plus its JobConfig into a
+    deposition-ready DOCX with title page, caption, witness intro,
+    body, and reporter's certificate.
+
+    Counterpart to format_transcript_to_docx. The shallow function
+    renders the body only; this function renders the full document.
+    """
+
+    def log(message: str) -> None:
+        if progress_callback:
+            progress_callback(message)
+
+    source = Path(source_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"Transcript not found: {source_path}")
+
+    target = Path(output_path or build_full_output_docx_path(source_path))
+    log(f"Reading transcript: {source.name}")
+    text = source.read_text(encoding="utf-8")
+
+    log("Building full DOCX (title page → body → certificate)…")
+    doc = build_full_docx_from_text(text, job_config)
+    saved_path = save_document(doc, target)
+    log(f"Saved full DOCX: {Path(saved_path).name}")
+    return saved_path
+
+
 def format_transcript_to_docx(
     source_path: str,
     output_path: str | None = None,

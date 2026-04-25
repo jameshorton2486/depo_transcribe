@@ -291,6 +291,17 @@ class CorrectionsTab(ctk.CTkFrame):
         )
         self._generate_docx_btn.pack(side="left", padx=(6, 0))
 
+        # Full DOCX = title page + caption + witness intro + body +
+        # certificate. The shallow Generate DOCX above renders body only.
+        self._generate_full_docx_btn = ctk.CTkButton(
+            foot, text="Generate Full DOCX", width=170,
+            fg_color="transparent", border_width=1, border_color="#334",
+            text_color="#8ab", font=ctk.CTkFont(size=11),
+            state="disabled",
+            command=self._start_full_docx_generation,
+        )
+        self._generate_full_docx_btn.pack(side="left", padx=(6, 0))
+
         self._open_docx_btn = ctk.CTkButton(
             foot, text="Open DOCX", width=120,
             fg_color="transparent", border_width=1, border_color="#334",
@@ -403,6 +414,7 @@ class CorrectionsTab(ctk.CTkFrame):
         self._run_btn.configure(state="normal")
         self._ai_btn.configure(state="disabled")
         self._generate_docx_btn.configure(state="disabled")
+        self._generate_full_docx_btn.configure(state="disabled")
         self._open_docx_btn.configure(state="disabled")
         self._run_status.configure(text="Ready to run corrections.", text_color="gray")
         self._set_viewer_source(
@@ -436,6 +448,7 @@ class CorrectionsTab(ctk.CTkFrame):
         self._ai_text = ''
         self._ai_btn.configure(state="disabled")
         self._generate_docx_btn.configure(state="disabled")
+        self._generate_full_docx_btn.configure(state="disabled")
         self._open_docx_btn.configure(state="disabled")
 
         for card in (self._stat_corrections, self._stat_flags,
@@ -564,6 +577,7 @@ class CorrectionsTab(ctk.CTkFrame):
             self._load_in_transcript_btn.configure(state="normal")
             self._ai_btn.configure(state="normal")
             self._generate_docx_btn.configure(state="normal")
+            self._generate_full_docx_btn.configure(state="normal")
             self._open_docx_btn.configure(state="disabled")
 
             folder = str(Path(corr_path).parent) if corr_path else ""
@@ -632,6 +646,79 @@ class CorrectionsTab(ctk.CTkFrame):
         else:
             error = result.get("error", "Unknown error")
             self._run_status.configure(text=f"DOCX failed: {error[:80]}", text_color="#FF4444")
+            self._append_log(f"ERROR: {error}")
+
+    # ── Full DOCX generation (title page + caption + body + cert) ──────────────
+
+    def _start_full_docx_generation(self):
+        if self._docx_running:
+            return
+        if not self._corrected_path or not os.path.isfile(self._corrected_path):
+            messagebox.showerror(
+                "No corrected transcript",
+                "Run the corrections pipeline before generating a DOCX.",
+            )
+            return
+
+        self._docx_running = True
+        self._generate_full_docx_btn.configure(state="disabled", text="Generating…")
+        self._open_docx_btn.configure(state="disabled")
+        self._run_status.configure(text="Generating full DOCX…", text_color="white")
+        self._append_log("Starting full DOCX generation (title page + caption + body + certificate)…")
+        threading.Thread(target=self._run_full_docx_job, daemon=True).start()
+
+    def _run_full_docx_job(self):
+        from pathlib import Path
+
+        from core.docx_formatter import format_full_transcript_to_docx
+        from core.job_config_manager import load_job_config
+        from spec_engine.models import JobConfig
+
+        try:
+            # Resolve case_root from the corrected transcript path:
+            # {case}/Deepgram/{stem}_corrected.txt → case_root = {case}
+            case_root = str(Path(self._corrected_path).parent.parent)
+            config_data = load_job_config(case_root) if case_root else {}
+            ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
+
+            # Promote the dict-shaped config into a JobConfig dataclass so
+            # the page writers (title_page, caption, certificate) can read
+            # attributes directly. Missing fields fall through to defaults.
+            job_config = JobConfig(**{
+                key: value
+                for key, value in ufm.items()
+                if key in JobConfig.__dataclass_fields__ and value is not None
+            })
+            # speaker_map_verified must be True to satisfy
+            # process_transcript-style guards downstream; the page writers
+            # don't enforce it but keep parity in case future writers do.
+            job_config.speaker_map_verified = bool(
+                ufm.get("speaker_map_verified", False)
+            )
+
+            output_path = format_full_transcript_to_docx(
+                self._corrected_path,
+                job_config,
+                progress_callback=lambda msg: self.after(0, self._append_log, msg),
+            )
+            self.after(0, self._on_full_docx_done, {"success": True, "docx_path": output_path})
+        except Exception as exc:
+            logger.exception("[CorrectionsTab] Full DOCX generation failed: %s", exc)
+            self.after(0, self._on_full_docx_done, {"success": False, "error": str(exc)})
+
+    def _on_full_docx_done(self, result: dict):
+        self._docx_running = False
+        self._generate_full_docx_btn.configure(state="normal", text="Generate Full DOCX")
+
+        if result.get("success"):
+            self._docx_path = result.get("docx_path")
+            name = os.path.basename(self._docx_path or "")
+            self._run_status.configure(text=f"✓ Full DOCX ready: {name}", text_color="#44FF44")
+            self._open_docx_btn.configure(state="normal")
+            self._append_log(f"Saved full DOCX: {name}")
+        else:
+            error = result.get("error", "Unknown error")
+            self._run_status.configure(text=f"Full DOCX failed: {error[:80]}", text_color="#FF4444")
             self._append_log(f"ERROR: {error}")
 
     # ── AI correction ──────────────────────────────────────────────────────────
