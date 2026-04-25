@@ -262,6 +262,7 @@ def set_rule_enabled(rule_id: str, enabled: bool) -> bool:
     if target is None:
         return False
     if bool(target.get("enabled", True)) == bool(enabled):
+        logger.debug("set_rule_enabled: %s already %s, no-op", rule_id, enabled)
         return True
     target["enabled"] = bool(enabled)
     save_rules(rules)
