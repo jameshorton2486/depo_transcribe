@@ -16,6 +16,12 @@ from ui._components import (
     BTN_AI_PURPLE_HOVER,
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
+    PILL_EMERALD_TEXT,
+    SECTION_HEADER_ACCENT,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    make_card_with_accent,
+    make_numbered_chip,
     make_section_header,
 )
 
@@ -75,57 +81,61 @@ class TrainingTab(ctk.CTkFrame):
 
         outer = self._left_col
 
-        # ── STEP 1 — paste a before/after example ────────────────────────────
-        make_section_header(outer, "STEP 1 — Paste a before/after example").pack(
-            anchor="w", pady=(0, 2)
-        )
+        # ── Step 01 — Pattern Examples ────────────────────────────────────────
+        # Card with a top-edge blue accent strip; chip "01" + uppercase
+        # title; two side-by-side textboxes for raw vs corrected examples.
+        # Right textbox renders in emerald to mirror the "this is the
+        # ground truth" semantic.
+        step_01 = make_card_with_accent(outer, accent=SECTION_HEADER_ACCENT)
+        step_01.pack(fill="x", pady=(0, 12))
 
-        input_row = ctk.CTkFrame(outer, fg_color="transparent")
-        input_row.pack(fill="x", pady=(0, 8))
+        step_01_header = ctk.CTkFrame(step_01.content, fg_color="transparent")
+        step_01_header.pack(fill="x", pady=(0, 10))
+        make_numbered_chip(
+            step_01_header, "01", accent=SECTION_HEADER_ACCENT
+        ).pack(side="left", padx=(0, 10))
+        ctk.CTkLabel(
+            step_01_header,
+            text="PATTERN EXAMPLES",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left", anchor="w")
+
+        input_row = ctk.CTkFrame(step_01.content, fg_color="transparent")
+        input_row.pack(fill="x")
         input_row.grid_columnconfigure(0, weight=1)
         input_row.grid_columnconfigure(1, weight=1)
 
-        left_panel = ctk.CTkFrame(input_row, border_width=1, border_color="#1A3A4A")
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+        left_panel = ctk.CTkFrame(input_row, fg_color="transparent")
+        left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         ctk.CTkLabel(
             left_panel,
-            text="Incorrect Text",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#7DD8E8",
-        ).pack(anchor="w", padx=8, pady=(8, 0))
-        ctk.CTkLabel(
-            left_panel,
-            text="Paste raw Deepgram output",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        ).pack(anchor="w", padx=8, pady=(0, 6))
+            text="INCORRECT TEXT (DEEPGRAM OUTPUT)",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=TEXT_MUTED,
+        ).pack(anchor="w", pady=(0, 4))
         self._incorrect_box = ctk.CTkTextbox(
             left_panel,
-            height=130,
+            height=160,
             font=ctk.CTkFont(family="Courier New", size=11),
         )
-        self._incorrect_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self._incorrect_box.pack(fill="both", expand=True)
 
-        right_panel = ctk.CTkFrame(input_row, border_width=1, border_color="#1A3A4A")
-        right_panel.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
+        right_panel = ctk.CTkFrame(input_row, fg_color="transparent")
+        right_panel.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         ctk.CTkLabel(
             right_panel,
-            text="Corrected Text",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#7DD8E8",
-        ).pack(anchor="w", padx=8, pady=(8, 0))
-        ctk.CTkLabel(
-            right_panel,
-            text="Paste the corrected version",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        ).pack(anchor="w", padx=8, pady=(0, 6))
+            text="CORRECTED TEXT (EXPECTED)",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=PILL_EMERALD_TEXT,
+        ).pack(anchor="w", pady=(0, 4))
         self._correct_box = ctk.CTkTextbox(
             right_panel,
-            height=130,
+            height=160,
             font=ctk.CTkFont(family="Courier New", size=11),
+            text_color=PILL_EMERALD_TEXT,
         )
-        self._correct_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        self._correct_box.pack(fill="both", expand=True)
 
         # ── STEP 2 — add context (optional) ──────────────────────────────────
         make_section_header(outer, "STEP 2 — Add context (optional)").pack(

@@ -24,15 +24,8 @@ from ui._components import (
 )
 
 
-@pytest.fixture(scope="module")
-def root():
-    # Module-scoped: creating/destroying a CTk root per-test in the same
-    # pytest session can intermittently fail to locate tk.tcl on Windows.
-    # One root for all tests in this module sidesteps that.
-    r = ctk.CTk()
-    r.withdraw()
-    yield r
-    r.destroy()
+# `root` fixture is supplied by ui/tests/conftest.py at session scope so a
+# single CTk interpreter serves every UI test in the suite.
 
 
 def test_amber_variant_uses_amber_palette(root):

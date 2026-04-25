@@ -137,12 +137,7 @@ def test_save_round_trip_byte_identical(tmp_path):
 
 # ── Real-textbox tests ───────────────────────────────────────────────────────
 
-@pytest.fixture(scope="module")
-def root():
-    r = ctk.CTk()
-    r.withdraw()
-    yield r
-    r.destroy()
+# `root` fixture is supplied by ui/tests/conftest.py at session scope.
 
 
 def _make_render_fake(textbox, canonical):

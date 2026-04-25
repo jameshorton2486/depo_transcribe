@@ -29,12 +29,7 @@ from ui._components import (
 )
 
 
-@pytest.fixture(scope="module")
-def root():
-    r = ctk.CTk()
-    r.withdraw()
-    yield r
-    r.destroy()
+# `root` fixture is supplied by ui/tests/conftest.py at session scope.
 
 
 # ── make_numbered_chip ───────────────────────────────────────────────────────
