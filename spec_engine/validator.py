@@ -11,6 +11,53 @@ from typing import Iterable, List
 from .models import Block, BlockType
 
 
+__all__ = ["ValidationResult", "validate_blocks"]
+
+
+# ── Tunable thresholds ───────────────────────────────────────────────────────
+# Minimum block-text length (after strip) below which near-duplicate detection
+# is skipped. Short responses ("Yes.", "Correct.") legitimately repeat and
+# should not trigger duplicate warnings.
+#
+# NOTE: This is intentionally distinct from corrections.py's
+# DUPLICATE_BLOCK_MIN_LEN (= 15). That constant gates *removal* of duplicates
+# during correction; this one gates *warning* during validation. They are
+# tuned independently and should not be unified.
+DUPLICATE_CHECK_MIN_LEN = 10
+
+# Time window (seconds) within which two identical-text blocks from the same
+# speaker are flagged as a chunk-overlap artifact rather than a real
+# repetition. Matches the same-named threshold in qa_fixer.py and
+# corrections.py.
+DUPLICATE_TIME_WINDOW_S = 1.0
+
+# Preview-string lengths used in error messages. Different by category for
+# historical reasons — preserved verbatim so existing tests asserting on
+# message contents continue to match.
+ROLE_MISMATCH_PREVIEW_LEN = 50
+PUNCTUATION_PREVIEW_LEN = 60
+
+
+# ── Pre-compiled normalization patterns ──────────────────────────────────────
+# Used by _normalize_for_compare(); compiled once at import so the
+# duplicate-detection loop doesn't recompile per block pair.
+_NON_TEXT_CHARS_RE = re.compile(r"[^a-z0-9\s.?!]")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+# ── STRICT_MODE accessor ─────────────────────────────────────────────────────
+# Reads STRICT_MODE from the top-level `config` module dynamically so that
+# tests can monkey-patch the attribute without the module-level capture going
+# stale. Same pattern used in corrections.py for load_active_rules.
+
+def _get_strict_mode() -> bool:
+    try:
+        import config  # type: ignore[import-not-found]
+        return bool(getattr(config, "STRICT_MODE", False))
+    except ImportError:
+        return False
+
+
 @dataclass
 class ValidationResult:
     errors: List[str] = field(default_factory=list)
@@ -26,8 +73,8 @@ def _normalize_for_compare(text: str) -> str:
     Normalize text for near-duplicate comparison.
     Keeps terminal punctuation (.?!) which is legally meaningful.
     """
-    stripped = re.sub(r"[^a-z0-9\s.?!]", "", (text or "").lower()).strip()
-    return re.sub(r"\s+", " ", stripped)
+    stripped = _NON_TEXT_CHARS_RE.sub("", (text or "").lower()).strip()
+    return _WHITESPACE_RE.sub(" ", stripped)
 
 
 def _block_start_seconds(block: Block) -> float | None:
@@ -54,11 +101,7 @@ def validate_blocks(blocks: Iterable[Block], speaker_map_verified: bool = False)
     """
     result = ValidationResult()
     block_list = list(blocks)
-    try:
-        from config import STRICT_MODE
-        strict_mode = bool(STRICT_MODE)
-    except ImportError:
-        strict_mode = False
+    strict_mode = _get_strict_mode()
 
     if speaker_map_verified:
         unresolved = [
@@ -76,7 +119,7 @@ def validate_blocks(blocks: Iterable[Block], speaker_map_verified: bool = False)
         curr = block_list[idx]
         if (
             prev.block_type == curr.block_type
-            and len((curr.text or "").strip()) > 10
+            and len((curr.text or "").strip()) > DUPLICATE_CHECK_MIN_LEN
             and _normalize_for_compare(prev.text) == _normalize_for_compare(curr.text)
         ):
             prev_start = _block_start_seconds(prev)
@@ -84,7 +127,7 @@ def validate_blocks(blocks: Iterable[Block], speaker_map_verified: bool = False)
             if (
                 prev_start is not None
                 and curr_start is not None
-                and abs(curr_start - prev_start) < 1.0
+                and abs(curr_start - prev_start) < DUPLICATE_TIME_WINDOW_S
             ):
                 result.warnings.append(
                     f"Near-duplicate adjacent blocks at indexes {idx-1} and {idx}."
@@ -92,7 +135,7 @@ def validate_blocks(blocks: Iterable[Block], speaker_map_verified: bool = False)
 
     for idx, block in enumerate(block_list):
         role = (block.speaker_role or "").strip()
-        text_preview = (block.text or "")[:50]
+        text_preview = (block.text or "")[:ROLE_MISMATCH_PREVIEW_LEN]
 
         if block.block_type == BlockType.ANSWER and role not in ("WITNESS", ""):
             _add_issue(
@@ -137,14 +180,16 @@ def validate_blocks(blocks: Iterable[Block], speaker_map_verified: bool = False)
             if not text.endswith("?"):
                 _add_issue(
                     result,
-                    f'Question at index {idx} does not end with \'?\'. Text: "{text[:60]}"',
+                    f'Question at index {idx} does not end with \'?\'. '
+                    f'Text: "{text[:PUNCTUATION_PREVIEW_LEN]}"',
                     strict_mode=strict_mode,
                 )
         elif block.block_type == BlockType.ANSWER:
             if text[-1] not in ".!?":
                 _add_issue(
                     result,
-                    f'Answer at index {idx} missing terminal punctuation. Text: "{text[:60]}"',
+                    f'Answer at index {idx} missing terminal punctuation. '
+                    f'Text: "{text[:PUNCTUATION_PREVIEW_LEN]}"',
                     strict_mode=strict_mode,
                 )
 
