@@ -1337,10 +1337,6 @@ class TranscribeTab(ctk.CTkFrame):
         self._set_case_files_panel_expanded(True)
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
-        self._extract_status_label.configure(
-            text="No documents loaded",
-            text_color="gray",
-        )
 
     def _apply_saved_transcription_settings(self, config_data: dict | None):
         """Restore persisted transcription settings from job_config.json."""
