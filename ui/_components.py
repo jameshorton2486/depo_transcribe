@@ -299,6 +299,7 @@ def make_rule_card(
     match_type: str,
     variant: str = "proposed",
     enabled: bool = True,
+    description: str = "",
     on_toggle=None,
     on_delete=None,
 ) -> ctk.CTkFrame:
@@ -308,12 +309,17 @@ def make_rule_card(
 
         [dot] RULE-ID  [BADGE]                              [✗ delete]
         before-text  →  after-text
+        description   (italic, muted; only when non-empty)
 
     `variant`:
         "proposed"  display only — no dot, no delete button
         "active"    leading state dot (color from `enabled`, clickable
                     if on_toggle is provided), trailing delete X
                     (calls on_delete(rule_id) if provided)
+
+    `description`: optional one-line note rendered below the body row in
+    muted italic. Empty string (default) omits the line entirely so
+    cards without a description don't have a hanging gap.
 
     `match_type` must be one of the keys in _MATCH_TYPE_BADGES — KeyError
     on anything else, intentional so a typo or a future fuzzy_replace
@@ -322,7 +328,8 @@ def make_rule_card(
     Caller packs the returned frame. Selected sub-widgets are exposed as
     attributes (`card.id_label`, `card.badge`, `card.before_label`,
     `card.after_label`, plus `card.dot` / `card.delete_btn` on the
-    active variant) so tests and callers can introspect or update them
+    active variant, plus `card.description_label` when description is
+    non-empty) so tests and callers can introspect or update them
     without `winfo_children()` traversal.
     """
     card = ctk.CTkFrame(
@@ -413,6 +420,18 @@ def make_rule_card(
         justify="left",
     )
     after_label.pack(side="left", fill="x", expand=True)
+
+    if description:
+        desc_label = ctk.CTkLabel(
+            card,
+            text=description,
+            font=ctk.CTkFont(size=10, slant="italic"),
+            text_color=TEXT_MUTED,
+            anchor="w",
+            justify="left",
+        )
+        desc_label.pack(fill="x", padx=10, pady=(0, 8))
+        card.description_label = desc_label
 
     card.id_label = id_label
     card.badge = badge

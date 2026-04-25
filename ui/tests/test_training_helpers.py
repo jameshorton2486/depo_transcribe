@@ -306,3 +306,43 @@ def test_active_card_dot_without_on_toggle_does_not_bind_button1(root):
     )
     bindings = card.dot._canvas.bind()
     assert "<Button-1>" not in bindings
+
+
+# ── make_rule_card — description ─────────────────────────────────────────────
+
+def test_card_with_description_exposes_description_label(root):
+    card = make_rule_card(
+        root,
+        rule_id="usr_001",
+        before="x",
+        after="y",
+        match_type="exact_replace",
+        description="Fixes a common stenographic homophone confusion.",
+    )
+    assert hasattr(card, "description_label")
+    assert card.description_label.cget("text") == (
+        "Fixes a common stenographic homophone confusion."
+    )
+
+
+def test_card_without_description_omits_description_label(root):
+    card = make_rule_card(
+        root,
+        rule_id="usr_001",
+        before="x",
+        after="y",
+        match_type="exact_replace",
+    )
+    assert not hasattr(card, "description_label")
+
+
+def test_card_empty_description_omits_description_label(root):
+    card = make_rule_card(
+        root,
+        rule_id="usr_001",
+        before="x",
+        after="y",
+        match_type="exact_replace",
+        description="",
+    )
+    assert not hasattr(card, "description_label")

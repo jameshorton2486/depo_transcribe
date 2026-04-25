@@ -6,7 +6,7 @@ Training Engine tab — teaches the correction system new rules from examples.
 
 from __future__ import annotations
 
-import subprocess
+import os
 import threading
 
 import customtkinter as ctk
@@ -14,15 +14,19 @@ import customtkinter as ctk
 from ui._components import (
     BTN_AI_PURPLE,
     BTN_AI_PURPLE_HOVER,
+    BTN_OUTLINE_BORDER,
+    BTN_OUTLINE_TEXT,
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
     PILL_EMERALD_TEXT,
     SECTION_HEADER_ACCENT,
+    TEXT_DIM,
     TEXT_MUTED,
     TEXT_PRIMARY,
     make_card_with_accent,
     make_numbered_chip,
     make_rule_card,
+    make_status_pill,
 )
 
 
@@ -234,38 +238,41 @@ class TrainingTab(ctk.CTkFrame):
         )
         self._proposed_rules_container.pack(fill="both", expand=True)
 
-        # Active Library lives in the right column (sticky panel) instead
-        # of the bottom of the left column. The textbox-based view here
-        # is the existing read-only display; commit G replaces it with
-        # interactive per-row widgets.
+        # ── Active Library (right column) ────────────────────────────────────
+        # Header row: title + count pill. Body: per-rule cards rendered
+        # by make_rule_card(variant="active"). Footer: Open Rules File.
+        # Toggle/delete handlers are not wired here; commit H lights them
+        # up so commit G is purely a read-path change.
         library = self._right_col
 
-        active_header = ctk.CTkFrame(library, fg_color="transparent")
-        active_header.pack(fill="x")
-        self._rules_count_label = ctk.CTkLabel(
-            active_header,
-            text="Active Rules — loading…",
+        library_header = ctk.CTkFrame(library, fg_color="transparent")
+        library_header.pack(fill="x", pady=(0, 10))
+        ctk.CTkLabel(
+            library_header,
+            text="ACTIVE LIBRARY",
             font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left")
+        self._library_count_pill = make_status_pill(
+            library_header, "0 rules", variant="blue"
         )
-        self._rules_count_label.pack(side="left")
-        self._edit_rules_btn = ctk.CTkButton(
-            active_header,
-            text="Edit Rules File",
+        self._library_count_pill.pack(side="right")
+
+        self._active_rules_container = ctk.CTkFrame(library, fg_color="transparent")
+        self._active_rules_container.pack(fill="both", expand=True, pady=(0, 10))
+
+        self._open_rules_btn = ctk.CTkButton(
+            library,
+            text="Open Rules File",
             fg_color="transparent",
             border_width=1,
-            width=120,
+            border_color=BTN_OUTLINE_BORDER,
+            text_color=BTN_OUTLINE_TEXT,
+            height=36,
             hover_color="#1A1A1A",
-            command=self._on_edit_rules_file,
+            command=self._on_open_rules_file,
         )
-        self._edit_rules_btn.pack(side="right")
-
-        self._active_rules_box = ctk.CTkTextbox(
-            library,
-            font=ctk.CTkFont(family="Courier New", size=10),
-            state="disabled",
-            fg_color="#080F1A",
-        )
-        self._active_rules_box.pack(fill="both", expand=True, pady=(4, 0))
+        self._open_rules_btn.pack(fill="x")
 
     def _on_generate(self):
         if self._generating:
@@ -386,42 +393,60 @@ class TrainingTab(ctk.CTkFrame):
         self._hide_step_03()
         self._set_status("")
 
-    def _on_edit_rules_file(self):
+    def _on_open_rules_file(self):
+        # os.startfile uses the OS-registered handler (notepad / VS Code /
+        # whatever the user has set), which is friendlier than hard-coding
+        # notepad.exe. Windows-only — that's fine; the app is Windows-only
+        # per CLAUDE.md §2.
         from spec_engine.user_rule_store import RULES_PATH
 
         if RULES_PATH.exists():
-            subprocess.Popen(["notepad.exe", str(RULES_PATH)])
+            os.startfile(str(RULES_PATH))
         else:
             self._set_status("No rules file yet — generate and approve rules first.")
 
     def _refresh_active_rules(self):
-        from spec_engine.user_rule_store import get_rules_summary, load_all_rules
+        from spec_engine.user_rule_store import load_all_rules
 
         rules = load_all_rules()
-        self._rules_count_label.configure(text=f"Active Rules — {get_rules_summary()}")
-        self._active_rules_box.configure(state="normal")
-        self._active_rules_box.delete("1.0", "end")
+
+        # Count pill: "0 rules" / "1 rule" / "N rules" reads naturally
+        # at any count.
+        count = len(rules)
+        self._library_count_pill.text_label.configure(
+            text=f"{count} rule{'s' if count != 1 else ''}"
+        )
+
+        # Destroy previous batch before rendering — same pattern as
+        # _render_proposed_rules; per-row widgets must not accumulate.
+        for child in self._active_rules_container.winfo_children():
+            child.destroy()
 
         if not rules:
-            self._active_rules_box.insert("1.0", "No rules saved yet.")
-        else:
-            lines: list[str] = []
-            for rule in rules:
-                status = "" if rule.get("enabled", True) else "  (disabled)"
-                rule_id = rule.get("id", "?")
-                if rule.get("type") == "exact_replace":
-                    lines.append(
-                        f'{rule_id}{status}  "{rule.get("incorrect", "")}"  →  "{rule.get("correct", "")}"'
-                    )
-                elif rule.get("type") == "regex_replace":
-                    lines.append(
-                        f'{rule_id}{status}  /{rule.get("pattern", "")}/  →  "{rule.get("replacement", "")}"'
-                    )
-                if rule.get("description"):
-                    lines.append(f'       {rule["description"]}')
-            self._active_rules_box.insert("1.0", "\n".join(lines))
+            ctk.CTkLabel(
+                self._active_rules_container,
+                text="No rules saved yet.",
+                text_color=TEXT_DIM,
+                font=ctk.CTkFont(size=11),
+            ).pack(pady=20)
+            return
 
-        self._active_rules_box.configure(state="disabled")
+        for rule in rules:
+            before, after = self._rule_before_after(rule)
+            card = make_rule_card(
+                self._active_rules_container,
+                rule_id=rule.get("id", "?"),
+                before=before,
+                after=after,
+                match_type=rule.get("type", "exact_replace"),
+                description=rule.get("description", ""),
+                variant="active",
+                enabled=rule.get("enabled", True),
+                # on_toggle / on_delete deliberately not wired in commit G —
+                # commit H lights up the API surface from commit A. Until
+                # then the dot is decorative and there's no delete button.
+            )
+            card.pack(fill="x", pady=(0, 6))
 
     def on_tab_focus(self):
         self._refresh_active_rules()

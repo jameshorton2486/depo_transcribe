@@ -179,3 +179,152 @@ def test_on_clear_hides_step_03(tab):
     tab._show_step_03()
     tab._on_clear()
     assert tab._step_03.winfo_manager() == ""
+
+
+# ── Active Library — read path (commit G) ────────────────────────────────────
+
+from ui._components import DOT_DISABLED, DOT_ENABLED
+
+
+def _exact_with_state(rule_id, before, after, *, enabled=True, description=""):
+    rule = {
+        "id": rule_id,
+        "type": "exact_replace",
+        "incorrect": before,
+        "correct": after,
+        "enabled": enabled,
+    }
+    if description:
+        rule["description"] = description
+    return rule
+
+
+def test_library_count_pill_exists(tab):
+    assert hasattr(tab, "_library_count_pill")
+
+
+def test_active_rules_container_is_a_frame(tab):
+    assert isinstance(tab._active_rules_container, ctk.CTkFrame)
+
+
+def test_open_rules_button_exists(tab):
+    assert isinstance(tab._open_rules_btn, ctk.CTkButton)
+
+
+def test_refresh_active_rules_no_rules_shows_empty_state(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    tab._refresh_active_rules()
+    children = tab._active_rules_container.winfo_children()
+    # One placeholder label, no cards.
+    assert len(children) == 1
+    assert isinstance(children[0], ctk.CTkLabel)
+    assert "No rules saved yet" in children[0].cget("text")
+
+
+def test_refresh_active_rules_renders_one_card_per_rule(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [
+            _exact_with_state("usr_001", "Coger", "Koger"),
+            _exact_with_state("usr_002", "depo", "deposition"),
+            _exact_with_state("usr_003", "wittness", "witness"),
+        ],
+    )
+    tab._refresh_active_rules()
+    cards = tab._active_rules_container.winfo_children()
+    assert len(cards) == 3
+
+
+def test_refresh_active_rules_count_pill_pluralizes(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b")],
+    )
+    tab._refresh_active_rules()
+    assert tab._library_count_pill.text_label.cget("text") == "1 rule"
+
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [
+            _exact_with_state("usr_001", "a", "b"),
+            _exact_with_state("usr_002", "c", "d"),
+        ],
+    )
+    tab._refresh_active_rules()
+    assert tab._library_count_pill.text_label.cget("text") == "2 rules"
+
+
+def test_refresh_active_rules_count_pill_zero(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    tab._refresh_active_rules()
+    assert tab._library_count_pill.text_label.cget("text") == "0 rules"
+
+
+def test_refresh_active_rules_enabled_rule_shows_emerald_dot(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b", enabled=True)],
+    )
+    tab._refresh_active_rules()
+    card = tab._active_rules_container.winfo_children()[0]
+    assert card.dot.cget("fg_color") == DOT_ENABLED
+
+
+def test_refresh_active_rules_disabled_rule_shows_slate_dot(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b", enabled=False)],
+    )
+    tab._refresh_active_rules()
+    card = tab._active_rules_container.winfo_children()[0]
+    assert card.dot.cget("fg_color") == DOT_DISABLED
+
+
+def test_refresh_active_rules_surfaces_description(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state(
+            "usr_001", "a", "b",
+            description="Fixes a stenographic homophone",
+        )],
+    )
+    tab._refresh_active_rules()
+    card = tab._active_rules_container.winfo_children()[0]
+    assert hasattr(card, "description_label")
+
+
+def test_refresh_active_rules_replaces_previous_batch(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b")],
+    )
+    tab._refresh_active_rules()
+    assert len(tab._active_rules_container.winfo_children()) == 1
+
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [
+            _exact_with_state("usr_002", "c", "d"),
+            _exact_with_state("usr_003", "e", "f"),
+        ],
+    )
+    tab._refresh_active_rules()
+    # 2 cards, not 1 + 2.
+    assert len(tab._active_rules_container.winfo_children()) == 2
+
+
+# Locks in the external API surface — app_window.py:85 calls
+# on_tab_focus(), and on_tab_focus() must continue to refresh the
+# library after the textbox-to-cards swap.
+def test_on_tab_focus_refreshes_library(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_007", "x", "y")],
+    )
+    tab.on_tab_focus()
+    assert len(tab._active_rules_container.winfo_children()) == 1
+    assert tab._library_count_pill.text_label.cget("text") == "1 rule"
