@@ -101,6 +101,78 @@ def test_exhibit_plus_question_returns_parenthetical_and_question():
     assert LineType.Q in line_types
 
 
+# ── Witness rhetorical question must not become Q. ──────────────────────────
+# Previously, classifier.py:746-761 emitted (LineType.Q, text) when a witness
+# block's text *looked like* a question (ended in "?", started with a question
+# word, etc.) but had no embedded answer split. Witness rhetorical questions,
+# tag questions ("right?", "you know?"), and quoted speech ending in "?" are
+# testimony — they must not initiate a new Q/A pair, because the next
+# attorney line then gets read as a witness answer.
+
+
+def test_witness_rhetorical_question_emits_answer_not_question():
+    cfg = JobConfig.default_perez_ugalde()
+    cfg.speaker_map_verified = True
+    state = ClassifierState()
+    block = Block(
+        speaker_id=cfg.witness_id,
+        text="He came in, you know?",
+        raw_text="",
+    )
+    results = classify_block(block, cfg, state, block_index=0)
+    assert all(line_type == LineType.A for line_type, _ in results), (
+        f"Expected all A lines, got "
+        f"{[lt.name for lt, _ in results]}"
+    )
+
+
+def test_witness_tag_question_does_not_set_qa_tracker_to_question():
+    # If the rhetorical-question fallthrough wrongly emitted Q, the next
+    # attorney block would be (mis)read as an "answer after a Q." The
+    # qa_tracker state must reflect "we are not waiting on an answer."
+    cfg = JobConfig.default_perez_ugalde()
+    cfg.speaker_map_verified = True
+    state = ClassifierState()
+    block = Block(
+        speaker_id=cfg.witness_id,
+        text="I told him, right?",
+        raw_text="",
+    )
+    classify_block(block, cfg, state, block_index=0)
+    assert state.qa_tracker_last_was_q is False
+
+
+def test_witness_question_starting_word_emits_answer():
+    # _looks_like_question_text matches text starting with a question
+    # word (who/what/when/etc.) even without a "?". Same fix path —
+    # witness text → A.
+    cfg = JobConfig.default_perez_ugalde()
+    cfg.speaker_map_verified = True
+    state = ClassifierState()
+    block = Block(
+        speaker_id=cfg.witness_id,
+        text="Why would I lie about that.",  # starts with "why "
+        raw_text="",
+    )
+    results = classify_block(block, cfg, state, block_index=0)
+    assert all(line_type == LineType.A for line_type, _ in results)
+
+
+def test_witness_normal_statement_still_emits_answer():
+    # Sanity check — the unchanged path (witness text that doesn't look
+    # like a question) still emits A.
+    cfg = JobConfig.default_perez_ugalde()
+    cfg.speaker_map_verified = True
+    state = ClassifierState()
+    block = Block(
+        speaker_id=cfg.witness_id,
+        text="Yes, sir.",
+        raw_text="",
+    )
+    results = classify_block(block, cfg, state, block_index=0)
+    assert all(line_type == LineType.A for line_type, _ in results)
+
+
 def test_merge_orphaned_colloquy_continuation():
     b1 = Block(
         speaker_id=2,

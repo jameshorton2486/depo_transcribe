@@ -756,8 +756,15 @@ def classify_block(
                 else:
                     state.qa_tracker_last_was_q = False
                 return results
-            results.append((LineType.Q, text))
-            state.qa_tracker_last_was_q = True
+            # Witness text that *looks* like a question but has no
+            # embedded answer split — emit as A. Witness rhetorical
+            # questions, tag questions ("you know?", "right?"), and
+            # quoted speech ending in "?" are testimony, not new
+            # questions to be answered. Previously emitted as Q, which
+            # broke Q/A flow and let the next attorney line be misread
+            # as a witness answer.
+            results.append((LineType.A, text))
+            state.qa_tracker_last_was_q = False
             return results
         results.append((LineType.A, text))
         state.qa_tracker_last_was_q = False
