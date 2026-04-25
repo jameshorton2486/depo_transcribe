@@ -897,6 +897,24 @@ class TranscriptTab(ctk.CTkFrame):
             undo=True,
         )
         self._textbox.pack(fill="both", expand=True, padx=14, pady=(0, 6))
+
+        # Empty-state hint shown when no transcript is loaded. Hidden on
+        # first load by load_transcript(); harmless to leave in place if
+        # the user clears the textbox later (it would still be invisible
+        # until next reload). The hint is a child of the textbox so it
+        # sits centered over the editing area.
+        self._textbox_empty_hint = ctk.CTkLabel(
+            self._textbox,
+            text=(
+                "No transcript loaded.\n\n"
+                "Open a transcript file with the Open File button above,\n"
+                "or use the Transcribe tab to create one."
+            ),
+            font=ctk.CTkFont(size=14),
+            text_color="#445566",
+            justify="center",
+        )
+        self._textbox_empty_hint.place(relx=0.5, rely=0.5, anchor="center")
         self._textbox._textbox.bind("<<Modified>>", self._on_textbox_modified)
         self._textbox._textbox.bind("<Button-1>", self._on_textbox_click)
         self._textbox._textbox.bind("<Double-Button-1>", self._on_textbox_double_click)
@@ -1163,6 +1181,11 @@ class TranscriptTab(ctk.CTkFrame):
             self.review_state = {}
             self._current_review_idx = -1
             self._open_review_btn.configure(state="disabled")
+            # Hide the empty-state hint now that real content is loading.
+            try:
+                self._textbox_empty_hint.place_forget()
+            except Exception:
+                pass
             self._textbox.configure(state="normal")
             self._textbox.delete("1.0", "end")
             self._textbox.insert("1.0", content)
