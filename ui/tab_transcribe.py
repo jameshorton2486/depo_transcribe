@@ -1654,10 +1654,15 @@ class TranscribeTab(ctk.CTkFrame):
         """
         File picker for an existing transcript. Loads the chosen file
         into the Transcript tab and switches to it. Defaults the picker
-        to the most recent transcript path if known.
+        to the same folder the user picked via Open Output Folder
+        (_base_dir_var). Falls back to the prior transcript folder or
+        current case path when the base dir is unset.
         """
         initial_dir = ""
-        if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
+        base_dir = self._base_dir_var.get().strip()
+        if base_dir and os.path.isdir(base_dir):
+            initial_dir = base_dir
+        elif self._last_transcript_path and os.path.isfile(self._last_transcript_path):
             initial_dir = os.path.dirname(self._last_transcript_path)
         elif self._current_case_path and os.path.isdir(self._current_case_path):
             initial_dir = self._current_case_path
