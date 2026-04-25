@@ -866,15 +866,15 @@ class TranscribeTab(ctk.CTkFrame):
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Fixed amber footer — CREATE TRANSCRIPT (full width) ───────────────
-        footer = ctk.CTkFrame(self, fg_color="transparent", height=48)
-        footer.pack(fill="x", side="bottom", padx=10, pady=(1, 3))
+        # ── Fixed amber footer — CREATE TRANSCRIPT (full width, compact) ─────
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=38)
+        footer.pack(fill="x", side="bottom", padx=8, pady=(1, 1))
         footer.pack_propagate(False)
 
         self._create_btn = ctk.CTkButton(
             footer,
             text="CREATE TRANSCRIPT",
-            height=40,
+            height=32,
             font=ctk.CTkFont(size=14, weight="bold"),
             fg_color="#B8860B",
             hover_color="#9A7209",
@@ -887,10 +887,10 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
         file_card = ctk.CTkFrame(container)
-        file_card.pack(fill="x", pady=(0, 2))
+        file_card.pack(fill="x", pady=(0, 1))
 
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_row.pack(fill="x", padx=8, pady=3)
+        file_row.pack(fill="x", padx=6, pady=2)
 
         ctk.CTkLabel(
             file_row,
@@ -920,23 +920,23 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── "or" separator ─────────────────────────────────────────────────
         sep_row = ctk.CTkFrame(container, fg_color="transparent")
-        sep_row.pack(fill="x", pady=(0, 2))
+        sep_row.pack(fill="x", pady=(0, 1))
         ctk.CTkLabel(
             sep_row,
             text="───  or open an existing transcript to review / correct  ───",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12),
             text_color="#445566",
         ).pack()
 
         # ── Load Existing Transcript card ──────────────────────────────────
         self._load_card = ctk.CTkFrame(container, border_width=1, border_color="#1A3A4A")
-        self._load_card.pack(fill="x", pady=(0, 2))
+        self._load_card.pack(fill="x", pady=(0, 1))
 
         load_inner = ctk.CTkFrame(self._load_card, fg_color="transparent")
-        load_inner.pack(fill="x", padx=8, pady=2)
+        load_inner.pack(fill="x", padx=6, pady=1)
 
         load_hdr = ctk.CTkFrame(load_inner, fg_color="transparent")
-        load_hdr.pack(fill="x", pady=(0, 4))
+        load_hdr.pack(fill="x", pady=(0, 2))
 
         ctk.CTkLabel(
             load_hdr,
@@ -1040,10 +1040,10 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
         settings_card = ctk.CTkFrame(container)
-        settings_card.pack(fill="x", pady=(0, 2))
+        settings_card.pack(fill="x", pady=(0, 1))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
-        settings_row.pack(fill="x", padx=8, pady=2)
+        settings_row.pack(fill="x", padx=6, pady=1)
 
         # Model - label inline with combo, single line
         ctk.CTkLabel(
@@ -1092,14 +1092,14 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
-        case_card.pack(fill="x", pady=(0, 2))
+        case_card.pack(fill="x", pady=(0, 1))
 
         case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
-        case_inner.pack(fill="x", padx=8, pady=(2, 1))
+        case_inner.pack(fill="x", padx=6, pady=(1, 0))
         case_inner.columnconfigure((0, 1, 2, 3), weight=1)
 
         base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4))
+        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 2))
         ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
         base_row = ctk.CTkFrame(base_frame, fg_color="transparent")
         base_row.pack(fill="x", pady=(2, 0))
@@ -1110,7 +1110,7 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkButton(base_row, text="Browse…", width=80, command=self._browse_base_dir).pack(side="right")
 
         cause_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
+        cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 2))
         cause_lbl_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
         cause_lbl_row.pack(fill="x")
         ctk.CTkLabel(cause_lbl_row, text="Cause Number", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
@@ -1121,7 +1121,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._cause_var.trace_add("write", self._on_cause_changed)
 
         name_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        name_frame.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=(0, 4))
+        name_frame.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=(0, 2))
         name_lbl_row = ctk.CTkFrame(name_frame, fg_color="transparent")
         name_lbl_row.pack(fill="x")
         ctk.CTkLabel(name_lbl_row, text="Last Name", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
@@ -1132,14 +1132,14 @@ class TranscribeTab(ctk.CTkFrame):
         self._lastname_var.trace_add("write", self._on_lastname_changed)
 
         first_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        first_frame.grid(row=1, column=2, sticky="ew", padx=(0, 6), pady=(0, 4))
+        first_frame.grid(row=1, column=2, sticky="ew", padx=(0, 6), pady=(0, 2))
         ctk.CTkLabel(first_frame, text="First Name", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
         self._firstname_var = ctk.StringVar()
         ctk.CTkEntry(first_frame, textvariable=self._firstname_var, placeholder_text="e.g. Matthew").pack(fill="x", pady=(2, 0))
         self._firstname_var.trace_add("write", lambda *_: self._update_path_preview())
 
         date_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
-        date_frame.grid(row=1, column=3, sticky="ew", pady=(0, 4))
+        date_frame.grid(row=1, column=3, sticky="ew", pady=(0, 2))
         date_lbl_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         date_lbl_row.pack(fill="x")
         ctk.CTkLabel(date_lbl_row, text="Deposition Date", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
@@ -1153,15 +1153,15 @@ class TranscribeTab(ctk.CTkFrame):
             case_card, text="", font=ctk.CTkFont(size=13),
             text_color="gray", wraplength=860, anchor="w",
         )
-        self._path_preview_label.pack(anchor="w", padx=8, pady=(1, 4))
+        self._path_preview_label.pack(anchor="w", padx=6, pady=(0, 2))
         self._update_path_preview()
 
         # ── 5. Case Files / Output ───────────────────────────────────────────
         source_docs_card = ctk.CTkFrame(container)
-        source_docs_card.pack(fill="x", pady=(0, 2))
+        source_docs_card.pack(fill="x", pady=(0, 1))
 
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
-        kt_inner.pack(fill="x", padx=8, pady=(2, 2))
+        kt_inner.pack(fill="x", padx=6, pady=(1, 1))
 
         # ── Single inline toolbar: Upload / Notes / Folder / Transcript on
         #     the left, Re-Scan / Review & Edit / status on the right. ──────
