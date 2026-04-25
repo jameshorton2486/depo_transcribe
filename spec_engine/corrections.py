@@ -411,6 +411,19 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     (r'\bPLC\s+account\b',                              'PLLC account'),
     (r'\bfiftyfifty\b',                                  'fifty-fifty'),
 
+    # Oath garble — Deepgram routinely transcribes "so help you God" as
+    # "so happy (you) God" because the consonant cluster /lp/ is acoustically
+    # close to /pp/ on muffled audio. The oath text is canonical American
+    # legal English with exactly one right answer, so this fires globally.
+    (r'\bso\s+happy\s+you\s+god\b',                     'so help you God'),
+    (r'\bso\s+happy\s+god\b',                            'so help you God'),
+
+    # Insurance carrier garble — "State Farm" is heard as "state form" when
+    # the speaker glides through the /m/. Word boundaries on both ends so
+    # "platform", "states formally", "the state form Z-43" (a real DMV doc)
+    # don't get false-corrected.
+    (r'\bstate\s+form\b',                                'State Farm'),
+
     # ASR garble → verbatim objection form
     # ── Objection garble — single word variants → "Objection." ──────────────
     # These are universal: apply to every deposition regardless of case.

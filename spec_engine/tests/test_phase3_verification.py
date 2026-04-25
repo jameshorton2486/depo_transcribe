@@ -167,6 +167,105 @@ class TestFix3C_ResnickFirmRemoved:
         assert "Clean Scapes" in result
 
 
+class TestOathHomophone:
+    """The oath 'so help you God' is canonical American legal English.
+    Deepgram garbles it as 'so happy (you) God' on muffled audio. There
+    is exactly one right answer for this phrase, so the rule fires
+    globally."""
+
+    def test_so_happy_you_god_corrected(self):
+        records = []
+        result = apply_multiword_corrections(
+            "Do you solemnly swear to tell the truth, the whole truth, and nothing but the truth, so happy you god?",
+            records,
+            0,
+        )
+        assert "so help you God" in result
+        assert "so happy" not in result
+
+    def test_so_happy_god_corrected(self):
+        records = []
+        result = apply_multiword_corrections(
+            "Do you solemnly swear, so happy God?",
+            records,
+            0,
+        )
+        assert "so help you God" in result
+
+    def test_so_happy_god_case_insensitive(self):
+        records = []
+        result = apply_multiword_corrections("So Happy You God", records, 0)
+        assert "so help you God" in result
+
+    def test_so_happy_god_does_not_overfire_on_normal_text(self):
+        records = []
+        result = apply_multiword_corrections(
+            "She was so happy that her dog came home safely.",
+            records,
+            0,
+        )
+        assert "so happy" in result
+        assert "so help you God" not in result
+
+    def test_oath_correction_records_change(self):
+        records = []
+        apply_multiword_corrections("so happy you god", records, 0)
+        assert any(
+            "so help you God" in (rec.corrected or "") for rec in records
+        ), f"Expected a correction record, got {records!r}"
+
+
+class TestStateFarmHomophone:
+    """Insurance carrier 'State Farm' is heard as 'state form' when the
+    speaker glides through the /m/. Word boundaries on both ends keep
+    'platform', 'states formally', and DMV state forms intact."""
+
+    def test_state_form_corrected(self):
+        records = []
+        result = apply_multiword_corrections(
+            "I have insurance through state form.",
+            records,
+            0,
+        )
+        assert "State Farm" in result
+
+    def test_state_form_case_insensitive(self):
+        records = []
+        result = apply_multiword_corrections("State Form", records, 0)
+        assert "State Farm" in result
+
+    def test_state_form_does_not_overfire_on_platform(self):
+        records = []
+        result = apply_multiword_corrections(
+            "We use the new platform for filings.",
+            records,
+            0,
+        )
+        assert "platform" in result
+        assert "State Farm" not in result
+
+    def test_state_form_does_not_overfire_on_states_formally(self):
+        records = []
+        result = apply_multiword_corrections(
+            "He states formally that he was not present.",
+            records,
+            0,
+        )
+        assert "states formally" in result
+        assert "State Farm" not in result
+
+    def test_state_form_does_not_match_across_other_words(self):
+        # "the state and form Z-43" — adjacent but not the literal
+        # phrase "state form".
+        records = []
+        result = apply_multiword_corrections(
+            "I filed the state and form together.",
+            records,
+            0,
+        )
+        assert "State Farm" not in result
+
+
 class TestFix3D_ZipCodeScoped:
     def test_zip_in_address_preserved(self):
         result = _clean("My address is 3201 Cherry Ridge, San Antonio, Texas 78216.")
