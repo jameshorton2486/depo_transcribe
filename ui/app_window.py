@@ -7,6 +7,7 @@ Single-screen layout with the Transcribe tab as the only content area.
 
 import customtkinter as ctk
 from config import DEEPGRAM_API_KEY
+from ui._components import BTN_UTILITY_BLUE, BTN_UTILITY_BLUE_HOVER
 from ui.tab_training import TrainingTab
 from ui.tab_transcript import TranscriptTab
 from ui.tab_transcribe import TranscribeTab
@@ -24,6 +25,13 @@ class DepoTranscribeApp(ctk.CTk):
         ctk.set_default_color_theme("blue")
         ctk.set_widget_scaling(1.0)
         ctk.set_window_scaling(1.0)
+
+        # Override CTkButton's default fg/hover so any button without an
+        # explicit fg_color picks up BTN_UTILITY_BLUE — our project-wide
+        # blue. CTk theme values are [light_mode, dark_mode]; we use the
+        # same value for both because the app is dark-mode only.
+        ctk.ThemeManager.theme["CTkButton"]["fg_color"] = [BTN_UTILITY_BLUE, BTN_UTILITY_BLUE]
+        ctk.ThemeManager.theme["CTkButton"]["hover_color"] = [BTN_UTILITY_BLUE_HOVER, BTN_UTILITY_BLUE_HOVER]
 
         # -- Dark navy header bar --------------------------------------------------
         header = ctk.CTkFrame(self, height=50, fg_color="#1E3A5F", corner_radius=0)
