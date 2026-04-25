@@ -485,9 +485,12 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._path_label.pack(side="left", padx=8)
 
+        # Default static text uses the standardized 'Status: <state>' format
+        # so all three tabs read the same way at idle. Dynamic messages set
+        # via set_status() are framed with the same prefix in that helper.
         self._status_label = ctk.CTkLabel(
             self._status_bar,
-            text="Ready",
+            text="Status: Ready",
             font=ctk.CTkFont(size=11),
             text_color="#7D8FA3",
             anchor="w",
@@ -976,7 +979,14 @@ class TranscriptTab(ctk.CTkFrame):
         self._update_progress_from_message(msg)
 
     def set_status(self, text: str, color: str = "gray"):
-        self._status_label.configure(text=text, text_color=color)
+        # Standardized 'Status: <message>' framing across tabs. Skip the
+        # prefix when the message already begins with a status-like
+        # heading word (Status: / ERROR / Done / etc.) to avoid double
+        # prefixes like 'Status: ERROR: ...'.
+        msg = (text or "").strip() or "Ready"
+        if not msg.startswith(("Status:", "ERROR:", "Done", "✓", "⚠", "Failed")):
+            msg = f"Status: {msg}"
+        self._status_label.configure(text=msg, text_color=color)
         self._update_progress_from_message(text)
 
     @staticmethod

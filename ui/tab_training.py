@@ -146,9 +146,11 @@ class TrainingTab(ctk.CTkFrame):
             command=self._on_clear,
         )
         self._clear_btn.pack(side="left")
+        # Standardized 'Status: <state>' format - matches the Transcript
+        # tab so the user sees the same idle text shape on every tab.
         self._status_label = ctk.CTkLabel(
             action_row,
-            text="",
+            text="Status: Ready",
             font=ctk.CTkFont(size=11),
             text_color="gray",
             anchor="w",
@@ -362,4 +364,10 @@ class TrainingTab(ctk.CTkFrame):
         self._refresh_active_rules()
 
     def _set_status(self, msg: str, color: str = "gray"):
-        self._status_label.configure(text=msg, text_color=color)
+        # Standardized framing matching the Transcript tab's set_status.
+        # Empty input resets to the idle 'Status: Ready' state. Messages
+        # already prefixed with a status-like word pass through verbatim.
+        text = (msg or "").strip() or "Ready"
+        if not text.startswith(("Status:", "Error:", "ERROR:", "Done", "✓", "⚠", "Failed")):
+            text = f"Status: {text}"
+        self._status_label.configure(text=text, text_color=color)
