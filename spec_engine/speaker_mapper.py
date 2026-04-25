@@ -61,10 +61,6 @@ ANSWER_STARTERS = (
     "yup",
     "nope",
     "nah",
-    "i ",
-    "it's ",
-    "it is ",
-    "my ",
     "uh",
     "um",
 )
@@ -222,7 +218,10 @@ def map_speakers(blocks: List[Block], job_config: Any) -> List[Block]:
 
     merged = dict(persisted.get(key, {})) if key else {}
     merged.update(speaker_map)
-    if key and merged:
+    # Only write to disk when the merged map actually differs from the
+    # persisted version — avoids a redundant file write on every Run
+    # Corrections invocation when nothing has changed.
+    if key and merged != persisted.get(key):
         persisted[key] = merged
         _save_persisted_maps(persisted)
 
