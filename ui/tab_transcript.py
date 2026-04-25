@@ -65,8 +65,34 @@ _log = get_logger(__name__)
 COLOR_AMBER = "#B8860B"
 COLOR_RED = "#CC2200"
 
+# Speaker-label tag colors. Applied to the LABEL text only (e.g., "THE
+# REPORTER:") via tag_add — body text of the speaker turn is unaffected.
+# Witness uses amber to match conf_mid so reviewers' eyes already track that
+# color as "needs attention" — the witness is who the reviewer most needs to
+# verify accuracy on.
+SPEAKER_LABEL_REPORTER_COLOR = "#3A7FBF"      # blue: THE REPORTER, THE COURT
+SPEAKER_LABEL_WITNESS_COLOR = "#B8860B"       # amber: THE WITNESS
+SPEAKER_LABEL_ATTORNEY_COLOR = "#7DAACC"      # light blue: MR./MS./MRS./DR.
+SPEAKER_LABEL_VIDEOGRAPHER_COLOR = "#888888"  # neutral gray
+SPEAKER_LABEL_BY_COLOR = "#7DAACC"            # BY MR./MS. lines mirror attorneys
+
 _TRANSCRIPTION_PROGRESS_RE = re.compile(r'chunk\s+(\d+)\s+of\s+(\d+)', re.IGNORECASE)
 _SPEAKER_LABEL_RE = re.compile(r'(^|\n)(Speaker\s+(\d+)):\s*', re.IGNORECASE)
+
+# UFM-format speaker-label patterns. Tabs are stripped before matching against
+# canonical \t\t\tLABEL: format (per CLAUDE.md §18). Anchored to start-of-line
+# so they only fire on actual SP lines, never on inline text.
+_SPEAKER_LABEL_REPORTER_RE = re.compile(r'^\t*(THE\s+(?:REPORTER|COURT)):', re.MULTILINE)
+_SPEAKER_LABEL_WITNESS_RE = re.compile(r'^\t*(THE\s+WITNESS):', re.MULTILINE)
+_SPEAKER_LABEL_VIDEOGRAPHER_RE = re.compile(r'^\t*(THE\s+VIDEOGRAPHER):', re.MULTILINE)
+_SPEAKER_LABEL_ATTORNEY_RE = re.compile(
+    r'^\t*((?:MR|MS|MRS|DR)\.\s+[A-Z][A-Z\-\']+(?:\s+[A-Z][A-Z\-\']+)?):',
+    re.MULTILINE,
+)
+_SPEAKER_LABEL_BY_RE = re.compile(
+    r'^\t*(BY\s+(?:MR|MS|MRS|DR)\.\s+[A-Z][A-Z\-\']+(?:\s+[A-Z][A-Z\-\']+)?):',
+    re.MULTILINE,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _LOG_FILES = ("app.log", "pipeline.log")
@@ -1242,6 +1268,9 @@ class TranscriptTab(ctk.CTkFrame):
                 "Loaded — type to edit · Ctrl+Click seeks playback · Space toggles audio · Ctrl+Z to undo.",
                 "gray",
             )
+            # Speaker-label colors paint immediately on load so reviewers see
+            # the visual hierarchy even before word-level data arrives.
+            self._apply_speaker_label_colors()
             self._ensure_bottom_panel_open()
             try:
                 self.winfo_toplevel().corrections_tab.notify_transcript_loaded(filepath)
@@ -1733,6 +1762,47 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _apply_confidence_tags(self, word_list) -> None:
         self._apply_confidence_highlights()
+        self._apply_speaker_label_colors()
+
+    def _apply_speaker_label_colors(self) -> None:
+        """
+        Color the speaker LABEL portion of each SP line so reviewers can scan
+        speaker turns at a glance. Body text is unaffected — this only paints
+        the "THE REPORTER:" / "MR. GARCIA:" / etc. prefix.
+
+        Tags are color-coded per role (reporter/witness/attorney/videographer/BY).
+        Safe to call multiple times: existing speaker-label tags are removed
+        first.
+        """
+        widget = self._textbox._textbox
+        for tag in (
+            "speaker_reporter",
+            "speaker_witness",
+            "speaker_attorney",
+            "speaker_videographer",
+            "speaker_by",
+        ):
+            widget.tag_remove(tag, "1.0", "end")
+
+        widget.tag_config("speaker_reporter", foreground=SPEAKER_LABEL_REPORTER_COLOR)
+        widget.tag_config("speaker_witness", foreground=SPEAKER_LABEL_WITNESS_COLOR)
+        widget.tag_config("speaker_attorney", foreground=SPEAKER_LABEL_ATTORNEY_COLOR)
+        widget.tag_config("speaker_videographer", foreground=SPEAKER_LABEL_VIDEOGRAPHER_COLOR)
+        widget.tag_config("speaker_by", foreground=SPEAKER_LABEL_BY_COLOR)
+
+        content = widget.get("1.0", "end-1c")
+
+        for pattern, tag in (
+            (_SPEAKER_LABEL_REPORTER_RE, "speaker_reporter"),
+            (_SPEAKER_LABEL_WITNESS_RE, "speaker_witness"),
+            (_SPEAKER_LABEL_VIDEOGRAPHER_RE, "speaker_videographer"),
+            (_SPEAKER_LABEL_ATTORNEY_RE, "speaker_attorney"),
+            (_SPEAKER_LABEL_BY_RE, "speaker_by"),
+        ):
+            for match in pattern.finditer(content):
+                start_idx = f"1.0+{match.start(1)}c"
+                end_idx = f"1.0+{match.end(1) + 1}c"  # +1 to include the colon
+                widget.tag_add(tag, start_idx, end_idx)
 
     def _apply_confidence_highlights(self) -> None:
         widget = self._textbox._textbox
