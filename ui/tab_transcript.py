@@ -263,6 +263,9 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._highlight_var = ctk.BooleanVar(value=True)
         self._build_ui()
+        # Open the bottom panel (audio controls + low-confidence list) by
+        # default so the review tools are immediately discoverable.
+        self._toggle_bottom_panel()
         self._init_player()
 
     def _active_transcript_path(self) -> str | None:
@@ -407,6 +410,64 @@ class TranscriptTab(ctk.CTkFrame):
             state="disabled",
         )
         self._save_btn.pack(side="right", padx=(4, 0))
+
+        # ── Always-visible review row ────────────────────────────────────────
+        # Counts on the left (Flagged / Reviewed / Remaining), navigation
+        # buttons on the right (Prev / Next / Mark Reviewed). All three
+        # buttons mirror the bottom-panel buttons - same handlers, same
+        # state - so the existing review workflow keeps working.
+        review_row = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=0, height=28)
+        review_row.pack(fill="x", padx=0, pady=(0, 1))
+        review_row.pack_propagate(False)
+
+        self._review_counts_label = ctk.CTkLabel(
+            review_row,
+            text="Flagged: 0 · Reviewed: 0 · Remaining: 0",
+            font=ctk.CTkFont(size=11),
+            text_color="#7D8FA3",
+            anchor="w",
+        )
+        self._review_counts_label.pack(side="left", padx=10)
+
+        self._header_confirm_btn = ctk.CTkButton(
+            review_row,
+            text="Mark Reviewed",
+            width=120,
+            height=22,
+            fg_color="#1A6B3A",
+            hover_color="#145230",
+            font=ctk.CTkFont(size=11),
+            command=self._confirm_current_word,
+        )
+        self._header_confirm_btn.pack(side="right", padx=(0, 10))
+
+        self._header_next_btn = ctk.CTkButton(
+            review_row,
+            text="Next ▶",
+            width=70,
+            height=22,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#334",
+            text_color="#8ab",
+            font=ctk.CTkFont(size=11),
+            command=self._go_to_next_flagged,
+        )
+        self._header_next_btn.pack(side="right", padx=(0, 4))
+
+        self._header_prev_btn = ctk.CTkButton(
+            review_row,
+            text="◀ Prev",
+            width=70,
+            height=22,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#334",
+            text_color="#8ab",
+            font=ctk.CTkFont(size=11),
+            command=self._go_to_previous_flagged,
+        )
+        self._header_prev_btn.pack(side="right", padx=(0, 4))
 
         self._status_bar = ctk.CTkFrame(self, height=22, fg_color="#0A1520", corner_radius=0)
         self._status_bar.pack(fill="x", padx=0, pady=(0, 1))
@@ -1470,6 +1531,7 @@ class TranscriptTab(ctk.CTkFrame):
                 text="Confidence: no word-level data found",
                 text_color="#9AA3B2",
             )
+            self._update_review_counts(flagged=0, reviewed=0, remaining=0)
             return
         pending_items = list(self._iter_pending_confidence_items())
         critical = sum(1 for _, _, confidence in pending_items if confidence < CONFIDENCE_RED_THRESHOLD)
@@ -1486,6 +1548,28 @@ class TranscriptTab(ctk.CTkFrame):
                 f"Needs Review (50-75%): {amber} words"
             ),
             text_color=flagged_color,
+        )
+
+        # Counts for the always-visible header review row. 'flagged' is every
+        # word that ever entered review_state (regardless of current status);
+        # 'reviewed' is confirmed/corrected; 'remaining' is still pending.
+        flagged = len(self.review_state)
+        remaining = sum(1 for state in self.review_state.values() if state == "pending")
+        reviewed = flagged - remaining
+        self._update_review_counts(flagged=flagged, reviewed=reviewed, remaining=remaining)
+
+    def _update_review_counts(self, *, flagged: int, reviewed: int, remaining: int) -> None:
+        if not hasattr(self, "_review_counts_label"):
+            return
+        if remaining > 0:
+            color = "#E8B83A"
+        elif flagged > 0:
+            color = "#44AA44"
+        else:
+            color = "#7D8FA3"
+        self._review_counts_label.configure(
+            text=f"Flagged: {flagged} · Reviewed: {reviewed} · Remaining: {remaining}",
+            text_color=color,
         )
 
     def _render_with_confidence(self, words: list[dict]):
