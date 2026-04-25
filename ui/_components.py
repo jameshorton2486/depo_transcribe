@@ -55,6 +55,19 @@ BTN_OUTLINE_BORDER = "#334455"
 BTN_OUTLINE_TEXT = "#8AB"
 
 
+# ── Card spacing + border (Phase 2 - Commit 8) ───────────────────────────────
+# Single source of truth for the "card" surface used on each tab so spacing
+# and borders stay consistent. CARD_GAP_PY is the vertical breathing room
+# between two stacked cards (= 2/8" at 96 DPI). CARD_INNER_PADX/PADY are the
+# padding from the card border to its inner content frame.
+
+CARD_BORDER_COLOR = "#2A3A4A"
+CARD_BORDER_WIDTH = 1
+CARD_GAP_PY = 24
+CARD_INNER_PADX = 12
+CARD_INNER_PADY = 10
+
+
 def make_section_header(
     parent,
     text: str,

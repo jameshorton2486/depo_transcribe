@@ -23,6 +23,11 @@ from ui._components import (
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
+    CARD_BORDER_COLOR,
+    CARD_BORDER_WIDTH,
+    CARD_GAP_PY,
+    CARD_INNER_PADX,
+    CARD_INNER_PADY,
     make_section_header,
 )
 
@@ -903,13 +908,17 @@ class TranscribeTab(ctk.CTkFrame):
         container.pack(side="top", fill="x", padx=10, pady=(1, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
-        # CARD_GAP_PY = 2/8" (24 px @ 96 DPI) of breathing room between every
-        # major section card on this tab.
-        file_card = ctk.CTkFrame(container)
-        file_card.pack(fill="x", pady=(0, 24))
+        # Every top-level card on this tab uses the shared CARD_* constants
+        # from ui/_components.py so spacing + borders stay in sync.
+        file_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        file_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_row.pack(fill="x", padx=6, pady=2)
+        file_row.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
         ctk.CTkLabel(
             file_row,
@@ -943,11 +952,15 @@ class TranscribeTab(ctk.CTkFrame):
         # the public load_case_folder() method, called from Tab 2.
 
         # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
-        settings_card = ctk.CTkFrame(container)
-        settings_card.pack(fill="x", pady=(0, 24))
+        settings_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        settings_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
-        settings_row.pack(fill="x", padx=6, pady=1)
+        settings_row.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
         # Model - label inline with combo, single line
         ctk.CTkLabel(
@@ -995,11 +1008,15 @@ class TranscribeTab(ctk.CTkFrame):
         self._audio_tier_label.pack(side="left")
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
-        case_card = ctk.CTkFrame(container)
-        case_card.pack(fill="x", pady=(0, 24))
+        case_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        case_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
         case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
-        case_inner.pack(fill="x", padx=6, pady=(1, 0))
+        case_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
         case_inner.columnconfigure((0, 1, 2, 3), weight=1)
 
         base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
@@ -1061,11 +1078,15 @@ class TranscribeTab(ctk.CTkFrame):
         self._update_path_preview()
 
         # ── 5. Case Files / Output ───────────────────────────────────────────
-        source_docs_card = ctk.CTkFrame(container)
-        source_docs_card.pack(fill="x", pady=(0, 24))
+        source_docs_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        source_docs_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
-        kt_inner.pack(fill="x", padx=6, pady=(1, 1))
+        kt_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
         # ── Single inline toolbar: Upload / Notes / Folder / Transcript on
         #     the left, Re-Scan / Review & Edit / status on the right. ──────
@@ -1154,7 +1175,11 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._extract_status_label.pack(side="right", padx=(0, 8))
         # ── Speaker Labels (hidden until transcript completes) ──────────────
-        self._speaker_card = ctk.CTkFrame(container)
+        self._speaker_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
         # Not packed yet — shown by _show_speaker_section() after transcription
 
         make_section_header(
@@ -2269,7 +2294,7 @@ class TranscribeTab(ctk.CTkFrame):
                         command=lambda e=entry, value=label: self._set_speaker_entry_value(e, value),
                     ).pack(side="left", padx=(0, 6))
 
-        self._speaker_card.pack(fill="both", expand=True, pady=(0, 24))
+        self._speaker_card.pack(fill="both", expand=True, pady=(0, CARD_GAP_PY))
 
     @staticmethod
     def _set_speaker_entry_value(entry: ctk.CTkEntry, value: str):
