@@ -28,6 +28,8 @@ from ui._components import (
     BTN_AI_PURPLE_HOVER,
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
+    BTN_UTILITY_BLUE,
+    BTN_UTILITY_BLUE_HOVER,
 )
 from core.job_config_manager import load_job_config, merge_and_save
 from core.vlc_player import VLCPlayer
@@ -353,6 +355,19 @@ class TranscriptTab(ctk.CTkFrame):
             command=self._browse_transcript_file,
         )
         self._open_file_btn.pack(side="right", padx=(4, 0))
+
+        # Load a full case folder (transcript + NOD PDF + saved settings).
+        # Delegates to TranscribeTab.load_case_folder so the case metadata
+        # on Tab 1 stays populated for re-transcription.
+        self._load_case_btn = ctk.CTkButton(
+            header,
+            text="📁 Load Case",
+            width=130,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            command=self._browse_case_folder,
+        )
+        self._load_case_btn.pack(side="right", padx=(4, 0))
 
         self._run_corrections_btn = ctk.CTkButton(
             header,
@@ -1879,6 +1894,28 @@ class TranscriptTab(ctk.CTkFrame):
         )
         if path:
             self.load_transcript(path)
+
+    def _browse_case_folder(self):
+        """
+        Pick a case folder and load the full case: transcript, NOD PDF,
+        UFM fields, and saved transcription settings. Delegates to
+        TranscribeTab.load_case_folder so Tab 1 stays the single source
+        of truth for case metadata population.
+        """
+        folder = filedialog.askdirectory(
+            title="Select Case Folder  (e.g. coger_matthew)",
+            mustexist=True,
+        )
+        if not folder:
+            return
+        try:
+            self.winfo_toplevel().transcribe_tab.load_case_folder(folder)
+        except Exception:
+            logger.exception("[LoadCase] Failed to load case folder: %s", folder)
+            messagebox.showerror(
+                "Load Case Failed",
+                f"Could not load case folder:\n{folder}\n\nSee logs for details.",
+            )
 
     def _browse_audio_file(self):
         path = filedialog.askopenfilename(

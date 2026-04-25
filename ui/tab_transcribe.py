@@ -1944,6 +1944,20 @@ class TranscribeTab(ctk.CTkFrame):
         app.transcript_tab.set_status("Correction mode — editing existing transcript", "#7DD8E8")
         app.tab_view.set("Transcript")
 
+    def load_case_folder(self, folder: str) -> None:
+        """
+        Public entry point for loading a case folder. Driven from the
+        Transcript tab's 'Load Case' button.
+
+        Populates this tab's case metadata (cause, witness, dates),
+        auto-loads the NOD PDF from source_docs/, restores saved
+        transcription settings from job_config.json, and pushes the
+        most recent .txt transcript into the Transcript tab.
+        """
+        self._load_project_folder(folder)
+        if self._loaded_transcript_path:
+            self._open_loaded_transcript()
+
     def _clear_correction_mode(self):
         """Exit correction mode and reset the load panel."""
         self._correction_mode = False
