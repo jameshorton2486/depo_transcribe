@@ -328,3 +328,145 @@ def test_on_tab_focus_refreshes_library(tab, monkeypatch):
     tab.on_tab_focus()
     assert len(tab._active_rules_container.winfo_children()) == 1
     assert tab._library_count_pill.text_label.cget("text") == "1 rule"
+
+
+# ── Active Library — toggle + delete (commit H) ──────────────────────────────
+
+
+def test_active_card_renders_with_delete_button_in_h(tab, monkeypatch):
+    # After H, on_delete is passed → make_rule_card renders the X button.
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b")],
+    )
+    tab._refresh_active_rules()
+    card = tab._active_rules_container.winfo_children()[0]
+    assert hasattr(card, "delete_btn")
+
+
+def test_active_card_dot_is_clickable_in_h(tab, monkeypatch):
+    # After H, on_toggle is passed → the dot has a Button-1 binding.
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules",
+        lambda: [_exact_with_state("usr_001", "a", "b")],
+    )
+    tab._refresh_active_rules()
+    card = tab._active_rules_container.winfo_children()[0]
+    bindings = card.dot._canvas.bind()
+    assert "<Button-1>" in bindings
+
+
+def test_on_toggle_rule_calls_set_rule_enabled_with_inverted_state(tab, monkeypatch):
+    received = []
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.set_rule_enabled",
+        lambda rid, enabled: received.append((rid, enabled)) or True,
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    tab._on_toggle_rule("usr_042", False)
+    assert received == [("usr_042", False)]
+
+
+def test_on_toggle_rule_refreshes_library_on_success(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.set_rule_enabled",
+        lambda _id, _enabled: True,
+    )
+    refreshed = []
+    monkeypatch.setattr(
+        tab, "_refresh_active_rules",
+        lambda: refreshed.append(True),
+    )
+    tab._on_toggle_rule("usr_001", False)
+    assert refreshed == [True]
+
+
+def test_on_toggle_rule_shows_error_status_on_not_found(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.set_rule_enabled",
+        lambda _id, _enabled: False,
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    tab._on_toggle_rule("usr_999", True)
+    assert "not found" in tab._status_label.cget("text").lower()
+
+
+def test_on_delete_rule_confirms_before_calling_delete(tab, monkeypatch):
+    delete_calls = []
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.delete_rule",
+        lambda rid: delete_calls.append(rid) or True,
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    monkeypatch.setattr(
+        "tkinter.messagebox.askyesno", lambda *_a, **_k: False
+    )
+    tab._on_delete_rule("usr_001")
+    assert delete_calls == []
+
+
+def test_on_delete_rule_calls_delete_when_confirmed(tab, monkeypatch):
+    delete_calls = []
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.delete_rule",
+        lambda rid: delete_calls.append(rid) or True,
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    monkeypatch.setattr(
+        "tkinter.messagebox.askyesno", lambda *_a, **_k: True
+    )
+    tab._on_delete_rule("usr_001")
+    assert delete_calls == ["usr_001"]
+
+
+def test_on_delete_rule_refreshes_library_after_success(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.delete_rule", lambda _id: True
+    )
+    monkeypatch.setattr(
+        "tkinter.messagebox.askyesno", lambda *_a, **_k: True
+    )
+    refreshed = []
+    monkeypatch.setattr(
+        tab, "_refresh_active_rules",
+        lambda: refreshed.append(True),
+    )
+    tab._on_delete_rule("usr_001")
+    assert refreshed == [True]
+
+
+def test_on_delete_rule_shows_success_status(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.delete_rule", lambda _id: True
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    monkeypatch.setattr(
+        "tkinter.messagebox.askyesno", lambda *_a, **_k: True
+    )
+    tab._on_delete_rule("usr_042")
+    assert "deleted" in tab._status_label.cget("text").lower()
+    assert "usr_042" in tab._status_label.cget("text")
+
+
+def test_on_delete_rule_shows_error_status_when_not_found(tab, monkeypatch):
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.delete_rule", lambda _id: False
+    )
+    monkeypatch.setattr(
+        "spec_engine.user_rule_store.load_all_rules", lambda: []
+    )
+    monkeypatch.setattr(
+        "tkinter.messagebox.askyesno", lambda *_a, **_k: True
+    )
+    tab._on_delete_rule("usr_999")
+    assert "not found" in tab._status_label.cget("text").lower()

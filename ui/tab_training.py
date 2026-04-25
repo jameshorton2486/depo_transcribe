@@ -405,6 +405,46 @@ class TrainingTab(ctk.CTkFrame):
         else:
             self._set_status("No rules file yet — generate and approve rules first.")
 
+    def _on_toggle_rule(self, rule_id: str, new_enabled: bool) -> None:
+        # Click on the active card's status dot. set_rule_enabled returns
+        # True for both real changes and no-ops; either way the rule
+        # exists, so refresh the library to repaint the dot in the new
+        # state. False means the rule disappeared between render and
+        # click — surface that as a status error and refresh anyway so
+        # the user sees the actual state on disk.
+        from spec_engine.user_rule_store import set_rule_enabled
+
+        if set_rule_enabled(rule_id, new_enabled):
+            self._refresh_active_rules()
+        else:
+            self._set_status(
+                f"Toggle failed: rule {rule_id} not found.", "#FF4444"
+            )
+            self._refresh_active_rules()
+
+    def _on_delete_rule(self, rule_id: str) -> None:
+        # Always confirm — a click on the trash X is destructive and
+        # there's no undo path through the UI.
+        from tkinter import messagebox
+
+        from spec_engine.user_rule_store import delete_rule
+
+        if not messagebox.askyesno(
+            "Delete rule",
+            f"Delete rule {rule_id}? This cannot be undone.",
+        ):
+            return
+
+        if delete_rule(rule_id):
+            self._set_status(f"✓ Rule {rule_id} deleted.", "#44CC88")
+        else:
+            self._set_status(
+                f"Delete failed: rule {rule_id} not found.", "#FF4444"
+            )
+        # Refresh either way: success removes the row, "not found" means
+        # the on-disk view differs from what the UI was showing.
+        self._refresh_active_rules()
+
     def _refresh_active_rules(self):
         from spec_engine.user_rule_store import load_all_rules
 
@@ -442,9 +482,8 @@ class TrainingTab(ctk.CTkFrame):
                 description=rule.get("description", ""),
                 variant="active",
                 enabled=rule.get("enabled", True),
-                # on_toggle / on_delete deliberately not wired in commit G —
-                # commit H lights up the API surface from commit A. Until
-                # then the dot is decorative and there's no delete button.
+                on_toggle=self._on_toggle_rule,
+                on_delete=self._on_delete_rule,
             )
             card.pack(fill="x", pady=(0, 6))
 
