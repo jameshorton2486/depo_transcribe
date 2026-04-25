@@ -102,6 +102,44 @@ PILL_BLUE_BORDER = "#142333"   # 20% 3A7FBF
 PILL_BLUE_TEXT = SECTION_HEADER_ACCENT
 
 
+_PILL_VARIANTS = {
+    "amber": (PILL_AMBER_BG, PILL_AMBER_BORDER, PILL_AMBER_TEXT),
+    "blue": (PILL_BLUE_BG, PILL_BLUE_BORDER, PILL_BLUE_TEXT),
+}
+
+
+def make_status_pill(
+    parent,
+    text: str,
+    *,
+    variant: str = "amber",
+) -> ctk.CTkFrame:
+    """
+    Build a small rounded badge: colored fill + matching 1-px border + bold
+    label. Used for counts like "Flagged: 5", "Reviewed: 120". Caller packs
+    or grids the returned frame however they need.
+
+    `variant` selects from _PILL_VARIANTS — KeyError if the name is unknown,
+    which is intentional so a typo fails loudly rather than silently picking
+    a default color.
+    """
+    bg, border, text_color = _PILL_VARIANTS[variant]
+    pill = ctk.CTkFrame(
+        parent,
+        fg_color=bg,
+        border_color=border,
+        border_width=1,
+        corner_radius=8,
+    )
+    ctk.CTkLabel(
+        pill,
+        text=text,
+        text_color=text_color,
+        font=ctk.CTkFont(size=10, weight="bold"),
+    ).pack(padx=8, pady=2)
+    return pill
+
+
 def make_section_header(
     parent,
     text: str,
