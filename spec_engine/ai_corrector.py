@@ -188,16 +188,48 @@ def _validate_ai_output(original: str, candidate: str) -> bool:
 
 # ── AI correction runner ──────────────────────────────────────────────────────
 
+# Order of CASE METADATA fields shown to the AI. Listed top-down so the
+# fields most likely to anchor a phonetic correction (cause number,
+# witness name) come first. CSR and court fields anchor the reporter's
+# preamble passage, where Deepgram routinely garbles formal phrases.
+_CASE_METADATA_FIELDS: list[tuple[str, str]] = [
+    ("cause_number", "Cause Number"),
+    ("witness_name", "Witness"),
+    ("reporter_name", "Reporter"),
+    ("csr_number", "CSR No."),
+    ("judicial_district", "Judicial District"),
+    ("court_caption", "Court"),
+    ("depo_date", "Deposition Date"),
+]
+
+
 def _build_user_prompt(
     transcript_text: str,
     proper_nouns: list[str],
     speaker_map: dict,
     confirmed_spellings: dict,
     post_record_spellings: list = None,
+    case_metadata: dict | None = None,
     user_prompt_template: str = "{context}Please apply all rules to the following transcript:\n\n{transcript}",
 ) -> str:
     """Build the user-turn prompt with case-specific context."""
     parts = []
+
+    if case_metadata:
+        # Skip empty values so a partially-populated job_config doesn't
+        # render "Reporter: " with no name; an empty anchor is worse
+        # than no anchor at all.
+        rendered = [
+            f"  {label}: {case_metadata[key]}"
+            for key, label in _CASE_METADATA_FIELDS
+            if str(case_metadata.get(key, "") or "").strip()
+        ]
+        if rendered:
+            parts.append(
+                "CASE METADATA (use these formal values when correcting "
+                "the reporter's preamble or any reference to the case "
+                "itself):\n" + "\n".join(rendered)
+            )
 
     if proper_nouns:
         parts.append(
@@ -360,6 +392,23 @@ def run_ai_correction(
             job_config.get('post_record_spellings', []) or []
         )
 
+    # Pull case metadata from either the JobConfig dataclass (top-level
+    # attributes) or a dict-shaped config (the loaded job_config.json,
+    # where these fields live under "ufm_fields"). Empty values are
+    # filtered later inside _build_user_prompt so a partially-populated
+    # config doesn't render labels with no value.
+    case_metadata: dict = {}
+    for key, _label in _CASE_METADATA_FIELDS:
+        if hasattr(job_config, key):
+            case_metadata[key] = getattr(job_config, key, "") or ""
+        elif isinstance(job_config, dict):
+            ufm = job_config.get("ufm_fields", {}) if isinstance(job_config.get("ufm_fields"), dict) else {}
+            case_metadata[key] = (
+                job_config.get(key)
+                or ufm.get(key)
+                or ""
+            )
+
     try:
         prompt_pack = load_prompt_pack()
     except Exception as exc:
@@ -385,6 +434,7 @@ def run_ai_correction(
             speaker_map,
             confirmed_spellings,
             post_record_spellings,
+            case_metadata,
             prompt_pack.user_prompt_template,
         )
         logger.info(

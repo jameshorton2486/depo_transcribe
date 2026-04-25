@@ -111,6 +111,92 @@ class TestBuildUserPrompt:
         assert "Coger" in prompt
 
 
+class TestCaseMetadataInPrompt:
+    """The CASE METADATA block anchors the AI's correction of the
+    reporter's preamble passage (cause number, judicial district, CSR
+    number) where Deepgram routinely garbles formal phrases. Each test
+    verifies one field is rendered when populated and omitted when
+    blank, so a partially-filled job_config doesn't render labels with
+    no value."""
+
+    def _meta(self, **overrides):
+        # Helper: start with all empty, override the fields under test.
+        base = {
+            "cause_number": "",
+            "witness_name": "",
+            "reporter_name": "",
+            "csr_number": "",
+            "judicial_district": "",
+            "court_caption": "",
+            "depo_date": "",
+        }
+        base.update(overrides)
+        return base
+
+    def test_cause_number_included_when_populated(self):
+        prompt = _build_user_prompt(
+            "text", [], {}, {}, None,
+            self._meta(cause_number="2025-CI-23267"),
+        )
+        assert "Cause Number: 2025-CI-23267" in prompt
+
+    def test_witness_name_included_when_populated(self):
+        prompt = _build_user_prompt(
+            "text", [], {}, {}, None,
+            self._meta(witness_name="Peter Durai Singh"),
+        )
+        assert "Witness: Peter Durai Singh" in prompt
+
+    def test_reporter_and_csr_both_rendered_when_present(self):
+        prompt = _build_user_prompt(
+            "text", [], {}, {}, None,
+            self._meta(reporter_name="Miah Bardot", csr_number="12129"),
+        )
+        assert "Reporter: Miah Bardot" in prompt
+        assert "CSR No.: 12129" in prompt
+
+    def test_judicial_district_and_court_caption_included(self):
+        prompt = _build_user_prompt(
+            "text", [], {}, {}, None,
+            self._meta(
+                judicial_district="408TH",
+                court_caption="408TH JUDICIAL DISTRICT COURT, BEXAR COUNTY, TEXAS",
+            ),
+        )
+        assert "Judicial District: 408TH" in prompt
+        assert "Court: 408TH JUDICIAL DISTRICT COURT, BEXAR COUNTY, TEXAS" in prompt
+
+    def test_empty_field_is_skipped_no_dangling_label(self):
+        # csr_number empty should NOT render "CSR No.:" with no value.
+        prompt = _build_user_prompt(
+            "text", [], {}, {}, None,
+            self._meta(reporter_name="Miah Bardot"),  # csr_number stays ""
+        )
+        assert "Reporter: Miah Bardot" in prompt
+        assert "CSR No.:" not in prompt
+
+    def test_no_metadata_omits_section_entirely(self):
+        # When every field is empty (or case_metadata=None), the
+        # CASE METADATA: section is not rendered at all.
+        prompt = _build_user_prompt("text", [], {}, {}, None, None)
+        assert "CASE METADATA" not in prompt
+
+    def test_all_empty_metadata_dict_omits_section(self):
+        prompt = _build_user_prompt("text", [], {}, {}, None, self._meta())
+        assert "CASE METADATA" not in prompt
+
+    def test_case_metadata_section_appears_before_proper_nouns(self):
+        # Ordering: CASE METADATA first so the AI sees the formal
+        # values before the keyterm list.
+        prompt = _build_user_prompt(
+            "text", ["Coger"], {}, {}, None,
+            self._meta(cause_number="X"),
+        )
+        meta_pos = prompt.index("CASE METADATA")
+        proper_pos = prompt.index("PROPER NOUNS")
+        assert meta_pos < proper_pos
+
+
 class TestPromptSafety:
 
     def test_prompt_forbids_structure_changes(self):
