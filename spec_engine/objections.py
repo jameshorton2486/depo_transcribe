@@ -82,6 +82,25 @@ def _get_config_value(job_config: Any, key: str, default: Any = None) -> Any:
     return default
 
 
+def _extract_counsel_name_title(entry: Any) -> tuple[str, str]:
+    """
+    Pull (name, title) out of a counsel entry. Handles both shapes:
+    a CounselInfo-style object (test fixtures, in-memory promotion)
+    and a plain dict (JSON-loaded job_config). The dataclass branch
+    of _resolve_objection_speaker previously only handled the object
+    shape — when defense_counsel arrived as a list of dicts on a
+    dataclass-shaped JobConfig, getattr(first, "name") returned ""
+    and the branch silently fell through.
+    """
+    if isinstance(entry, dict):
+        name = (entry.get("name") or "").strip()
+        title = (entry.get("title") or "MR.").strip()
+    else:
+        name = (getattr(entry, "name", "") or "").strip()
+        title = (getattr(entry, "title", "") or "MR.").strip()
+    return name, title
+
+
 def _resolve_objection_speaker(job_config: Any) -> str:
     """
     Resolve the display name for objection speaker labels.
@@ -108,11 +127,9 @@ def _resolve_objection_speaker(job_config: Any) -> str:
     if hasattr(job_config, "defense_counsel"):
         counsel_list = getattr(job_config, "defense_counsel", []) or []
         if counsel_list:
-            first = counsel_list[0]
-            name = getattr(first, "name", "") or ""
-            if name.strip():
-                title = (getattr(first, "title", "") or "MR.").strip()
-                parts = name.strip().split()
+            name, title = _extract_counsel_name_title(counsel_list[0])
+            if name:
+                parts = name.split()
                 last = parts[-1].upper() if parts else name.upper()
                 resolved = f"{title} {last}"
                 _log.debug("Objection speaker resolved from defense_counsel: %s", resolved)
@@ -127,14 +144,13 @@ def _resolve_objection_speaker(job_config: Any) -> str:
             )
             return resolved
         if isinstance(defense, list) and defense:
-            first = defense[0]
-            if isinstance(first, dict) and (first.get("name") or "").strip():
-                title = (first.get("title") or "MR.").strip()
-                parts = first["name"].strip().split()
-                last = parts[-1].upper() if parts else first["name"].upper()
+            name, title = _extract_counsel_name_title(defense[0])
+            if name:
+                parts = name.split()
+                last = parts[-1].upper() if parts else name.upper()
                 resolved = f"{title} {last}"
                 _log.debug(
-                    "Objection speaker resolved from defense_counsel dict: %s",
+                    "Objection speaker resolved from defense_counsel list: %s",
                     resolved,
                 )
                 return resolved

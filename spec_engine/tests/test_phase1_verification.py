@@ -430,6 +430,48 @@ class TestFix1C_ObjectionSpeakerResolution:
         assert result != "MR. UNKNOWN"
         assert "BOYCE" in result.upper(), f"Got: {result!r}"
 
+    def test_resolves_dataclass_with_dict_shaped_defense_counsel(self):
+        """JobConfig dataclass whose `defense_counsel` attribute is a list
+        of plain dicts (e.g. loaded from JSON without CounselInfo
+        promotion) must still resolve. Previously this path silently
+        fell through because getattr(dict_entry, "name") returns "" and
+        the branch's name.strip() check failed. Now both shapes go
+        through _extract_counsel_name_title."""
+        cfg = JobConfig(
+            speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+            examining_attorney_id=2,
+            speaker_map_verified=True,
+        )
+        # Bypass dataclass typing — represents what production sees when
+        # job_config.json is loaded directly without CounselInfo
+        # promotion of the entries.
+        cfg.defense_counsel = [{"name": "David Boyce", "title": "MR."}]
+        result = _resolve_objection_speaker(cfg)
+        assert "BOYCE" in result.upper(), f"Got: {result!r}"
+        assert result != "COUNSEL"  # would be the step-3 fallback if step 2 failed
+
+    def test_dict_entry_without_title_defaults_to_mr(self):
+        cfg = JobConfig(
+            speaker_map={1: "THE WITNESS", 2: "MR. ALLAN"},
+            examining_attorney_id=2,
+            speaker_map_verified=True,
+        )
+        cfg.defense_counsel = [{"name": "Bernardo Gonzalez"}]  # no title key
+        result = _resolve_objection_speaker(cfg)
+        assert result == "MR. GONZALEZ", f"Got: {result!r}"
+
+    def test_empty_defense_counsel_list_falls_through_to_speaker_map(self):
+        # When defense_counsel is an empty list, step 2 must fall through
+        # to step 3 (speaker_map fallback) rather than returning "MR. ".
+        cfg = JobConfig(
+            speaker_map={1: "THE WITNESS", 2: "MR. ALLAN", 3: "MR. BOYCE"},
+            examining_attorney_id=2,
+            speaker_map_verified=True,
+        )
+        cfg.defense_counsel = []
+        result = _resolve_objection_speaker(cfg)
+        assert "BOYCE" in result.upper(), f"Got: {result!r}"
+
     # ── Priority 3: any non-examining attorney in speaker_map ────────────────
 
     def test_resolves_any_attorney_when_no_defense_label(self):
