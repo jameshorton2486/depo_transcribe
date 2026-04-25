@@ -867,8 +867,11 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _build_ui(self):
         # ── Fixed amber footer — CREATE TRANSCRIPT (full width, compact) ─────
-        footer = ctk.CTkFrame(self, fg_color="transparent", height=38)
-        footer.pack(fill="x", side="bottom", padx=8, pady=(1, 1))
+        # Footer height matches the button height so there is no empty space
+        # above or below the button. pady (0, 1) removes the 1px gap that
+        # used to sit between the scrollable container and the button.
+        footer = ctk.CTkFrame(self, fg_color="transparent", height=32)
+        footer.pack(fill="x", side="bottom", padx=8, pady=(0, 1))
         footer.pack_propagate(False)
 
         self._create_btn = ctk.CTkButton(
@@ -880,7 +883,7 @@ class TranscribeTab(ctk.CTkFrame):
             hover_color="#9A7209",
             command=self.start_transcription,
         )
-        self._create_btn.pack(fill="x")
+        self._create_btn.pack(fill="both", expand=True)
 
         container = ctk.CTkScrollableFrame(self, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=10, pady=(1, 0))
