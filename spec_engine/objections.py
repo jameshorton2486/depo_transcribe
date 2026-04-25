@@ -155,6 +155,8 @@ def _resolve_objection_speaker(job_config: Any) -> str:
                 )
                 return resolved
 
+    witness_id = _get_config_value(job_config, "witness_id")
+
     for sid, label in speaker_map.items():
         label_upper = (label or "").upper()
         # Exclude the reporter — "Ms. Bardot" would otherwise match the
@@ -163,7 +165,13 @@ def _resolve_objection_speaker(job_config: Any) -> str:
             continue
         is_attorney = any(token in label_upper for token in _ATTORNEY_LABEL_TOKENS)
         is_examiner = examining_id is not None and str(sid) == str(examining_id)
-        if is_attorney and not is_examiner:
+        # Also exclude the witness. A witness labeled "MR. SINGH" matches
+        # the attorney token check (Mr.) — without this guard the loop
+        # would happily return the witness's own label as the objection
+        # speaker if the speaker_map ordering put the witness before any
+        # genuine attorney.
+        is_witness = witness_id is not None and str(sid) == str(witness_id)
+        if is_attorney and not is_examiner and not is_witness:
             _log.debug("Objection speaker resolved from attorney in speaker_map: %s", label)
             return label
 

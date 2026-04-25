@@ -472,6 +472,52 @@ class TestFix1C_ObjectionSpeakerResolution:
         result = _resolve_objection_speaker(cfg)
         assert "BOYCE" in result.upper(), f"Got: {result!r}"
 
+    def test_step_3_skips_witness_label_even_when_attorney_shaped(self):
+        # Witness labeled "MR. SINGH" matches the attorney token check.
+        # Without the witness_id exclusion in step 3, the loop would
+        # return the witness's own label as the objection speaker if
+        # the speaker_map ordering put the witness ahead of any genuine
+        # attorney. Force the issue: witness at id 2, opposing counsel
+        # at id 3, no defense_counsel populated, so step 3 fires.
+        cfg = JobConfig(
+            speaker_map={
+                0: "THE REPORTER",
+                1: "MR. EXAMINER",
+                2: "MR. SINGH",      # witness — labeled as attorney-shaped
+                3: "MR. OPPOSING",
+            },
+            examining_attorney_id=1,
+            witness_id=2,
+            speaker_map_verified=True,
+        )
+        cfg.defense_counsel = []
+        result = _resolve_objection_speaker(cfg)
+        assert result == "MR. OPPOSING", (
+            f"Expected MR. OPPOSING (witness MR. SINGH must be excluded), "
+            f"got: {result!r}"
+        )
+
+    def test_step_3_with_only_witness_attorney_falls_back_to_counsel(self):
+        # If the witness is the only attorney-shaped label and there's
+        # no other counsel anywhere, step 3 must fall through to the
+        # final "COUNSEL" fallback rather than return the witness label.
+        cfg = JobConfig(
+            speaker_map={
+                0: "THE REPORTER",
+                1: "MR. EXAMINER",
+                2: "MR. SINGH",  # witness, the only other attorney-shaped label
+            },
+            examining_attorney_id=1,
+            witness_id=2,
+            speaker_map_verified=True,
+        )
+        cfg.defense_counsel = []
+        result = _resolve_objection_speaker(cfg)
+        assert result == "COUNSEL", (
+            f"Expected COUNSEL fallback (witness MR. SINGH must be excluded "
+            f"and there's no other attorney), got: {result!r}"
+        )
+
     # ── Priority 3: any non-examining attorney in speaker_map ────────────────
 
     def test_resolves_any_attorney_when_no_defense_label(self):
