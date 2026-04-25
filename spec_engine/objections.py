@@ -10,6 +10,10 @@ from typing import Any, List
 
 from .models import Block, BlockType
 
+
+__all__ = ["extract_objections"]
+
+
 _log = logging.getLogger("spec_engine.objections")
 
 
@@ -23,6 +27,14 @@ OBJECTION_PATTERNS = [
     # correctly-formed text via OBJECTION_START_RE. Re-adding this pattern
     # would fire on already-corrected text.
 ]
+# Pre-compiled view of OBJECTION_PATTERNS — built once at import so
+# extract_objections() does not re-compile each pattern per block.
+# OBJECTION_PATTERNS itself stays as a list of strings to preserve the
+# public surface for any importers that read it as raw patterns.
+_OBJECTION_PATTERN_RES = [
+    re.compile(pattern, re.IGNORECASE) for pattern in OBJECTION_PATTERNS
+]
+
 CORRECTED_OBJECTION_FORM_RE = re.compile(r"\bobjection\.\s+form\.", re.IGNORECASE)
 
 # Instructions like "You can answer" sometimes appear as a separate block
@@ -44,6 +56,31 @@ _REPORTER_LABEL_TOKENS = frozenset({
     "REPORTER", "CSR", "COURT REPORTER", "NOTARY",
 })
 
+# Attorney label tokens — used to identify attorney-style speaker labels
+# during objection speaker fallback resolution. Mirrors the structure of
+# _REPORTER_LABEL_TOKENS for consistency.
+_ATTORNEY_LABEL_TOKENS = frozenset({
+    "MR.", "MS.", "MRS.", "DR.", "ATTORNEY", "COUNSEL",
+})
+
+
+# ── JobConfig accessor helper ────────────────────────────────────────────────
+# JobConfig may arrive as either a dataclass-style object or a plain dict.
+# Centralizes the dict-or-attr lookup that was previously inlined twice in
+# _resolve_objection_speaker. Note: the defense_counsel handling is NOT
+# routed through this helper — it does shape-dependent parsing that differs
+# between the object and dict branches.
+
+def _get_config_value(job_config: Any, key: str, default: Any = None) -> Any:
+    """Read a value from JobConfig (object) or dict, returning default if missing."""
+    if job_config is None:
+        return default
+    if hasattr(job_config, key):
+        return getattr(job_config, key, default)
+    if isinstance(job_config, dict):
+        return job_config.get(key, default)
+    return default
+
 
 def _resolve_objection_speaker(job_config: Any) -> str:
     """
@@ -56,17 +93,11 @@ def _resolve_objection_speaker(job_config: Any) -> str:
          AND NOT the reporter
       4. Fallback: "COUNSEL"  (never "MR. UNKNOWN")
     """
-    speaker_map: dict = {}
-    if hasattr(job_config, "speaker_map"):
-        speaker_map = getattr(job_config, "speaker_map", {}) or {}
-    elif isinstance(job_config, dict):
-        speaker_map = job_config.get("speaker_map", {}) or {}
+    speaker_map = _get_config_value(job_config, "speaker_map", {}) or {}
+    if not isinstance(speaker_map, dict):
+        speaker_map = {}
 
-    examining_id = None
-    if hasattr(job_config, "examining_attorney_id"):
-        examining_id = getattr(job_config, "examining_attorney_id", None)
-    elif isinstance(job_config, dict):
-        examining_id = job_config.get("examining_attorney_id")
+    examining_id = _get_config_value(job_config, "examining_attorney_id")
 
     for sid, label in speaker_map.items():
         label_upper = (label or "").upper()
@@ -114,10 +145,7 @@ def _resolve_objection_speaker(job_config: Any) -> str:
         # attorney token check and be returned as the objection speaker.
         if any(token in label_upper for token in _REPORTER_LABEL_TOKENS):
             continue
-        is_attorney = any(
-            token in label_upper
-            for token in ("MR.", "MS.", "MRS.", "DR.", "ATTORNEY", "COUNSEL")
-        )
+        is_attorney = any(token in label_upper for token in _ATTORNEY_LABEL_TOKENS)
         is_examiner = examining_id is not None and str(sid) == str(examining_id)
         if is_attorney and not is_examiner:
             _log.debug("Objection speaker resolved from attorney in speaker_map: %s", label)
@@ -166,8 +194,8 @@ def extract_objections(blocks: List[Block], job_config: Any) -> List[Block]:
             continue
 
         match = None
-        for pattern in OBJECTION_PATTERNS:
-            found_match = re.search(pattern, text, re.IGNORECASE)
+        for pattern in _OBJECTION_PATTERN_RES:
+            found_match = pattern.search(text)
             if found_match:
                 match = found_match
                 break
