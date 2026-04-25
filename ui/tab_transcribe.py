@@ -903,8 +903,10 @@ class TranscribeTab(ctk.CTkFrame):
         container.pack(side="top", fill="x", padx=10, pady=(1, 0))
 
         # ── SECTION 1: Audio File Card ───────────────────────────────────────
+        # CARD_GAP_PY = 2/8" (24 px @ 96 DPI) of breathing room between every
+        # major section card on this tab.
         file_card = ctk.CTkFrame(container)
-        file_card.pack(fill="x", pady=(0, 1))
+        file_card.pack(fill="x", pady=(0, 24))
 
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
         file_row.pack(fill="x", padx=6, pady=2)
@@ -942,7 +944,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
         settings_card = ctk.CTkFrame(container)
-        settings_card.pack(fill="x", pady=(0, 1))
+        settings_card.pack(fill="x", pady=(0, 24))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
         settings_row.pack(fill="x", padx=6, pady=1)
@@ -994,7 +996,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
-        case_card.pack(fill="x", pady=(0, 1))
+        case_card.pack(fill="x", pady=(0, 24))
 
         case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
         case_inner.pack(fill="x", padx=6, pady=(1, 0))
@@ -1060,7 +1062,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         # ── 5. Case Files / Output ───────────────────────────────────────────
         source_docs_card = ctk.CTkFrame(container)
-        source_docs_card.pack(fill="x", pady=(0, 1))
+        source_docs_card.pack(fill="x", pady=(0, 24))
 
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
         kt_inner.pack(fill="x", padx=6, pady=(1, 1))
@@ -1196,10 +1198,10 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._apply_save_btn.pack(anchor="e", padx=12, pady=(8, 10))
 
-        # Pack the action footer LAST so it sits immediately beneath the
-        # last content card. side='top' here (not 'bottom') is what removes
-        # the empty area above the button.
-        footer.pack(side="top", fill="x", padx=8, pady=(2, 1))
+        # Pack the action footer LAST so it sits beneath the last content
+        # card. side='top' here (not 'bottom') is what removes the empty
+        # area above the button.
+        footer.pack(side="top", fill="x", padx=8, pady=(0, 1))
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -2267,7 +2269,7 @@ class TranscribeTab(ctk.CTkFrame):
                         command=lambda e=entry, value=label: self._set_speaker_entry_value(e, value),
                     ).pack(side="left", padx=(0, 6))
 
-        self._speaker_card.pack(fill="both", expand=True, pady=(0, 10))
+        self._speaker_card.pack(fill="both", expand=True, pady=(0, 24))
 
     @staticmethod
     def _set_speaker_entry_value(entry: ctk.CTkEntry, value: str):
