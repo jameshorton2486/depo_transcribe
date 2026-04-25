@@ -23,6 +23,12 @@ import customtkinter as ctk
 
 from app_logging import get_logger
 from core.confidence_docx_exporter import export_confidence_docx
+from ui._components import (
+    BTN_AI_PURPLE,
+    BTN_AI_PURPLE_HOVER,
+    BTN_SAFE_GREEN,
+    BTN_SAFE_GREEN_HOVER,
+)
 from core.job_config_manager import load_job_config, merge_and_save
 from core.vlc_player import VLCPlayer
 from core.word_data_loader import get_flagged_summary, get_confidence_tier, load_words_for_transcript
@@ -352,8 +358,8 @@ class TranscriptTab(ctk.CTkFrame):
             header,
             text="⚙ Run Corrections",
             width=145,
-            fg_color="#1A6B3A",
-            hover_color="#145230",
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
             state="disabled",
             command=self._run_corrections_pipeline,
         )
@@ -366,8 +372,8 @@ class TranscriptTab(ctk.CTkFrame):
             header,
             text="✨ AI Correct",
             width=130,
-            fg_color="#6B2A8C",
-            hover_color="#4E1E66",
+            fg_color=BTN_AI_PURPLE,
+            hover_color=BTN_AI_PURPLE_HOVER,
             state="disabled",
             command=self._on_ai_correct_clicked,
         )
@@ -437,8 +443,8 @@ class TranscriptTab(ctk.CTkFrame):
             text="Mark Reviewed",
             width=120,
             height=22,
-            fg_color="#1A6B3A",
-            hover_color="#145230",
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
             font=ctk.CTkFont(size=11),
             command=self._confirm_current_word,
         )
@@ -984,7 +990,7 @@ class TranscriptTab(ctk.CTkFrame):
         # heading word (Status: / ERROR / Done / etc.) to avoid double
         # prefixes like 'Status: ERROR: ...'.
         msg = (text or "").strip() or "Ready"
-        if not msg.startswith(("Status:", "ERROR:", "Done", "✓", "⚠", "Failed")):
+        if not msg.startswith(("Status:", "ERROR:", "Error:", "Done", "✓", "⚠", "Failed")):
             msg = f"Status: {msg}"
         self._status_label.configure(text=msg, text_color=color)
         self._update_progress_from_message(text)

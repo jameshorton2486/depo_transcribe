@@ -21,6 +21,40 @@ import customtkinter as ctk
 SECTION_HEADER_ACCENT = "#3A7FBF"
 
 
+# ── Button color semantics (Phase 2 - Commit 7) ──────────────────────────────
+# Single source of truth for category buttons across all tabs. Only the
+# primary "category" buttons (CREATE TRANSCRIPT, Run Corrections, AI Correct,
+# Approve & Save, Browse, etc.) use these constants. Transient state
+# indicators (e.g. a "PDF Auto-Detected" success badge) are a different
+# semantic and intentionally use their own colors.
+#
+#   PRIMARY  (amber)   - the most expensive / most dominant action on a tab
+#                        Examples: CREATE TRANSCRIPT
+#   SAFE     (green)   - approve / commit / mark-reviewed actions
+#                        Examples: Run Corrections, Mark Reviewed, Approve & Save
+#   AI       (purple)  - AI-driven optional actions (Claude API calls)
+#                        Examples: AI Correct, Analyze & Generate Rules
+#   UTILITY  (blue)    - file / data intake actions
+#                        Examples: Browse, Upload
+#   OUTLINE  (gray)    - secondary actions; transparent fill + thin border
+#                        Examples: Clear, Re-Scan
+
+BTN_PRIMARY_AMBER = "#B8860B"
+BTN_PRIMARY_AMBER_HOVER = "#9A7209"
+
+BTN_SAFE_GREEN = "#1A6B3A"
+BTN_SAFE_GREEN_HOVER = "#145230"
+
+BTN_AI_PURPLE = "#6B2A8C"
+BTN_AI_PURPLE_HOVER = "#4E1E66"
+
+BTN_UTILITY_BLUE = "#1558C0"
+BTN_UTILITY_BLUE_HOVER = "#0F3E8A"
+
+BTN_OUTLINE_BORDER = "#334455"
+BTN_OUTLINE_TEXT = "#8AB"
+
+
 def make_section_header(
     parent,
     text: str,

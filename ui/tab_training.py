@@ -11,16 +11,28 @@ import threading
 
 import customtkinter as ctk
 
-from ui._components import make_section_header
+from ui._components import (
+    BTN_AI_PURPLE,
+    BTN_AI_PURPLE_HOVER,
+    BTN_SAFE_GREEN,
+    BTN_SAFE_GREEN_HOVER,
+    make_section_header,
+)
 
 
 class TrainingTab(ctk.CTkFrame):
-    _TEAL = "#0F5A6A"
-    _TEAL_HOVER = "#0A3A4A"
+    # 'Analyze & Generate Rules' is an AI action (calls Claude API) -
+    # the spec assigns AI/optional actions to BTN_AI_PURPLE.
+    # 'Approve & Save' is a safe-primary commit action -
+    # the spec assigns those to BTN_SAFE_GREEN.
+    # Local _TEAL/_AMBER/_GREEN_HOV constants kept for any non-button
+    # uses that may exist elsewhere in this file.
+    _TEAL = BTN_AI_PURPLE
+    _TEAL_HOVER = BTN_AI_PURPLE_HOVER
     _AMBER = "#B8860B"
     _AMBER_HOVER = "#9A7209"
-    _GREEN = "#1F5A2A"
-    _GREEN_HOV = "#155020"
+    _GREEN = BTN_SAFE_GREEN
+    _GREEN_HOV = BTN_SAFE_GREEN_HOVER
 
     def __init__(self, parent, **kwargs):
         super().__init__(parent, fg_color="transparent", **kwargs)

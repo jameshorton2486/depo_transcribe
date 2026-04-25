@@ -17,7 +17,14 @@ from typing import Any
 
 import customtkinter as ctk
 
-from ui._components import make_section_header
+from ui._components import (
+    BTN_PRIMARY_AMBER,
+    BTN_PRIMARY_AMBER_HOVER,
+    BTN_SAFE_GREEN,
+    BTN_SAFE_GREEN_HOVER,
+    BTN_UTILITY_BLUE,
+    make_section_header,
+)
 
 from app_logging import get_logger
 
@@ -879,8 +886,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="CREATE TRANSCRIPT",
             height=32,
             font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color="#B8860B",
-            hover_color="#9A7209",
+            fg_color=BTN_PRIMARY_AMBER,
+            hover_color=BTN_PRIMARY_AMBER_HOVER,
             command=self.start_transcription,
         )
         self._create_btn.pack(fill="both", expand=True)
@@ -922,7 +929,7 @@ class TranscribeTab(ctk.CTkFrame):
             file_row,
             text="Browse…",
             width=80,
-            fg_color="#1558C0",
+            fg_color=BTN_UTILITY_BLUE,
             hover_color="#0F3E8A",
             text_color="white",
             command=self._browse_file,
@@ -985,7 +992,7 @@ class TranscribeTab(ctk.CTkFrame):
             load_file_row,
             text="Browse…",
             width=80,
-            fg_color="#1558C0",
+            fg_color=BTN_UTILITY_BLUE,
             hover_color="#0F3E8A",
             text_color="white",
             command=self._browse_existing_transcript,
@@ -1292,8 +1299,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="\u2713  Apply Speaker Labels",
             height=32,
             font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color="#1558C0",
-            hover_color="#0F3E8A",
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
             text_color="white",
             command=self._apply_and_save_labels,
         )
