@@ -578,8 +578,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._speaker_map_btn_row,
             text="Apply Speaker Names",
             width=120,
-            fg_color="#1558C0",
-            hover_color="#0F3E8A",
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._apply_progressive_speaker_mapping,
         )
         self._apply_speakers_btn.pack(side="left", padx=(0, 6))
@@ -587,8 +587,8 @@ class TranscriptTab(ctk.CTkFrame):
             self._speaker_map_btn_row,
             text="Reset",
             width=90,
-            fg_color="#22384F",
-            hover_color="#2D4A69",
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._reset_progressive_speaker_mapping,
         )
         self._reset_speakers_btn.pack(side="left", padx=(0, 6))
@@ -802,7 +802,7 @@ class TranscriptTab(ctk.CTkFrame):
 
         self._fnr_replace_one_btn = ctk.CTkButton(
             fnr_inner, text="Replace Next", width=110,
-            fg_color="#1558C0", hover_color="#0F3E8A",
+            fg_color=BTN_UTILITY_BLUE, hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._fnr_replace_next,
         )
         self._fnr_replace_one_btn.pack(side="left", padx=(0, 6))
@@ -854,8 +854,8 @@ class TranscriptTab(ctk.CTkFrame):
             edit_tb_inner,
             text="↵  Insert Speaker Break",
             width=180,
-            fg_color="#1558C0",
-            hover_color="#0F3E8A",
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._insert_speaker_break,
         ).pack(side="left")
 
@@ -2311,7 +2311,8 @@ class TranscriptTab(ctk.CTkFrame):
         btn_row.pack(fill="x", padx=16)
         ctk.CTkButton(
             btn_row, text="Replace", width=100,
-            fg_color="#1558C0", command=_apply
+            fg_color=BTN_UTILITY_BLUE, hover_color=BTN_UTILITY_BLUE_HOVER,
+            command=_apply,
         ).pack(side="left")
         ctk.CTkButton(
             btn_row, text="Cancel", width=80,
@@ -2485,7 +2486,7 @@ class TranscriptTab(ctk.CTkFrame):
         else:
             self._fnr_bar.pack(fill="x", padx=0, pady=0, before=self._textbox)
             self._fnr_toggle_btn.configure(
-                fg_color="#1558C0", border_color="#1558C0", text_color="white"
+                fg_color=BTN_UTILITY_BLUE, border_color=BTN_UTILITY_BLUE, text_color="white"
             )
 
         self._find_entry.focus()

@@ -28,7 +28,12 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app_logging import get_logger
-from ui._components import BTN_UTILITY_BLUE, BTN_UTILITY_BLUE_HOVER
+from ui._components import (
+    BTN_AI_PURPLE,
+    BTN_AI_PURPLE_HOVER,
+    BTN_UTILITY_BLUE,
+    BTN_UTILITY_BLUE_HOVER,
+)
 
 logger = get_logger(__name__)
 
@@ -127,8 +132,8 @@ class CorrectionsTab(ctk.CTkFrame):
             text="AI Correct",
             width=110,
             height=36,
-            fg_color="#1E3A5F",
-            hover_color="#0F2A4F",
+            fg_color=BTN_AI_PURPLE,
+            hover_color=BTN_AI_PURPLE_HOVER,
             state="disabled",
             command=self._start_ai_correction,
         )

@@ -23,6 +23,7 @@ from ui._components import (
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
+    BTN_UTILITY_BLUE_HOVER,
     CARD_BORDER_COLOR,
     CARD_BORDER_WIDTH,
     CARD_GAP_PY,
@@ -36,7 +37,6 @@ from ui._components import (
 from app_logging import get_logger
 
 logger = get_logger(__name__)
-_DEFAULT_BUTTON_COLOR = ["#3B8ED0", "#1F6AA5"]
 
 
 # Default output directory
@@ -1130,6 +1130,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="\U0001f4c4  Upload NOD / PDF",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
             command=self._handle_pdf_upload,
         )
         self._upload_pdf_btn.pack(side="left", padx=(0, 6))
@@ -1139,6 +1141,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="\U0001f4dd  Reporter Notes",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
             command=self._upload_reporter_notes,
         )
         self._upload_reporter_notes_btn.pack(side="left", padx=(0, 6))
@@ -1330,14 +1334,14 @@ class TranscribeTab(ctk.CTkFrame):
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",
-            fg_color=_DEFAULT_BUTTON_COLOR,
+            fg_color=BTN_UTILITY_BLUE,
             state="normal",
         )
         # Open Output Folder + Open Transcript are pickers now — always enabled.
         self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
             text="\U0001f4dd  Reporter Notes",
-            fg_color=_DEFAULT_BUTTON_COLOR,
+            fg_color=BTN_UTILITY_BLUE,
         )
         self._set_case_files_panel_expanded(True)
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
@@ -1380,11 +1384,11 @@ class TranscribeTab(ctk.CTkFrame):
         self._review_btn.configure(state="disabled")
         self._upload_pdf_btn.configure(
             text="\U0001f4c4  Upload NOD / PDF",
-            fg_color=_DEFAULT_BUTTON_COLOR,
+            fg_color=BTN_UTILITY_BLUE,
         )
         self._upload_reporter_notes_btn.configure(
             text="\U0001f4dd  Reporter Notes",
-            fg_color=_DEFAULT_BUTTON_COLOR,
+            fg_color=BTN_UTILITY_BLUE,
         )
         self._extract_status_label.configure(
             text="Rescanning for source documents\u2026",
@@ -1922,7 +1926,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._upload_pdf_btn.configure(
             state="normal",
             text="PDF Auto-Detected" if auto_detected else "\U0001f4c4  Upload NOD / PDF",
-            fg_color="#2A6F3A" if auto_detected else _DEFAULT_BUTTON_COLOR,
+            fg_color="#2A6F3A" if auto_detected else BTN_UTILITY_BLUE,
         )
 
         _BADGE = {
@@ -2329,8 +2333,8 @@ class TranscribeTab(ctk.CTkFrame):
                         text=label,
                         height=24,
                         width=max(96, len(label) * 7),
-                        fg_color="#22384F",
-                        hover_color="#2D4A69",
+                        fg_color=BTN_UTILITY_BLUE,
+                        hover_color=BTN_UTILITY_BLUE_HOVER,
                         font=ctk.CTkFont(size=11),
                         command=lambda e=entry, value=label: self._set_speaker_entry_value(e, value),
                     ).pack(side="left", padx=(0, 6))
@@ -2412,7 +2416,7 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self.after(2500, lambda: self._apply_save_btn.configure(
             text="\u2713  Apply Speaker Labels",
-            fg_color="#1558C0",
+            fg_color=BTN_UTILITY_BLUE,
         ))
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
