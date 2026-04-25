@@ -73,3 +73,9 @@ def test_blue_label_text_color_is_blue(root):
 def test_unknown_variant_raises_keyerror(root):
     with pytest.raises(KeyError):
         make_status_pill(root, "X", variant="emerald")
+
+
+def test_text_label_attribute_points_at_inner_label(root):
+    pill = make_status_pill(root, "Flagged: 5", variant="amber")
+    pill.text_label.configure(text="Flagged: 12")
+    assert pill.text_label.cget("text") == "Flagged: 12"

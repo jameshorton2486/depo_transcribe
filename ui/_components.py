@@ -131,12 +131,17 @@ def make_status_pill(
         border_width=1,
         corner_radius=8,
     )
-    ctk.CTkLabel(
+    label = ctk.CTkLabel(
         pill,
         text=text,
         text_color=text_color,
         font=ctk.CTkFont(size=10, weight="bold"),
-    ).pack(padx=8, pady=2)
+    )
+    label.pack(padx=8, pady=2)
+    # Expose so callers can update the text without reaching into
+    # winfo_children() — that would break if the helper ever adds
+    # secondary children (e.g. an icon).
+    pill.text_label = label
     return pill
 
 

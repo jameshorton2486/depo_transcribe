@@ -32,6 +32,7 @@ from ui._components import (
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
     BTN_UTILITY_BLUE_HOVER,
+    make_status_pill,
 )
 from core.job_config_manager import load_job_config, merge_and_save
 from core.vlc_player import VLCPlayer
@@ -474,14 +475,26 @@ class TranscriptTab(ctk.CTkFrame):
         review_row.pack(fill="x", padx=0, pady=(0, 1))
         review_row.pack_propagate(False)
 
-        self._review_counts_label = ctk.CTkLabel(
-            review_row,
-            text="Flagged: 0 · Reviewed: 0 · Remaining: 0",
-            font=ctk.CTkFont(size=11),
-            text_color="#7D8FA3",
-            anchor="w",
+        # Three pills (Flagged amber / Reviewed blue / Remaining amber) in a
+        # transparent container, replacing the prior single-label triple. Pill
+        # text is updated in _update_review_counts via .text_label.configure.
+        self._review_pills_frame = ctk.CTkFrame(review_row, fg_color="transparent")
+        self._review_pills_frame.pack(side="left", padx=10, pady=2)
+
+        self._pill_flagged = make_status_pill(
+            self._review_pills_frame, "Flagged: 0", variant="amber"
         )
-        self._review_counts_label.pack(side="left", padx=10)
+        self._pill_flagged.pack(side="left", padx=(0, 6))
+
+        self._pill_reviewed = make_status_pill(
+            self._review_pills_frame, "Reviewed: 0", variant="blue"
+        )
+        self._pill_reviewed.pack(side="left", padx=(0, 6))
+
+        self._pill_remaining = make_status_pill(
+            self._review_pills_frame, "Remaining: 0", variant="amber"
+        )
+        self._pill_remaining.pack(side="left")
 
         self._header_confirm_btn = ctk.CTkButton(
             review_row,
@@ -1641,18 +1654,11 @@ class TranscriptTab(ctk.CTkFrame):
         self._update_review_counts(flagged=flagged, reviewed=reviewed, remaining=remaining)
 
     def _update_review_counts(self, *, flagged: int, reviewed: int, remaining: int) -> None:
-        if not hasattr(self, "_review_counts_label"):
+        if not hasattr(self, "_pill_flagged"):
             return
-        if remaining > 0:
-            color = "#E8B83A"
-        elif flagged > 0:
-            color = "#44AA44"
-        else:
-            color = "#7D8FA3"
-        self._review_counts_label.configure(
-            text=f"Flagged: {flagged} · Reviewed: {reviewed} · Remaining: {remaining}",
-            text_color=color,
-        )
+        self._pill_flagged.text_label.configure(text=f"Flagged: {flagged}")
+        self._pill_reviewed.text_label.configure(text=f"Reviewed: {reviewed}")
+        self._pill_remaining.text_label.configure(text=f"Remaining: {remaining}")
 
     def _render_with_confidence(self, words: list[dict]):
         # DO NOT update the textbox here.
