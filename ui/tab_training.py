@@ -22,7 +22,7 @@ from ui._components import (
     TEXT_PRIMARY,
     make_card_with_accent,
     make_numbered_chip,
-    make_section_header,
+    make_rule_card,
 )
 
 
@@ -198,41 +198,41 @@ class TrainingTab(ctk.CTkFrame):
         )
         self._clear_btn.pack(side="right", padx=(0, 8))
 
-        # ── STEP 4 — review and approve ──────────────────────────────────────
-        make_section_header(outer, "STEP 4 — Review and approve").pack(
-            anchor="w", pady=(0, 2)
-        )
+        # ── Step 03 — Generated Rules (conditionally visible) ────────────────
+        # Hidden until _on_generate_done returns at least one rule. Shown
+        # via _show_step_03(); hidden + cleared via _hide_step_03().
+        # The card holds a header (chip 03 + title + Approve & Save) and
+        # a container for per-rule cards rendered by make_rule_card.
+        self._step_03 = make_card_with_accent(outer, accent=PILL_EMERALD_TEXT)
+        # Intentionally NOT packed at construction. _show_step_03 packs it.
 
-        output_header = ctk.CTkFrame(outer, fg_color="transparent")
-        output_header.pack(fill="x")
+        step_03_header = ctk.CTkFrame(self._step_03.content, fg_color="transparent")
+        step_03_header.pack(fill="x", pady=(0, 10))
+        make_numbered_chip(
+            step_03_header, "03", accent=PILL_EMERALD_TEXT
+        ).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(
-            output_header,
-            text="Generated Rules",
+            step_03_header,
+            text="GENERATED RULES",
             font=ctk.CTkFont(size=11, weight="bold"),
-        ).pack(side="left")
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left", anchor="w")
         self._approve_btn = ctk.CTkButton(
-            output_header,
+            step_03_header,
             text="✓  Approve & Save",
             fg_color=self._GREEN,
             hover_color=self._GREEN_HOV,
             state="disabled",
             width=160,
+            height=36,
             command=self._on_approve,
         )
         self._approve_btn.pack(side="right")
 
-        self._output_box = ctk.CTkTextbox(
-            outer,
-            height=150,
-            font=ctk.CTkFont(family="Courier New", size=10),
-            state="disabled",
-            fg_color="#0A1020",
+        self._proposed_rules_container = ctk.CTkFrame(
+            self._step_03.content, fg_color="transparent"
         )
-        self._output_box.pack(fill="x", pady=(4, 8))
-        # Show a friendly empty-state until the user actually generates
-        # rules. _set_output_placeholder also restores this whenever the
-        # box is cleared (Clear button, no-rules result).
-        self._set_output_placeholder()
+        self._proposed_rules_container.pack(fill="both", expand=True)
 
         # Active Library lives in the right column (sticky panel) instead
         # of the bottom of the left column. The textbox-based view here
@@ -281,9 +281,9 @@ class TrainingTab(ctk.CTkFrame):
         self._generating = True
         self._generate_btn.configure(state="disabled", text="Analyzing…")
         self._approve_btn.configure(state="disabled")
-        self._output_box.configure(state="normal")
-        self._output_box.delete("1.0", "end")
-        self._output_box.configure(state="disabled")
+        # Hide any prior Step 03 result so the user isn't looking at
+        # last run's cards while the new run is in flight.
+        self._hide_step_03()
         self._set_status("Calling Claude API…")
         threading.Thread(
             target=self._run_generate,
@@ -310,15 +310,9 @@ class TrainingTab(ctk.CTkFrame):
             return
 
         self._proposed_rules = result["rules"]
-        from spec_engine.training_engine import preview_rules_as_text
-
-        display = preview_rules_as_text(result["rules"], result["flags"])
-        self._output_box.configure(state="normal")
-        self._output_box.delete("1.0", "end")
-        self._output_box.insert("1.0", display)
-        self._output_box.configure(state="disabled")
-
         if self._proposed_rules:
+            self._render_proposed_rules()
+            self._show_step_03()
             self._approve_btn.configure(state="normal")
             count = len(self._proposed_rules)
             self._set_status(
@@ -326,10 +320,8 @@ class TrainingTab(ctk.CTkFrame):
                 "#44CC88",
             )
         else:
-            # No rules came back. Restore the placeholder so the box does
-            # not leave a misleading "results pending" empty state.
-            self._set_output_placeholder()
-            self._set_status("No rules generated — try adding a Rule Instruction.", "gray")
+            self._hide_step_03()
+            self._set_status("No rules generated — try adding a Rule Instruction.", TEXT_MUTED)
 
     def _on_approve(self):
         if not self._proposed_rules:
@@ -342,29 +334,56 @@ class TrainingTab(ctk.CTkFrame):
             self._set_status(f"✓ {count} rule{'s' if count != 1 else ''} saved.", "#44FF44")
             self._proposed_rules = []
             self._approve_btn.configure(state="disabled")
+            self._hide_step_03()
             self._refresh_active_rules()
         except ValueError as exc:
             self._set_status(f"Save failed: {exc}", "#FF4444")
 
-    _OUTPUT_PLACEHOLDER = (
-        'Click "⚙  Analyze & Generate Rules" to see proposed corrections here.\n'
-        "You can review and approve them before they are added to the rule store."
-    )
+    @staticmethod
+    def _rule_before_after(rule: dict) -> tuple[str, str]:
+        # exact_replace shows raw before/after; regex_replace wraps the
+        # pattern in slashes so the user can tell it's a regex at a glance.
+        if rule.get("type") == "exact_replace":
+            return str(rule.get("incorrect", "")), str(rule.get("correct", ""))
+        if rule.get("type") == "regex_replace":
+            return f"/{rule.get('pattern', '')}/", str(rule.get("replacement", ""))
+        return "", ""
 
-    def _set_output_placeholder(self) -> None:
-        """Show the Generated Rules empty-state hint inside _output_box."""
-        self._output_box.configure(state="normal")
-        self._output_box.delete("1.0", "end")
-        self._output_box.insert("1.0", self._OUTPUT_PLACEHOLDER)
-        self._output_box.configure(state="disabled")
+    def _render_proposed_rules(self) -> None:
+        # Destroy last run's cards before rendering the new batch — the
+        # container is reused across runs so widget references would
+        # accumulate otherwise.
+        for child in self._proposed_rules_container.winfo_children():
+            child.destroy()
+        for rule in self._proposed_rules:
+            before, after = self._rule_before_after(rule)
+            card = make_rule_card(
+                self._proposed_rules_container,
+                rule_id=rule.get("id", "?"),
+                before=before,
+                after=after,
+                match_type=rule.get("type", "exact_replace"),
+                variant="proposed",
+            )
+            card.pack(fill="x", pady=(0, 8))
+
+    def _show_step_03(self) -> None:
+        # Step 03 packs after Step 02 in left_col; pack with the same
+        # vertical rhythm the other step cards use.
+        self._step_03.pack(fill="x", pady=(0, 12))
+
+    def _hide_step_03(self) -> None:
+        self._step_03.pack_forget()
+        for child in self._proposed_rules_container.winfo_children():
+            child.destroy()
 
     def _on_clear(self):
         self._incorrect_box.delete("1.0", "end")
         self._correct_box.delete("1.0", "end")
         self._instruction_entry.delete(0, "end")
-        self._set_output_placeholder()
         self._proposed_rules = []
         self._approve_btn.configure(state="disabled")
+        self._hide_step_03()
         self._set_status("")
 
     def _on_edit_rules_file(self):

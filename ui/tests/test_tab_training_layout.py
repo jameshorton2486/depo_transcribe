@@ -85,3 +85,97 @@ def test_set_status_idle_resets_to_ready_label(tab):
     assert tab._status_label.cget("text") != "Status: Ready"
     tab._set_status("")
     assert tab._status_label.cget("text") == "Status: Ready"
+
+
+# ── Step 03 — Generated Rules (commit F) ─────────────────────────────────────
+
+def _exact(rule_id, before, after):
+    return {"id": rule_id, "type": "exact_replace", "incorrect": before, "correct": after}
+
+
+def test_step_03_starts_unpacked(tab):
+    # _step_03 is constructed but never pack'd at startup so the
+    # tab is empty until the user actually generates rules.
+    assert tab._step_03.winfo_manager() == ""
+
+
+def test_show_step_03_packs_the_card(tab):
+    tab._show_step_03()
+    assert tab._step_03.winfo_manager() == "pack"
+    tab._hide_step_03()  # cleanup for shared tab
+
+
+def test_hide_step_03_unpacks_and_clears_cards(tab):
+    tab._proposed_rules = [_exact("u1", "a", "b")]
+    tab._render_proposed_rules()
+    tab._show_step_03()
+    assert len(tab._proposed_rules_container.winfo_children()) == 1
+    tab._hide_step_03()
+    assert tab._step_03.winfo_manager() == ""
+    assert len(tab._proposed_rules_container.winfo_children()) == 0
+
+
+def test_render_proposed_rules_creates_one_card_per_rule(tab):
+    tab._proposed_rules = [_exact("u1", "a", "b"), _exact("u2", "c", "d")]
+    tab._render_proposed_rules()
+    assert len(tab._proposed_rules_container.winfo_children()) == 2
+    tab._hide_step_03()
+
+
+def test_render_proposed_rules_replaces_previous_batch(tab):
+    tab._proposed_rules = [_exact("u1", "a", "b")]
+    tab._render_proposed_rules()
+    tab._proposed_rules = [_exact("u2", "c", "d"), _exact("u3", "e", "f")]
+    tab._render_proposed_rules()
+    # New batch replaces, doesn't accumulate.
+    assert len(tab._proposed_rules_container.winfo_children()) == 2
+    tab._hide_step_03()
+
+
+# Pure logic — no UI fixture needed.
+
+def test_rule_before_after_exact_replace_returns_raw_strings():
+    assert TrainingTab._rule_before_after(
+        {"type": "exact_replace", "incorrect": "Coger", "correct": "Koger"}
+    ) == ("Coger", "Koger")
+
+
+def test_rule_before_after_regex_replace_wraps_pattern_in_slashes():
+    assert TrainingTab._rule_before_after(
+        {"type": "regex_replace", "pattern": r"\bCog\w+\b", "replacement": "Koger"}
+    ) == (r"/\bCog\w+\b/", "Koger")
+
+
+def test_rule_before_after_unknown_type_returns_empty_strings():
+    assert TrainingTab._rule_before_after({"type": "future_kind"}) == ("", "")
+
+
+# _on_generate_done routes through _show / _hide step 03 based on rule
+# count. Both branches must leave the UI in the right shape.
+
+def test_on_generate_done_with_rules_shows_step_03(tab):
+    tab._on_generate_done({
+        "error": None,
+        "rules": [_exact("u1", "a", "b")],
+        "flags": [],
+    })
+    assert tab._step_03.winfo_manager() == "pack"
+    tab._hide_step_03()
+
+
+def test_on_generate_done_with_no_rules_keeps_step_03_hidden(tab):
+    tab._on_generate_done({"error": None, "rules": [], "flags": []})
+    assert tab._step_03.winfo_manager() == ""
+
+
+def test_on_generate_done_with_error_keeps_step_03_hidden(tab):
+    tab._on_generate_done({"error": "API failed", "rules": [], "flags": []})
+    assert tab._step_03.winfo_manager() == ""
+
+
+def test_on_clear_hides_step_03(tab):
+    tab._proposed_rules = [_exact("u1", "a", "b")]
+    tab._render_proposed_rules()
+    tab._show_step_03()
+    tab._on_clear()
+    assert tab._step_03.winfo_manager() == ""
