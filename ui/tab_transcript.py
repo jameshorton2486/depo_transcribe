@@ -326,7 +326,7 @@ class TranscriptTab(ctk.CTkFrame):
 
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=14, pady=(4, 2))
+        header.pack(fill="x", padx=10, pady=(2, 1))
 
         ctk.CTkLabel(
             header,
@@ -408,8 +408,8 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._save_btn.pack(side="right", padx=(4, 0))
 
-        self._status_bar = ctk.CTkFrame(self, height=24, fg_color="#0A1520", corner_radius=0)
-        self._status_bar.pack(fill="x", padx=0, pady=(0, 2))
+        self._status_bar = ctk.CTkFrame(self, height=22, fg_color="#0A1520", corner_radius=0)
+        self._status_bar.pack(fill="x", padx=0, pady=(0, 1))
         self._status_bar.pack_propagate(False)
 
         self._path_label = ctk.CTkLabel(
@@ -458,7 +458,7 @@ class TranscriptTab(ctk.CTkFrame):
             anchor="w",
         )
         self._progress_label.pack(side="left", fill="x", expand=True)
-        self._progress_frame.pack(fill="x", padx=14, pady=(0, 2))
+        self._progress_frame.pack(fill="x", padx=10, pady=(0, 1))
         self._progress_frame.pack_forget()
 
         self._speaker_map_card = ctk.CTkFrame(self, fg_color="#0D1A2A", corner_radius=6)
