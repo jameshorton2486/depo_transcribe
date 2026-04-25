@@ -367,6 +367,28 @@ class TranscriptTab(ctk.CTkFrame):
         prefix = "Processed" if self._corrected_path else "Loaded"
         self._path_label.configure(text=f"{prefix}: {name}", text_color="#445566")
 
+    def _update_case_label(self) -> None:
+        # Reads cause_number + last token of witness_name out of the loaded
+        # job_config and renders a compact case identifier next to the
+        # "Transcript" title. Empty string when neither field is populated,
+        # so the label takes no visual space until a case is actually loaded.
+        if not hasattr(self, "_case_label"):
+            return
+        ufm = (self._job_config_data or {}).get("ufm_fields", {})
+        if not isinstance(ufm, dict):
+            ufm = {}
+        cause = str(ufm.get("cause_number", "") or "").strip()
+        witness = str(ufm.get("witness_name", "") or "").strip()
+        last = witness.rsplit(None, 1)[-1] if witness else ""
+        if cause and last:
+            self._case_label.configure(text=f"Case: {cause} ({last})")
+        elif cause:
+            self._case_label.configure(text=f"Case: {cause}")
+        elif last:
+            self._case_label.configure(text=f"Case: ({last})")
+        else:
+            self._case_label.configure(text="")
+
     def _build_ui(self):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=10, pady=(2, 1))
@@ -376,6 +398,16 @@ class TranscriptTab(ctk.CTkFrame):
             text="Transcript",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).pack(side="left")
+
+        # Case identifier (cause# + witness last name) shown next to the title
+        # when a case is loaded; empty string otherwise so it takes no space.
+        self._case_label = ctk.CTkLabel(
+            header,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="#7D8FA3",
+        )
+        self._case_label.pack(side="left", padx=(12, 0))
 
         self._open_file_btn = ctk.CTkButton(
             header,
@@ -1313,6 +1345,7 @@ class TranscriptTab(ctk.CTkFrame):
         self._case_root = resolved_case_root
         config_data = load_job_config(self._case_root) if self._case_root else {}
         self._job_config_data = config_data if isinstance(config_data, dict) else {}
+        self._update_case_label()
         ufm = config_data.get("ufm_fields", {}) if isinstance(config_data, dict) else {}
         self._saved_speaker_map = _normalize_transcript_speaker_map(
             ufm.get("speaker_map", {}) if isinstance(ufm, dict) else {}
