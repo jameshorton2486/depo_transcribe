@@ -118,6 +118,33 @@ _PILL_VARIANTS = {
 }
 
 
+# ── Text color hierarchy ─────────────────────────────────────────────────────
+# Slate scale used by the Training tab redesign and any new layouts that
+# need a four-level text hierarchy. Existing widgets stick with their
+# inline hex strings — these tokens are not retroactively applied.
+
+TEXT_PRIMARY = "#E2E8F0"    # slate-200, body text on dark surface
+TEXT_SECONDARY = "#94A3B8"  # slate-400, secondary content
+TEXT_MUTED = "#64748B"      # slate-500, label text
+TEXT_DIM = "#475569"        # slate-600, ID labels, separators
+
+
+# ── Numbered chip + card-with-accent + rule card tokens ──────────────────────
+# Used by the Training tab's step headers and the Active Library / Step 03
+# rule rows. CHIP_* describes the small numbered disc; DOT_DISABLED is the
+# muted state-dot color that contrasts CARD_BORDER_COLOR (#2A3A4A) so a
+# scanner can tell at a glance which library rows are dormant.
+
+CHIP_BG = "#1E293B"          # slate-800 disc fill
+CHIP_BORDER = "#334155"      # slate-700 disc border
+DOT_DISABLED = "#475569"     # slate-600 — distinct from CARD_BORDER_COLOR
+DOT_ENABLED = PILL_EMERALD_TEXT  # alias for the active-rule emerald
+
+# Hover color for the delete button on active library rows. A muted dark
+# red — visible enough to read as "destructive" without being shouty.
+DELETE_HOVER_BG = "#3D1A1A"
+
+
 def make_status_pill(
     parent,
     text: str,
@@ -181,3 +208,214 @@ def make_section_header(
         text_color="white",
     ).pack(side="left", anchor="w")
     return row
+
+
+def make_numbered_chip(
+    parent,
+    label: str,
+    *,
+    accent: str,
+) -> ctk.CTkFrame:
+    """
+    Small ~24 px disc chip with a bold uppercase label centered inside
+    (e.g. "01", "02", "03"). `accent` is the label text color, typically
+    a step-specific accent (blue for Step 01/02, emerald for Step 03).
+
+    The disc itself uses CHIP_BG / CHIP_BORDER so all chips read as the
+    same surface family. Caller packs the returned frame.
+
+    The inner label is exposed as `chip.text_label` so callers can update
+    the chip text without reaching into winfo_children().
+    """
+    chip = ctk.CTkFrame(
+        parent,
+        width=24,
+        height=24,
+        corner_radius=12,
+        fg_color=CHIP_BG,
+        border_color=CHIP_BORDER,
+        border_width=1,
+    )
+    chip.pack_propagate(False)
+    text_label = ctk.CTkLabel(
+        chip,
+        text=label,
+        text_color=accent,
+        font=ctk.CTkFont(size=10, weight="bold"),
+    )
+    text_label.place(relx=0.5, rely=0.5, anchor="center")
+    chip.text_label = text_label
+    return chip
+
+
+def make_card_with_accent(
+    parent,
+    *,
+    accent: str,
+) -> ctk.CTkFrame:
+    """
+    Card surface with rounded corners (BG_CARD fill, CARD_BORDER_COLOR
+    border) and a 2-px top-edge accent strip in the given color. Returns
+    the outer frame; caller packs widgets into the exposed `.content`
+    sub-frame, NOT into the outer frame directly — packing into the
+    outer would land them under the accent strip.
+
+    The strip is intentionally 2 px (not 1 px) because CTk's antialiasing
+    on the rounded outer frame can swallow a single-pixel strip on some
+    DPI scales.
+    """
+    outer = ctk.CTkFrame(
+        parent,
+        fg_color=BG_CARD,
+        corner_radius=16,
+        border_color=CARD_BORDER_COLOR,
+        border_width=1,
+    )
+    accent_strip = ctk.CTkFrame(
+        outer,
+        height=2,
+        fg_color=accent,
+        corner_radius=0,
+    )
+    accent_strip.pack(fill="x", side="top", padx=14, pady=(0, 0))
+    content = ctk.CTkFrame(outer, fg_color="transparent")
+    content.pack(fill="both", expand=True, padx=14, pady=(8, 12))
+    outer.content = content
+    return outer
+
+
+_MATCH_TYPE_BADGES = {
+    "exact_replace": ("EXACT MATCH", "blue"),
+    "regex_replace": ("REGEX", "amber"),
+}
+
+
+def make_rule_card(
+    parent,
+    *,
+    rule_id: str,
+    before: str,
+    after: str,
+    match_type: str,
+    variant: str = "proposed",
+    enabled: bool = True,
+    on_toggle=None,
+    on_delete=None,
+) -> ctk.CTkFrame:
+    """
+    Unified rule card consumed by both Step 03 (proposed rules) and the
+    Active Library (saved rules). Layout:
+
+        [dot] RULE-ID  [BADGE]                              [✗ delete]
+        before-text  →  after-text
+
+    `variant`:
+        "proposed"  display only — no dot, no delete button
+        "active"    leading state dot (color from `enabled`, clickable
+                    if on_toggle is provided), trailing delete X
+                    (calls on_delete(rule_id) if provided)
+
+    `match_type` must be one of the keys in _MATCH_TYPE_BADGES — KeyError
+    on anything else, intentional so a typo or a future fuzzy_replace
+    type fails loudly rather than silently picking a default badge.
+
+    Caller packs the returned frame. Selected sub-widgets are exposed as
+    attributes (`card.id_label`, `card.badge`, `card.before_label`,
+    `card.after_label`, plus `card.dot` / `card.delete_btn` on the
+    active variant) so tests and callers can introspect or update them
+    without `winfo_children()` traversal.
+    """
+    card = ctk.CTkFrame(
+        parent,
+        fg_color=BG_CARD,
+        corner_radius=10,
+        border_color=CARD_BORDER_COLOR,
+        border_width=1,
+    )
+
+    top = ctk.CTkFrame(card, fg_color="transparent")
+    top.pack(fill="x", padx=10, pady=(8, 4))
+
+    if variant == "active":
+        dot_color = DOT_ENABLED if enabled else DOT_DISABLED
+        dot = ctk.CTkFrame(
+            top,
+            width=8,
+            height=8,
+            corner_radius=4,
+            fg_color=dot_color,
+        )
+        dot.pack_propagate(False)
+        dot.pack(side="left", padx=(0, 8))
+        if on_toggle is not None:
+            dot.configure(cursor="hand2")
+            dot.bind(
+                "<Button-1>",
+                lambda _e: on_toggle(rule_id, not enabled),
+                add=True,
+            )
+        card.dot = dot
+
+    id_label = ctk.CTkLabel(
+        top,
+        text=rule_id,
+        font=ctk.CTkFont(family="Courier New", size=10),
+        text_color=TEXT_DIM,
+    )
+    id_label.pack(side="left")
+
+    badge_text, badge_variant = _MATCH_TYPE_BADGES[match_type]
+    badge = make_status_pill(top, badge_text, variant=badge_variant)
+    badge.pack(side="left", padx=(8, 0))
+
+    if variant == "active" and on_delete is not None:
+        delete_btn = ctk.CTkButton(
+            top,
+            text="✗",  # ✗
+            width=20,
+            height=20,
+            fg_color="transparent",
+            text_color=TEXT_DIM,
+            hover_color=DELETE_HOVER_BG,
+            font=ctk.CTkFont(size=14),
+            command=lambda: on_delete(rule_id),
+        )
+        delete_btn.pack(side="right")
+        card.delete_btn = delete_btn
+
+    body = ctk.CTkFrame(card, fg_color="transparent")
+    body.pack(fill="x", padx=10, pady=(0, 8))
+
+    before_label = ctk.CTkLabel(
+        body,
+        text=before,
+        font=ctk.CTkFont(family="Courier New", size=11, slant="italic"),
+        text_color=TEXT_SECONDARY,
+        anchor="w",
+        justify="left",
+    )
+    before_label.pack(side="left", fill="x", expand=True)
+
+    arrow_label = ctk.CTkLabel(
+        body,
+        text="→",  # →
+        font=ctk.CTkFont(size=12),
+        text_color=TEXT_DIM,
+    )
+    arrow_label.pack(side="left", padx=8)
+
+    after_label = ctk.CTkLabel(
+        body,
+        text=after,
+        font=ctk.CTkFont(family="Courier New", size=11),
+        text_color=PILL_EMERALD_TEXT,
+        anchor="w",
+        justify="left",
+    )
+    after_label.pack(side="left", fill="x", expand=True)
+
+    card.id_label = id_label
+    card.badge = badge
+    card.before_label = before_label
+    card.after_label = after_label
+    return card
