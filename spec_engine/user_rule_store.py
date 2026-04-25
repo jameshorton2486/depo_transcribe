@@ -232,6 +232,42 @@ def apply_user_rules(
     return current_text, records
 
 
+def delete_rule(rule_id: str) -> bool:
+    """
+    Remove a rule by id. Returns True if a rule was removed, False if
+    the id was not found. The write goes through save_rules so the
+    operation is atomic and inherits its validation pass — a corrupt
+    rule already in the store will fail the save, same as add_rules.
+    """
+    rules = load_all_rules()
+    remaining = [rule for rule in rules if rule.get("id") != rule_id]
+    if len(remaining) == len(rules):
+        return False
+    save_rules(remaining)
+    return True
+
+
+def set_rule_enabled(rule_id: str, enabled: bool) -> bool:
+    """
+    Toggle a rule's `enabled` state. Returns True if the rule was found
+    (regardless of whether the file was rewritten), False if the id was
+    not found. A call that would not change state is treated as a no-op
+    and skips the disk write — protects against rapid-clicking the
+    library's enable dot from spamming .tmp rewrites.
+
+    Missing `enabled` key is treated as True, mirroring load_active_rules.
+    """
+    rules = load_all_rules()
+    target = next((rule for rule in rules if rule.get("id") == rule_id), None)
+    if target is None:
+        return False
+    if bool(target.get("enabled", True)) == bool(enabled):
+        return True
+    target["enabled"] = bool(enabled)
+    save_rules(rules)
+    return True
+
+
 def get_rules_summary() -> str:
     if not RULES_PATH.exists():
         return "No rules file — generate rules in the Training tab."
