@@ -1159,7 +1159,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="Open Transcript",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
-            state="disabled",
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
             command=self._open_transcript,
         )
         self._open_transcript_btn.pack(side="left")
@@ -1332,8 +1333,7 @@ class TranscribeTab(ctk.CTkFrame):
             fg_color=_DEFAULT_BUTTON_COLOR,
             state="normal",
         )
-        # Open Output Folder is a folder picker now — always enabled.
-        self._open_transcript_btn.configure(state="disabled")
+        # Open Output Folder + Open Transcript are pickers now — always enabled.
         self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
             text="\U0001f4dd  Reporter Notes",
@@ -1651,12 +1651,30 @@ class TranscribeTab(ctk.CTkFrame):
         self._base_dir_var.set(path)
 
     def _open_transcript(self):
-        """Load transcript into Transcript tab and switch to it."""
-        path = self._last_transcript_path
-        logger.info("[UI] Loading transcript: %s", path)
-        if not path or not os.path.isfile(path):
-            messagebox.showerror("Transcript Not Found", f"No transcript at:\n{path or '(none)'}")
+        """
+        File picker for an existing transcript. Loads the chosen file
+        into the Transcript tab and switches to it. Defaults the picker
+        to the most recent transcript path if known.
+        """
+        initial_dir = ""
+        if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
+            initial_dir = os.path.dirname(self._last_transcript_path)
+        elif self._current_case_path and os.path.isdir(self._current_case_path):
+            initial_dir = self._current_case_path
+
+        path = filedialog.askopenfilename(
+            title="Open Transcript",
+            initialdir=initial_dir,
+            filetypes=[
+                ("Text Files", "*.txt"),
+                ("Word Documents", "*.docx"),
+                ("All Files", "*.*"),
+            ],
+        )
+        logger.info("[UI] Open transcript: %s", path or "(canceled)")
+        if not path:
             return
+        self._last_transcript_path = path
         app = self.winfo_toplevel()
         app.transcript_tab.load_transcript(path)
         app.tab_view.set("Transcript")
@@ -1811,9 +1829,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._current_case_path = os.path.dirname(deepgram_dir)
         self._update_path_preview()
 
-        # Open Output Folder is a folder picker — already enabled. Just
-        # flip Open Transcript on now that a transcript is on disk.
-        self._open_transcript_btn.configure(state="normal")
+        # Open Output Folder + Open Transcript are pickers now — already enabled.
 
         logger.info(
             "[CorrectionMode] Loaded transcript: %s | cause=%s witness=%s %s",
@@ -2139,9 +2155,8 @@ class TranscribeTab(ctk.CTkFrame):
             # Disable button
             self._running = True
             transcript_tab = self.winfo_toplevel().transcript_tab
-            # Open Output Folder is a folder picker — leave it enabled
-            # during transcription so the user can still change destination.
-            self._open_transcript_btn.configure(state="disabled")
+            # Open Output Folder + Open Transcript are pickers — leave them
+            # enabled during transcription so the user can still browse.
             self._set_create_buttons(state="disabled", text="Transcribing...")
             transcript_tab._open_folder_btn.configure(state="disabled")
             transcript_tab._open_transcript_btn.configure(state="disabled")
@@ -2208,8 +2223,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._current_txt_path = result.get("transcript_path")
             self._transcript_text = result.get("transcript_text", "")
             self._last_output_dir = result.get("output_dir", "")
-            # Open Output Folder is a folder picker — already enabled.
-            self._open_transcript_btn.configure(state="normal")
+            # Open Output Folder + Open Transcript are pickers — already enabled.
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
 
             # Show speaker labels section
