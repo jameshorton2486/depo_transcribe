@@ -1030,7 +1030,11 @@ class TranscribeTab(ctk.CTkFrame):
         self._base_dir_entry = ctk.CTkEntry(base_row, textvariable=self._base_dir_var)
         self._base_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
         self._base_dir_var.trace_add("write", lambda *_: self._update_path_preview())
-        ctk.CTkButton(base_row, text="Browse…", width=80, command=self._browse_base_dir).pack(side="right")
+        ctk.CTkButton(
+            base_row, text="Browse…", width=80,
+            fg_color=BTN_UTILITY_BLUE, hover_color="#0F3E8A",
+            command=self._browse_base_dir,
+        ).pack(side="right")
 
         cause_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
         cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 2))
@@ -1144,7 +1148,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="Open Output Folder",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
-            state="disabled",
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
             command=self._open_output_folder,
         )
         self._open_folder_btn.pack(side="left", padx=(0, 6))
@@ -1327,7 +1332,7 @@ class TranscribeTab(ctk.CTkFrame):
             fg_color=_DEFAULT_BUTTON_COLOR,
             state="normal",
         )
-        self._open_folder_btn.configure(state="disabled")
+        # Open Output Folder is a folder picker now — always enabled.
         self._open_transcript_btn.configure(state="disabled")
         self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
         self._upload_reporter_notes_btn.configure(
@@ -1630,12 +1635,20 @@ class TranscribeTab(ctk.CTkFrame):
         return dest
 
     def _open_output_folder(self):
-        path = self._current_case_path
-        logger.info("[UI] Opening folder: %s", path)
-        if not path or not os.path.isdir(path):
-            messagebox.showerror("Output Folder Not Found", f"No folder at:\n{path or '(none)'}")
+        """
+        Folder picker for the BASE save folder. Per-case folders are
+        derived from this root + cause/witness/date, so picking here
+        determines where every output goes.
+        """
+        path = filedialog.askdirectory(
+            title="Choose folder to save transcripts to",
+            initialdir=self._base_dir_var.get(),
+            mustexist=True,
+        )
+        logger.info("[UI] Output folder picked: %s", path or "(canceled)")
+        if not path:
             return
-        os.startfile(path)
+        self._base_dir_var.set(path)
 
     def _open_transcript(self):
         """Load transcript into Transcript tab and switch to it."""
@@ -1798,9 +1811,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._current_case_path = os.path.dirname(deepgram_dir)
         self._update_path_preview()
 
-        # Enable the toolbar open buttons now that we have both a folder
-        # path and a transcript path on disk.
-        self._open_folder_btn.configure(state="normal")
+        # Open Output Folder is a folder picker — already enabled. Just
+        # flip Open Transcript on now that a transcript is on disk.
         self._open_transcript_btn.configure(state="normal")
 
         logger.info(
@@ -2127,7 +2139,8 @@ class TranscribeTab(ctk.CTkFrame):
             # Disable button
             self._running = True
             transcript_tab = self.winfo_toplevel().transcript_tab
-            self._open_folder_btn.configure(state="disabled")
+            # Open Output Folder is a folder picker — leave it enabled
+            # during transcription so the user can still change destination.
             self._open_transcript_btn.configure(state="disabled")
             self._set_create_buttons(state="disabled", text="Transcribing...")
             transcript_tab._open_folder_btn.configure(state="disabled")
@@ -2195,7 +2208,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._current_txt_path = result.get("transcript_path")
             self._transcript_text = result.get("transcript_text", "")
             self._last_output_dir = result.get("output_dir", "")
-            self._open_folder_btn.configure(state="normal")
+            # Open Output Folder is a folder picker — already enabled.
             self._open_transcript_btn.configure(state="normal")
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
 

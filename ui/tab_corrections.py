@@ -28,6 +28,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
 from app_logging import get_logger
+from ui._components import BTN_UTILITY_BLUE, BTN_UTILITY_BLUE_HOVER
 
 logger = get_logger(__name__)
 
@@ -98,7 +99,7 @@ class CorrectionsTab(ctk.CTkFrame):
 
         ctk.CTkButton(
             src_file_row, text="Browse…", width=80,
-            fg_color=_TEAL, hover_color=_TEAL_HOVER,
+            fg_color=BTN_UTILITY_BLUE, hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._browse_source,
         ).pack(side="right", padx=(0, 4))
 

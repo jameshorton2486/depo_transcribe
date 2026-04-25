@@ -352,6 +352,8 @@ class TranscriptTab(ctk.CTkFrame):
             header,
             text=" Open File",
             width=110,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._browse_transcript_file,
         )
         self._open_file_btn.pack(side="right", padx=(4, 0))
