@@ -1689,6 +1689,16 @@ class TranscriptTab(ctk.CTkFrame):
         widget.tag_config("current_word", background="#0A3A1A", foreground="#44FF88")
         widget.tag_config("conf_low", foreground=COLOR_RED)
         widget.tag_config("conf_mid", foreground=COLOR_AMBER)
+        # 'conf_active' marks the issue the reviewer just navigated to.
+        # Painted by _jump_to_review_index so navigation feels responsive
+        # rather than just silently moving the cursor.
+        widget.tag_config(
+            "conf_active",
+            background="#1B3A5A",
+            foreground="white",
+            underline=True,
+        )
+        widget.tag_raise("conf_active")
         self._apply_confidence_highlights()
 
         self._update_confidence_summary()
@@ -1721,20 +1731,31 @@ class TranscriptTab(ctk.CTkFrame):
         )
 
     def _restore_review_state(self, words: list[dict]) -> None:
-        previous = {}
-        for idx, word in enumerate(self._words):
-            state = self.review_state.get(idx)
-            if state in {"confirmed", "corrected"}:
-                previous[self._review_key(word)] = state
+        # Snapshot existing state so a mid-operation failure cannot leave
+        # review_state half-rebuilt. The reviewer's confirmed/corrected
+        # decisions are not allowed to silently disappear.
+        saved_state = dict(self.review_state)
+        try:
+            previous = {}
+            for idx, word in enumerate(self._words):
+                state = self.review_state.get(idx)
+                if state in {"confirmed", "corrected"}:
+                    previous[self._review_key(word)] = state
 
-        self.review_state = {}
-        for idx, word in enumerate(words):
-            word_text = str(word.get("word") or word.get("text") or "").strip()
-            if not word_text:
-                continue
-            confidence = float(word.get("confidence", 1.0) or 1.0)
-            if confidence < CONFIDENCE_AMBER_THRESHOLD and not self._is_confidence_stop_word(word_text):
-                self.review_state[idx] = previous.get(self._review_key(word), "pending")
+            self.review_state = {}
+            for idx, word in enumerate(words):
+                word_text = str(word.get("word") or word.get("text") or "").strip()
+                if not word_text:
+                    continue
+                confidence = float(word.get("confidence", 1.0) or 1.0)
+                if confidence < CONFIDENCE_AMBER_THRESHOLD and not self._is_confidence_stop_word(word_text):
+                    self.review_state[idx] = previous.get(self._review_key(word), "pending")
+        except Exception as exc:
+            self.review_state = saved_state
+            _log.warning(
+                "[Transcript Intelligence] Alignment failed - state restored: %s",
+                exc,
+            )
 
     def get_next_flagged(self, current_idx: int) -> int | None:
         for i in range(current_idx + 1, len(self._words)):
@@ -1755,8 +1776,21 @@ class TranscriptTab(ctk.CTkFrame):
         self._current_review_idx = idx
         self._on_word_clicked(float(item["start"]))
         if item["char_start"] >= 0:
-            self._textbox._textbox.mark_set("insert", f"1.0+{item['char_start']}c")
-            self._textbox._textbox.see(f"1.0+{item['char_start']}c")
+            widget = self._textbox._textbox
+            widget.mark_set("insert", f"1.0+{item['char_start']}c")
+            widget.see(f"1.0+{item['char_start']}c")
+            # Repaint the active-issue outline so the reviewer can see
+            # which flagged word Prev/Next just moved to.
+            try:
+                widget.tag_remove("conf_active", "1.0", "end")
+                if item["char_end"] > item["char_start"]:
+                    widget.tag_add(
+                        "conf_active",
+                        f"1.0+{item['char_start']}c",
+                        f"1.0+{item['char_end']}c",
+                    )
+            except Exception:
+                pass
 
     def _go_to_next_flagged(self) -> None:
         start_idx = self._current_review_idx if self._current_review_idx >= 0 else -1

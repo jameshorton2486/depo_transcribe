@@ -130,3 +130,19 @@ def test_restore_review_state_handles_only_pending_words():
     TranscriptTab._restore_review_state(fake, new_words)
 
     assert fake.review_state == {0: "pending", 1: "pending"}
+
+
+def test_restore_review_state_rolls_back_on_failure():
+    """If anything in the alignment loop raises, the saved review_state
+    must be restored - the reviewer's confirmed/corrected decisions are
+    not allowed to silently disappear."""
+    old_words = [_word("objection", 1.0, 1.5, 0.62)]
+    fake = _make_fake_tab(old_words, {0: "confirmed"})
+
+    # Pass a malformed words list that will blow up float() conversion
+    # inside the loop. The saved {0: 'confirmed'} state must come back.
+    new_words = [{"word": "objection", "start": 1.0, "end": 1.5, "confidence": "not-a-float"}]
+
+    TranscriptTab._restore_review_state(fake, new_words)
+
+    assert fake.review_state == {0: "confirmed"}
