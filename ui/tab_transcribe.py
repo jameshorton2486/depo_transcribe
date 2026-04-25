@@ -17,6 +17,8 @@ from typing import Any
 
 import customtkinter as ctk
 
+from ui._components import make_section_header
+
 from app_logging import get_logger
 
 logger = get_logger(__name__)
@@ -946,12 +948,7 @@ class TranscribeTab(ctk.CTkFrame):
         load_hdr = ctk.CTkFrame(load_inner, fg_color="transparent")
         load_hdr.pack(fill="x", pady=(0, 2))
 
-        ctk.CTkLabel(
-            load_hdr,
-            text="Existing Transcript",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="white",
-        ).pack(side="left")
+        make_section_header(load_hdr, "Existing Transcript").pack(side="left")
 
         ctk.CTkLabel(
             load_hdr,
@@ -1261,10 +1258,10 @@ class TranscribeTab(ctk.CTkFrame):
         self._speaker_card = ctk.CTkFrame(container)
         # Not packed yet — shown by _show_speaker_section() after transcription
 
-        ctk.CTkLabel(
+        make_section_header(
             self._speaker_card,
-            text="SPEAKER LABELS \u2014 Rename before saving",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            "SPEAKER LABELS \u2014 Rename before saving",
+            font_size=13,
         ).pack(anchor="w", padx=12, pady=(10, 0))
 
         ctk.CTkLabel(

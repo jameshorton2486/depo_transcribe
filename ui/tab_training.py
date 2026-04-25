@@ -11,6 +11,8 @@ import threading
 
 import customtkinter as ctk
 
+from ui._components import make_section_header
+
 
 class TrainingTab(ctk.CTkFrame):
     _TEAL = "#0F5A6A"
@@ -43,12 +45,9 @@ class TrainingTab(ctk.CTkFrame):
         ).pack(anchor="w", pady=(0, 8))
 
         # ── STEP 1 — paste a before/after example ────────────────────────────
-        ctk.CTkLabel(
-            outer,
-            text="STEP 1 — Paste a before/after example",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#9AB3CC",
-        ).pack(anchor="w", pady=(0, 2))
+        make_section_header(outer, "STEP 1 — Paste a before/after example").pack(
+            anchor="w", pady=(0, 2)
+        )
 
         input_row = ctk.CTkFrame(outer, fg_color="transparent")
         input_row.pack(fill="x", pady=(0, 8))
@@ -98,12 +97,9 @@ class TrainingTab(ctk.CTkFrame):
         self._correct_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         # ── STEP 2 — add context (optional) ──────────────────────────────────
-        ctk.CTkLabel(
-            outer,
-            text="STEP 2 — Add context (optional)",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#9AB3CC",
-        ).pack(anchor="w", pady=(0, 2))
+        make_section_header(outer, "STEP 2 — Add context (optional)").pack(
+            anchor="w", pady=(0, 2)
+        )
         ctk.CTkLabel(
             outer,
             text="Rule Instruction",
@@ -123,12 +119,9 @@ class TrainingTab(ctk.CTkFrame):
         self._instruction_entry.pack(fill="x", pady=(0, 8))
 
         # ── STEP 3 — generate ────────────────────────────────────────────────
-        ctk.CTkLabel(
-            outer,
-            text="STEP 3 — Generate",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#9AB3CC",
-        ).pack(anchor="w", pady=(0, 2))
+        make_section_header(outer, "STEP 3 — Generate").pack(
+            anchor="w", pady=(0, 2)
+        )
 
         action_row = ctk.CTkFrame(outer, fg_color="transparent")
         action_row.pack(fill="x", pady=(0, 8))
@@ -163,12 +156,9 @@ class TrainingTab(ctk.CTkFrame):
         self._status_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
 
         # ── STEP 4 — review and approve ──────────────────────────────────────
-        ctk.CTkLabel(
-            outer,
-            text="STEP 4 — Review and approve",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#9AB3CC",
-        ).pack(anchor="w", pady=(0, 2))
+        make_section_header(outer, "STEP 4 — Review and approve").pack(
+            anchor="w", pady=(0, 2)
+        )
 
         output_header = ctk.CTkFrame(outer, fg_color="transparent")
         output_header.pack(fill="x")
