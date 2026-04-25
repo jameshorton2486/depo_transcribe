@@ -21,6 +21,7 @@ from typing import Any
 
 import customtkinter as ctk
 
+from app_logging import get_logger
 from core.confidence_docx_exporter import export_confidence_docx
 from core.job_config_manager import load_job_config, merge_and_save
 from core.vlc_player import VLCPlayer
@@ -50,6 +51,8 @@ _CONFIDENCE_STOP_WORDS = frozenset({
 
 CONFIDENCE_AMBER_THRESHOLD = 0.75
 CONFIDENCE_RED_THRESHOLD = 0.50
+
+_log = get_logger(__name__)
 
 COLOR_AMBER = "#B8860B"
 COLOR_RED = "#CC2200"
@@ -1509,6 +1512,12 @@ class TranscriptTab(ctk.CTkFrame):
     def _on_word_data_loaded(self, request_id: int, filepath: str, words: list[dict]):
         if request_id != self._word_data_request_id or filepath != self._active_transcript_path():
             return
+        # Snapshot the prior reviewed/corrected count so we can report how
+        # many highlights survived this load (preservation across Run
+        # Corrections is the primary thing to monitor here).
+        prior_reviewed = sum(
+            1 for state in self.review_state.values() if state in {"confirmed", "corrected"}
+        )
         self._restore_review_state(words)
         self._words = words
         self._word_timings = list(words)
@@ -1524,6 +1533,19 @@ class TranscriptTab(ctk.CTkFrame):
             self._update_confidence_summary()
             self._export_review_btn.configure(state="disabled")
         self.append_log(f"Loaded {len(words)} timestamped words")
+
+        flagged = len(self.review_state)
+        preserved = sum(
+            1 for state in self.review_state.values() if state in {"confirmed", "corrected"}
+        )
+        _log.info(
+            "[Transcript Intelligence] Loaded %d words | Flagged %d issues "
+            "| Preserved %d/%d highlights after reload",
+            len(words),
+            flagged,
+            preserved,
+            prior_reviewed,
+        )
 
     def _update_confidence_summary(self):
         if not self._words:
