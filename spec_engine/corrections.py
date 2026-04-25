@@ -13,7 +13,8 @@ QUICK REFERENCE — WHERE TO EDIT WHAT
 TO ADD A NEW MULTI-WORD CORRECTION
   Add it to `MULTIWORD_CORRECTIONS`.
   Use this for legal phrase garbles, objection garbles, and stable multi-word
-  entity fixes.
+  entity fixes. Patterns are auto-compiled at module load — do NOT pre-compile
+  by hand in the list.
 
 TO ADD A NEW SINGLE-WORD CORRECTION
   Add it to `UNIVERSAL_CORRECTIONS`.
@@ -79,20 +80,118 @@ MORSON'S RULE 270: Ellipsis is normalized to spaced form without changing
 pause semantics.
 """
 
-import re
+from __future__ import annotations
+
 import logging
-from typing import List, Optional, Tuple
+import re
+from typing import Callable, List, Optional, Tuple
 
 from .models import Block, CorrectionRecord, JobConfig, ScopistFlag
 
 logger = logging.getLogger(__name__)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# PUBLIC API
+# ═══════════════════════════════════════════════════════════════════════════
+
+__all__ = [
+    # Master entry points
+    "clean_block",
+    "apply_corrections",
+    # Phase functions (exposed for targeted testing)
+    "apply_multiword_corrections",
+    "apply_case_corrections",
+    "apply_universal_corrections",
+    "apply_number_to_word",
+    "apply_date_normalization",
+    "apply_san_name_flag",
+    "apply_sentence_start_number",
+    "apply_artifact_removal",
+    "apply_spelled_letter_hyphenation",
+    "apply_texas_deposition_seeds",
+    # Targeted fixers
+    "fix_depot_mishearing",
+    "fix_cause_number_prefix",
+    "fix_cause_number_digits",
+    "fix_csr_number_digits",
+    "fix_address_digits",
+    "fix_spoken_dates",
+    "fix_spoken_times",
+    "fix_judicial_district_ordinal",
+    "fix_universal_legal_phrases",
+    "fix_traffic_citation_mishearing",
+    "fix_spaced_dashes",
+    "fix_uh_huh_hyphenation",
+    "fix_even_dollar_amounts",
+    "fix_conversational_titles",
+    # Cleanup helpers
+    "normalize_spaces",
+    "capitalize_first",
+    "enforce_terminal_punctuation",
+    "enforce_direct_address_comma",
+    "normalize_sentence_spacing",
+    "normalize_time_and_dashes",
+    # Constants (exposed because tests reference them)
+    "MULTIWORD_CORRECTIONS",
+    "UNIVERSAL_CORRECTIONS",
+    "TEXAS_DEPOSITION_SEEDS",
+    "VERBATIM_PROTECTED",
+    "AFFIRMATION_PROTECTED",
+    "NUMBER_WORD_MAP",
+    "SENTENCE_START_NUMBER_WORDS",
+    # Tunable thresholds
+    "MIN_REWRITE_RATIO",
+    "MIN_PROTECTED_FRAGMENT_LEN",
+    "DUPLICATE_BLOCK_MIN_LEN",
+    "DUPLICATE_BLOCK_TIME_WINDOW_S",
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TUNABLE THRESHOLDS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# safe_apply() rejects rewrites that shrink text below this fraction of the
+# original length, unless the rule explicitly opts into shortening. Prevents
+# a regex backreference bug from silently deleting half a transcript.
+MIN_REWRITE_RATIO: float = 0.5
+
+# A replacement fragment must exceed this length to be tracked for conflict
+# detection by CorrectionState. Short fragments would generate too many
+# false-positive conflicts.
+MIN_PROTECTED_FRAGMENT_LEN: int = 10
+
+# A block must be at least this many cleaned characters before we consider it
+# a candidate for consecutive-duplicate detection. Avoids dropping legitimate
+# repeated short answers like "Yes." or "Correct."
+DUPLICATE_BLOCK_MIN_LEN: int = 15
+
+# Two consecutive blocks must start within this many seconds of each other
+# (per Deepgram word timing) to be treated as a duplicate. Repeated testimony
+# spoken minutes apart is preserved.
+DUPLICATE_BLOCK_TIME_WINDOW_S: float = 1.0
+
+# Common speaker-label prefix used in many objection-garble patterns.
+# Not currently inlined back into MULTIWORD_CORRECTIONS (those patterns are
+# tested verbatim) but exposed here for use in any future objection rules.
+_SPEAKER_LABEL_PREFIX: str = r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?'
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PRECOMPILED REGEX UTILITIES
+# ═══════════════════════════════════════════════════════════════════════════
+
 TIME_RE = re.compile(r"\b(\d{1,2}:\d{2})\s*(AM|PM)\b\.?", re.IGNORECASE)
 TITLE_NAME_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
 QUOTED_SEGMENT_RE = re.compile(r'"[^"]*"')
 PARENTHETICAL_BLOCK_RE = re.compile(r'^\s*\({1,2}.*\){1,2}\s*$', re.DOTALL)
 OBJECTION_BLOCK_RE = re.compile(r'^\s*(?:[A-Z][A-Z.\s]+:\s*)?Objection\b', re.IGNORECASE)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WORD / DIGIT / DATE LOOKUP TABLES
+# ═══════════════════════════════════════════════════════════════════════════
 
 _WORD_TO_DIGIT = {
     "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
@@ -147,6 +246,10 @@ _SMALL_NUMBER_WORDS = {
 }
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# CORRECTION STATE
+# ═══════════════════════════════════════════════════════════════════════════
+
 class CorrectionState:
     """
     Tracks protected correction fragments to prevent later rule conflicts.
@@ -156,9 +259,9 @@ class CorrectionState:
     during a later substitution.
     """
 
-    def __init__(self):
-        self.history = []
-        self.seen_patterns = set()
+    def __init__(self) -> None:
+        self.history: list[dict] = []
+        self.seen_patterns: set[str] = set()
 
     def record(
         self,
@@ -166,7 +269,7 @@ class CorrectionState:
         before: str,
         after: str,
         protected_after: str | None = None,
-    ):
+    ) -> None:
         self.history.append({
             "pattern": pattern,
             "before": before,
@@ -180,12 +283,18 @@ class CorrectionState:
         """
         for h in self.history:
             protected_after = h["after"]
-            if protected_after and len(protected_after) > 10 and protected_after not in new_text:
+            if (
+                protected_after
+                and len(protected_after) > MIN_PROTECTED_FRAGMENT_LEN
+                and protected_after not in new_text
+            ):
                 return True
         return False
 
 
-# ── Number-to-word maps ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# NUMBER-TO-WORD MAPS
+# ═══════════════════════════════════════════════════════════════════════════
 
 # Mid-sentence count context (lowercase)
 NUMBER_WORD_MAP = {
@@ -222,7 +331,10 @@ SENTENCE_START_NUM_RE = re.compile(
 )
 
 
-# ── Verbatim-protected words (Spec Section 2.1) ───────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# VERBATIM-PROTECTED VOCABULARY (Spec Section 2.1)
+# ═══════════════════════════════════════════════════════════════════════════
+
 VERBATIM_PROTECTED = {
     # Acknowledgement words — Morson's Rule 4
     'okay', 'well',
@@ -272,7 +384,10 @@ TEXAS_DEPOSITION_SEEDS = {
 }
 
 
-# ── Multi-word phrase corrections (Priority 1 — Spec 9.4 Step 1) ─────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# MULTI-WORD PHRASE CORRECTIONS (Priority 1 — Spec 9.4 Step 1)
+# ═══════════════════════════════════════════════════════════════════════════
+
 MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
     # Legal term — all Deepgram variants of "subpoena duces tecum"
     (r'\bsub[cp]oena\s+deuces?\s+ti[ck]um\b',  'subpoena duces tecum'),
@@ -434,7 +549,10 @@ MULTIWORD_CORRECTIONS: List[Tuple[str, str]] = [
 ]
 
 
-# ── Universal single corrections (Priority 3 — Spec 9.4 Step 3) ──────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# UNIVERSAL SINGLE CORRECTIONS (Priority 3 — Spec 9.4 Step 3)
+# ═══════════════════════════════════════════════════════════════════════════
+
 UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
     # Reporter label normalization must run before generic word-split cleanup
     (r'\bTHE\s+COURT\s+REPORTER\s*:', 'THE REPORTER:'),
@@ -572,7 +690,32 @@ UNIVERSAL_CORRECTIONS: List[Tuple[str, str]] = [
 ]
 
 
-# ── Deepgram artifact duplicate (Priority 5 — Spec 2.2) ──────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# PRECOMPILED CORRECTION LISTS
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# The MULTIWORD_CORRECTIONS and UNIVERSAL_CORRECTIONS lists are kept as raw
+# (pattern_str, replacement_str) tuples for readability and test inspection.
+# At module load we also build pre-compiled (compiled_pattern, replacement,
+# original_pattern_str) lists so the hot path in apply_*_corrections() does
+# not recompile ~150 regexes per block. On a 2,000-block deposition this is
+# the difference between hundreds of thousands of compiles per run and a
+# one-time cost at import.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_MULTIWORD_COMPILED: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(p, re.IGNORECASE), r, p) for p, r in MULTIWORD_CORRECTIONS
+]
+
+_UNIVERSAL_COMPILED: list[tuple[re.Pattern[str], str, str]] = [
+    (re.compile(p, re.IGNORECASE), r, p) for p, r in UNIVERSAL_CORRECTIONS
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEEPGRAM ARTIFACT REGEXES (Priority 5 — Spec 2.2)
+# ═══════════════════════════════════════════════════════════════════════════
+
 ARTIFACT_DUPLICATE_RE = re.compile(r'\b(\w{4,})\s+\1\b', re.IGNORECASE)
 # Morson's Rule 157: spaced single letters → hyphenated
 # Matches 3+ consecutive single letters separated by spaces.
@@ -584,7 +727,9 @@ SPELLED_LETTERS_RE = re.compile(
 )
 
 
-# ── Case-preservation helper ──────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# CASE / FRAGMENT HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _preserve_case(original_word: str, replacement: str) -> str:
     """Return replacement in ALL CAPS if original was ALL CAPS."""
@@ -594,14 +739,20 @@ def _preserve_case(original_word: str, replacement: str) -> str:
 
 
 def _is_safe_rewrite(original_text: str, new_text: str) -> bool:
+    """Reject rewrites that shrink text below MIN_REWRITE_RATIO of input."""
     if not original_text:
         return True
-    return len(new_text) >= len(original_text) * 0.5
+    return len(new_text) >= len(original_text) * MIN_REWRITE_RATIO
 
 
 def _protected_replacement_fragment(replacement: str) -> str | None:
+    """
+    Return the trimmed replacement if it's a stable literal worth tracking
+    against later rules in the same phase. None for short fragments and any
+    replacement containing backreferences.
+    """
     normalized = replacement.strip()
-    if not normalized or len(normalized) <= 10:
+    if not normalized or len(normalized) <= MIN_PROTECTED_FRAGMENT_LEN:
         return None
     if '\\' in replacement:
         return None
@@ -617,6 +768,22 @@ def _preserve_match_case(original_text: str, replacement: str) -> str:
     return replacement
 
 
+def _resolve_confirmed_spellings(job_config: JobConfig | dict) -> dict:
+    """
+    Extract `confirmed_spellings` from either a JobConfig object or a raw dict.
+
+    Returns an empty dict when the field is missing or non-dict, so callers
+    can iterate safely without per-call defensive checks.
+    """
+    if isinstance(job_config, dict):
+        spellings = job_config.get("confirmed_spellings", {}) or {}
+    else:
+        spellings = getattr(job_config, "confirmed_spellings", {}) or {}
+    if not isinstance(spellings, dict):
+        return {}
+    return spellings
+
+
 def _is_phase7_protected_block(text: str) -> bool:
     """
     Return True when Phase 7 deterministic rules must not touch this block.
@@ -627,7 +794,7 @@ def _is_phase7_protected_block(text: str) -> bool:
     return bool(OBJECTION_BLOCK_RE.match(text) or PARENTHETICAL_BLOCK_RE.match(text))
 
 
-def _apply_outside_protected_segments(text: str, replacer) -> str:
+def _apply_outside_protected_segments(text: str, replacer: Callable[[str], str]) -> str:
     """
     Apply a block-local replacement function outside quoted speech only.
 
@@ -646,6 +813,10 @@ def _apply_outside_protected_segments(text: str, replacer) -> str:
     return ''.join(parts)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# SAFE-APPLY CORE
+# ═══════════════════════════════════════════════════════════════════════════
+
 def safe_apply(
     text: str,
     new_text: str,
@@ -661,29 +832,25 @@ def safe_apply(
 ) -> str:
     """
     Apply a correction only when it is non-destructive and non-conflicting.
+
+    Both rejection paths (too-short result, conflict with earlier rule) emit a
+    WARNING-level log line. We previously also printed to stdout — that's been
+    removed because it bypassed log handlers and caused noise in production.
     """
     if new_text == text:
         return text
     if not _is_safe_rewrite(text, new_text) and not allow_shortening:
         logger.warning(
-            "[corrections] SKIPPED (result too short) pattern=%s block=%d before_len=%d after_len=%d",
-            pattern,
-            block_index,
-            len(text),
-            len(new_text),
-        )
-        print(
-            f"RULE SKIPPED (too short): {pattern!r} "
-            f"({len(text)}->{len(new_text)} chars)"
+            "[corrections] SKIPPED (result too short) pattern=%s block=%d "
+            "before_len=%d after_len=%d",
+            pattern, block_index, len(text), len(new_text),
         )
         return text
     if state is not None and state.would_conflict(new_text):
         logger.warning(
             "[corrections] SKIPPED (conflict with earlier rule) pattern=%s block=%d",
-            pattern,
-            block_index,
+            pattern, block_index,
         )
-        print(f"RULE SKIPPED (blocked by earlier rule): {pattern!r}")
         return text
     if state is not None:
         state.record(pattern, text, new_text, protected_after=protected_after)
@@ -709,7 +876,12 @@ def _apply_safe_rewrite(
 ) -> str:
     compact_date_output = bool(
         re.search(r'\b\d{2}/\d{2}/\d{4}\b', new_text)
-        or re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+of\s+'?\d{2}\b", new_text, flags=re.IGNORECASE)
+        or re.search(
+            r"\b(?:January|February|March|April|May|June|July|August|"
+            r"September|October|November|December)\s+of\s+'?\d{2}\b",
+            new_text,
+            flags=re.IGNORECASE,
+        )
     )
     allow_shortening = (
         pattern == 'artifact_duplicate_4plus'
@@ -743,7 +915,9 @@ def _block_start_seconds(block: Block) -> float | None:
     return None
 
 
-# ── Step 1: Multi-word corrections ───────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 1: MULTI-WORD CORRECTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def apply_multiword_corrections(
     text: str,
@@ -751,20 +925,22 @@ def apply_multiword_corrections(
     block_index: int,
     state: CorrectionState | None = None,
 ) -> str:
-    for pattern, replacement in MULTIWORD_CORRECTIONS:
-        new_text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    for compiled, replacement, pattern_str in _MULTIWORD_COMPILED:
+        new_text = compiled.sub(replacement, text)
         text = _apply_safe_rewrite(
             text,
             new_text,
             records,
             block_index,
-            pattern,
+            pattern_str,
             state=state,
         )
     return text
 
 
-# ── Step 2: Case-specific corrections ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 2: CASE-SPECIFIC CORRECTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def apply_case_corrections(
     text: str,
@@ -773,12 +949,7 @@ def apply_case_corrections(
     block_index: int,
     state: CorrectionState | None = None,
 ) -> str:
-    if isinstance(job_config, dict):
-        confirmed_spellings = job_config.get("confirmed_spellings", {}) or {}
-    else:
-        confirmed_spellings = getattr(job_config, "confirmed_spellings", {}) or {}
-    if not isinstance(confirmed_spellings, dict):
-        confirmed_spellings = {}
+    confirmed_spellings = _resolve_confirmed_spellings(job_config)
 
     for wrong, correct in confirmed_spellings.items():
         pattern = r'\b' + re.escape(wrong) + r'\b'
@@ -800,9 +971,12 @@ def apply_case_corrections(
     return text
 
 
-# ── Step 3: Universal corrections ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 3: UNIVERSAL CORRECTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 ARTIFACT_ZIP_78216_RE = re.compile(r'(?<!Texas\s)\b78216\b', re.IGNORECASE)
+
 
 def apply_universal_corrections(
     text: str,
@@ -820,19 +994,23 @@ def apply_universal_corrections(
         state=state,
     )
 
-    for pattern, replacement in UNIVERSAL_CORRECTIONS:
-        new_text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    for compiled, replacement, pattern_str in _UNIVERSAL_COMPILED:
+        new_text = compiled.sub(replacement, text)
         text = _apply_safe_rewrite(
             text,
             new_text,
             records,
             block_index,
-            pattern,
+            pattern_str,
             state=state,
             protected_after=_protected_replacement_fragment(replacement),
         )
     return text
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DEPRECATED COMPATIBILITY SHIMS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def fix_depot_mishearing(text: str) -> str:
     """
@@ -846,12 +1024,17 @@ def fix_depot_mishearing(text: str) -> str:
     return text
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# CAUSE NUMBER + JUDICIAL DISTRICT
+# ═══════════════════════════════════════════════════════════════════════════
+
 def fix_cause_number_prefix(text: str) -> str:
     """
     Normalize common Deepgram mishearings of "Cause Number".
 
-    This pass intentionally fixes only the prefix phrase. Spoken digit collapse after
-    the prefix is handled separately so this function stays deterministic and bounded.
+    This pass intentionally fixes only the prefix phrase. Spoken digit collapse
+    after the prefix is handled separately so this function stays deterministic
+    and bounded.
     """
     def _replace(segment: str) -> str:
         return re.sub(
@@ -901,7 +1084,8 @@ def fix_judicial_district_ordinal(text: str) -> str:
     Normalize Texas judicial district references to ordinal form.
 
     Handles already-numeric district numbers and spoken digit sequences like
-    "four zero seven Judicial District". Already-correct ordinal forms remain stable.
+    "four zero seven Judicial District". Already-correct ordinal forms remain
+    stable.
     """
     def _replace(segment: str) -> str:
         segment = re.sub(
@@ -935,6 +1119,10 @@ def fix_judicial_district_ordinal(text: str) -> str:
 
     return _apply_outside_protected_segments(text, _replace)
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# UNIVERSAL LEGAL PHRASE CORRECTIONS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def _preserve_phrase_case(original_text: str, replacement: str) -> str:
     """Preserve broad phrase casing when replacing multi-word legal phrases."""
@@ -1130,6 +1318,10 @@ def apply_texas_deposition_seeds(text: str, confirmed_spellings: dict) -> str:
     return _apply_outside_protected_segments(text, _replace)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# SPOKEN DIGIT / NUMBER COLLAPSE HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
+
 def _collapse_spoken_digits(token_sequence: str) -> str:
     """
     Convert spoken digit words and letter tokens into a compact token string.
@@ -1301,6 +1493,10 @@ def _collapse_small_number_chunks(phrase: str) -> str | None:
 
     return "".join(chunks) if chunks else None
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SPOKEN DATES / TIMES / ADDRESSES
+# ═══════════════════════════════════════════════════════════════════════════
 
 def fix_spoken_dates(text: str) -> str:
     """
@@ -1650,7 +1846,12 @@ def fix_address_digits(text: str) -> str:
     return _apply_outside_protected_segments(text, _replace)
 
 
-# ── Step 4a: Number-to-word (mid-sentence count context) ─────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 4a: NUMBER-TO-WORD (mid-sentence count context)
+# ═══════════════════════════════════════════════════════════════════════════
+
+COUNT_RE = re.compile(r'\b(0|[1-9]|10)\b(?=\s+[a-zA-Z])')
+
 
 def apply_number_to_word(
     text: str,
@@ -1679,7 +1880,9 @@ def apply_number_to_word(
     )
 
 
-# ── Step 4b: Date mashup flagging ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 4b: DATE MASHUP / SAN-NAME FLAGGING
+# ═══════════════════════════════════════════════════════════════════════════
 
 _MONTH_WORDS = (
     'january|february|march|april|may|june|july|august|'
@@ -1695,7 +1898,6 @@ SAN_NAME_FLAG_RE = re.compile(
     r'|Benito\b|Elizario\b|Saba\b|Isidro\b|Patricio\b|Ygnacio\b|Augustine\b)'
     r'[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\b'
 )
-COUNT_RE = re.compile(r'\b(0|[1-9]|10)\b(?=\s+[a-zA-Z])')
 
 
 def apply_date_normalization(
@@ -1756,7 +1958,9 @@ def apply_san_name_flag(
     return text
 
 
-# ── Step 4c: Numbers at sentence start spelled out (Morson's English Guide) ──
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 4c: SENTENCE-START NUMBER (Morson's English Guide)
+# ═══════════════════════════════════════════════════════════════════════════
 
 def apply_sentence_start_number(
     text: str,
@@ -1801,7 +2005,9 @@ def apply_sentence_start_number(
     )
 
 
-# ── Step 5: Deepgram artifact removal ────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEP 5: DEEPGRAM ARTIFACT REMOVAL
+# ═══════════════════════════════════════════════════════════════════════════
 
 def apply_artifact_removal(
     text: str,
@@ -1873,7 +2079,9 @@ def apply_spelled_letter_hyphenation(
     )
 
 
-# ── Steps 6-7: Cleanup ────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# STEPS 6-9: CLEANUP RULES
+# ═══════════════════════════════════════════════════════════════════════════
 
 def fix_spaced_dashes(
     text: str,
@@ -2047,6 +2255,10 @@ def fix_conversational_titles(
         'fix_conversational_titles',
     )
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# STEPS 10-14: WHITESPACE / CAPITALIZATION / TERMINAL
+# ═══════════════════════════════════════════════════════════════════════════
 
 def normalize_spaces(text: str) -> str:
     return re.sub(r' {2,}', ' ', text).strip()
@@ -2237,7 +2449,32 @@ def normalize_time_and_dashes(
     )
 
 
-# ── Master correction function ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════
+# USER RULE STORE — LAZY LOAD AT MODULE IMPORT
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Resolved once at import so clean_block() doesn't pay an import cost or
+# raise/catch on every block. The names below are None when the optional
+# module is unavailable.
+# ═══════════════════════════════════════════════════════════════════════════
+
+try:
+    from spec_engine.user_rule_store import (  # type: ignore[import-not-found]
+        apply_user_rules as _apply_user_rules,
+        load_active_rules as _load_active_rules,
+    )
+except Exception as _user_rule_import_exc:  # pragma: no cover
+    _apply_user_rules = None
+    _load_active_rules = None
+    logger.info(
+        "[corrections] user_rule_store unavailable at import: %s",
+        _user_rule_import_exc,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MASTER CORRECTION FUNCTION
+# ═══════════════════════════════════════════════════════════════════════════
 
 def clean_block(
     text: str,
@@ -2285,110 +2522,70 @@ def clean_block(
 
     records: List[CorrectionRecord] = []
     state = CorrectionState()
-    if isinstance(job_config, dict):
-        confirmed_spellings = job_config.get("confirmed_spellings", {}) or {}
-    else:
-        confirmed_spellings = getattr(job_config, "confirmed_spellings", {}) or {}
-    if not isinstance(confirmed_spellings, dict):
-        confirmed_spellings = {}
+    confirmed_spellings = _resolve_confirmed_spellings(job_config)
 
     _before = text  # snapshot for block-level summary log
 
     text = apply_multiword_corrections(text, records, block_index, state=state)
     text = _apply_safe_rewrite(
-        text,
-        fix_cause_number_prefix(text),
-        records,
-        block_index,
-        'fix_cause_number_prefix',
-        state=state,
+        text, fix_cause_number_prefix(text), records, block_index,
+        'fix_cause_number_prefix', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_spoken_dates(text),
-        records,
-        block_index,
-        'fix_spoken_dates',
-        state=state,
+        text, fix_spoken_dates(text), records, block_index,
+        'fix_spoken_dates', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_spoken_times(text),
-        records,
-        block_index,
-        'fix_spoken_times',
-        state=state,
+        text, fix_spoken_times(text), records, block_index,
+        'fix_spoken_times', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_cause_number_digits(text),
-        records,
-        block_index,
-        'fix_cause_number_digits',
-        state=state,
+        text, fix_cause_number_digits(text), records, block_index,
+        'fix_cause_number_digits', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_csr_number_digits(text),
-        records,
-        block_index,
-        'fix_csr_number_digits',
-        state=state,
+        text, fix_csr_number_digits(text), records, block_index,
+        'fix_csr_number_digits', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_address_digits(text),
-        records,
-        block_index,
-        'fix_address_digits',
-        state=state,
+        text, fix_address_digits(text), records, block_index,
+        'fix_address_digits', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_universal_legal_phrases(text),
-        records,
-        block_index,
-        'fix_universal_legal_phrases',
-        state=state,
+        text, fix_universal_legal_phrases(text), records, block_index,
+        'fix_universal_legal_phrases', state=state,
     )
     text = _apply_safe_rewrite(
-        text,
-        fix_traffic_citation_mishearing(text),
-        records,
-        block_index,
-        'fix_traffic_citation_mishearing',
-        state=state,
+        text, fix_traffic_citation_mishearing(text), records, block_index,
+        'fix_traffic_citation_mishearing', state=state,
     )
     text = apply_case_corrections(text, job_config, records, block_index, state=state)
     text = _apply_safe_rewrite(
-        text,
-        apply_texas_deposition_seeds(text, confirmed_spellings),
-        records,
-        block_index,
-        'apply_texas_deposition_seeds',
-        state=state,
+        text, apply_texas_deposition_seeds(text, confirmed_spellings),
+        records, block_index, 'apply_texas_deposition_seeds', state=state,
     )
-    try:
-        from spec_engine.user_rule_store import apply_user_rules
 
-        new_text, _user_records = apply_user_rules(
-            text,
-            block_index=block_index,
-            state=state,
-            active_rules=active_user_rules,
-        )
-        if _is_safe_rewrite(text, new_text):
-            text = new_text
-            records.extend(_user_records)
-        else:
-            logger.warning(
-                "[clean_block] skipped unsafe user-rule rewrite block=%d before_len=%d after_len=%d",
-                block_index,
-                len(text),
-                len(new_text),
+    # User-rule layer — resolved at module import, no try/except per block.
+    if _apply_user_rules is not None:
+        try:
+            new_text, _user_records = _apply_user_rules(
+                text,
+                block_index=block_index,
+                state=state,
+                active_rules=active_user_rules,
             )
-    except Exception as _exc:
-        logger.warning("[clean_block] user_rule_store unavailable: %s", _exc)
+            if _is_safe_rewrite(text, new_text):
+                text = new_text
+                records.extend(_user_records)
+            else:
+                logger.warning(
+                    "[clean_block] skipped unsafe user-rule rewrite block=%d "
+                    "before_len=%d after_len=%d",
+                    block_index, len(text), len(new_text),
+                )
+        except Exception as _exc:
+            logger.warning("[clean_block] user_rule_store call failed: %s", _exc)
+
     text = apply_universal_corrections(text, records, block_index, state=state)
     text = normalize_time_and_dashes(text, records, block_index)
     text = apply_number_to_word(text, records, block_index)
@@ -2396,12 +2593,8 @@ def clean_block(
     text = apply_san_name_flag(text, records, flags, block_index, flag_counter)
     text = apply_sentence_start_number(text, records, block_index)
     text = _apply_safe_rewrite(
-        text,
-        fix_judicial_district_ordinal(text),
-        records,
-        block_index,
-        'fix_judicial_district_ordinal',
-        state=state,
+        text, fix_judicial_district_ordinal(text), records, block_index,
+        'fix_judicial_district_ordinal', state=state,
     )
     text = apply_artifact_removal(text, records, block_index)
     text = apply_spelled_letter_hyphenation(text, records, block_index)
@@ -2428,6 +2621,10 @@ def clean_block(
     return text, records, list(flags)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BATCH ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════
+
 def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List[Block]:
     """
     Apply deterministic corrections to structured blocks in-place.
@@ -2440,19 +2637,21 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
     flag_counter = [0]
     change_count = 0
     prev_cleaned: str = ""
-    prev_speaker: Optional[int] = None
+    prev_speaker: int | None = None
     prev_start: float | None = None
-    active_user_rules: Optional[List[dict]] = None
 
+    # Active user rules are resolved once per batch.
+    # The lookup goes through the user_rule_store module attribute (not the
+    # captured _load_active_rules import) so test monkey-patches that replace
+    # `spec_engine.user_rule_store.load_active_rules` are honored.
+    active_user_rules: list[dict] | None = None
     try:
-        from spec_engine.user_rule_store import load_active_rules
-
-        active_user_rules = load_active_rules()
+        from spec_engine import user_rule_store as _urs
+        loader = getattr(_urs, "load_active_rules", None)
+        if loader is not None:
+            active_user_rules = loader()
     except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "apply_corrections: user_rule_store unavailable: %s",
-            exc,
-        )
+        logger.warning("apply_corrections: load_active_rules failed: %s", exc)
         active_user_rules = None
 
     for index, block in enumerate(blocks):
@@ -2470,18 +2669,19 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
         # ── Consecutive duplicate block detection ─────────────────────────────
         # Skip this block if its cleaned text is identical to the previous
         # block AND they share the same speaker. Only applies to blocks of
-        # 15+ characters to avoid false positives on short responses like "Yes."
-        # Also requires near-identical timing so repeated testimony is not dropped.
+        # DUPLICATE_BLOCK_MIN_LEN+ characters to avoid false positives on short
+        # responses like "Yes." Also requires near-identical timing so repeated
+        # testimony spoken minutes apart is preserved.
         current_start = _block_start_seconds(block)
         if (
-            len(cleaned_text.strip()) >= 15
+            len(cleaned_text.strip()) >= DUPLICATE_BLOCK_MIN_LEN
             and cleaned_text.strip() == prev_cleaned.strip()
             and block.speaker_id == prev_speaker
             and current_start is not None
             and prev_start is not None
-            and abs(current_start - prev_start) < 1.0
+            and abs(current_start - prev_start) < DUPLICATE_BLOCK_TIME_WINDOW_S
         ):
-            logging.getLogger(__name__).debug(
+            logger.debug(
                 "apply_corrections: skipping duplicate block %d: %r",
                 index, cleaned_text[:60],
             )
@@ -2508,7 +2708,7 @@ def apply_corrections(blocks: List[Block], job_config: JobConfig | dict) -> List
             )
         )
 
-    logging.getLogger(__name__).info(
+    logger.info(
         "apply_corrections: %d/%d blocks modified  |  %d duplicates skipped",
         change_count,
         len(corrected_blocks),

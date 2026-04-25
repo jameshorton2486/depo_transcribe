@@ -67,12 +67,25 @@ def test_caught_number_no_longer_becomes_cause_number():
     assert "caught number" in result.lower()
 
 
-def test_safe_apply_prints_skip_reason(capsys):
+def test_safe_apply_logs_skip_reason(caplog):
+    """safe_apply emits a WARNING log when it rejects a too-short rewrite.
+
+    Contract change: previously this used print() to stdout, which polluted
+    production logs and bypassed handler config. The implementation now
+    routes the same skip diagnostic through the spec_engine.corrections
+    logger at WARNING level. The test was renamed and switched from capsys
+    to caplog to match.
+    """
+    import logging
+
     original = "a" * 100
-    result = safe_apply(original, "b" * 10, "test_rule", None, [], 0)
-    captured = capsys.readouterr()
+    with caplog.at_level(logging.WARNING, logger="spec_engine.corrections"):
+        result = safe_apply(original, "b" * 10, "test_rule", None, [], 0)
     assert result == original
-    assert "RULE SKIPPED" in captured.out
+    assert any(
+        "SKIPPED" in record.message and "test_rule" in record.message
+        for record in caplog.records
+    )
 
 
 def test_transcript_tab_no_longer_auto_runs_ai():
