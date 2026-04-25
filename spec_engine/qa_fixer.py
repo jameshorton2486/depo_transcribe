@@ -10,7 +10,30 @@ from typing import Any, List
 
 from .models import Block, BlockType
 
+__all__ = [
+    "fix_qa_structure",
+    "split_inline_answers",
+    "split_inline_questions_from_answers",
+]
+
 _log = logging.getLogger("spec_engine.qa_fixer")
+
+
+# ── Tunable thresholds ───────────────────────────────────────────────────────
+# Word-count ceiling for an utterance to be considered a generic short answer
+# fragment in _looks_like_generic_answer_fragment.
+MAX_GENERIC_ANSWER_FRAGMENT_WORDS = 8
+# Word-count ceiling below which a same-speaker continuation block is folded
+# into the previous block (Deepgram pause fragmentation cleanup).
+TINY_CONTINUATION_WORD_COUNT = 3
+# Jaccard similarity threshold (0.0-1.0) above which two consecutive same-
+# speaker blocks are treated as chunk-overlap duplicates. Matches the
+# duplicate-detection semantics in spec_engine/corrections.py.
+NEAR_DUPLICATE_SIMILARITY_THRESHOLD = 0.85
+# Two blocks must start within this many seconds of each other to be treated
+# as chunk-overlap duplicates. Matches DUPLICATE_BLOCK_TIME_WINDOW_S in
+# spec_engine/corrections.py.
+NEAR_DUPLICATE_TIME_WINDOW_S = 1.0
 
 
 ANSWER_TOKENS = (
@@ -79,44 +102,64 @@ REPORTER_PREAMBLE_START_RE = re.compile(
     r"|\bcounsel,\s+will\s+you\s+please\s+state\s+your\s+agreement\b",
     re.IGNORECASE,
 )
+# Inline Q/A split: matches a question + remainder. Non-greedy + DOTALL so the
+# split happens at the first '?', not the last. Pre-compiled at module load
+# so split_inline_answers() doesn't recompile per block.
+_INLINE_QA_SPLIT_RE = re.compile(r"(.+?\?)\s+(.+)", re.DOTALL)
+# Proper-noun fragment detector used by _looks_like_generic_answer_fragment.
+# Pre-compiled at module load so it isn't rebuilt on every fragment check.
+_PROPER_NOUN_FRAGMENT_RE = re.compile(
+    r"[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){0,5}\.?"
+)
+
+
+def _get_config_value(job_config: Any, key: str, default: Any = None) -> Any:
+    """Read a value from JobConfig (object) or dict, returning default if missing."""
+    if job_config is None:
+        return default
+    if hasattr(job_config, key):
+        return getattr(job_config, key, default)
+    if isinstance(job_config, dict):
+        return job_config.get(key, default)
+    return default
+
+
+def _resolve_speaker_identity(
+    job_config: Any, id_key: str, original: Block
+) -> tuple[Any, str | None]:
+    """
+    Resolve (speaker_id, speaker_name) from JobConfig + a speaker-ID key.
+
+    Replaces the previously-duplicated _witness_identity/_examiner_identity
+    pair. The asymmetric str() fallback for dict-style configs is preserved
+    verbatim — when job_config is a plain dict the speaker_map may contain
+    string keys that need a second lookup, but object-style configs are
+    expected to have proper int keys.
+    """
+    if hasattr(job_config, id_key):
+        speaker_id = getattr(job_config, id_key, original.speaker_id)
+    elif isinstance(job_config, dict):
+        speaker_id = job_config.get(id_key, original.speaker_id)
+    else:
+        speaker_id = original.speaker_id
+
+    speaker_name: str | None = None
+    if hasattr(job_config, "speaker_map"):
+        speaker_name = (getattr(job_config, "speaker_map", {}) or {}).get(speaker_id)
+    elif isinstance(job_config, dict):
+        speaker_map = job_config.get("speaker_map", {}) or {}
+        speaker_name = speaker_map.get(speaker_id)
+        if speaker_name is None:
+            speaker_name = speaker_map.get(str(speaker_id))
+    return speaker_id, speaker_name
 
 
 def _witness_identity(job_config: Any, original: Block) -> tuple[Any, str | None]:
-    if hasattr(job_config, "witness_id"):
-        witness_id = getattr(job_config, "witness_id", original.speaker_id)
-    elif isinstance(job_config, dict):
-        witness_id = job_config.get("witness_id", original.speaker_id)
-    else:
-        witness_id = original.speaker_id
-
-    witness_name = None
-    if hasattr(job_config, "speaker_map"):
-        witness_name = (getattr(job_config, "speaker_map", {}) or {}).get(witness_id)
-    elif isinstance(job_config, dict):
-        speaker_map = job_config.get("speaker_map", {}) or {}
-        witness_name = speaker_map.get(witness_id)
-        if witness_name is None:
-            witness_name = speaker_map.get(str(witness_id))
-    return witness_id, witness_name
+    return _resolve_speaker_identity(job_config, "witness_id", original)
 
 
 def _examiner_identity(job_config: Any, original: Block) -> tuple[Any, str | None]:
-    if hasattr(job_config, "examining_attorney_id"):
-        examiner_id = getattr(job_config, "examining_attorney_id", original.speaker_id)
-    elif isinstance(job_config, dict):
-        examiner_id = job_config.get("examining_attorney_id", original.speaker_id)
-    else:
-        examiner_id = original.speaker_id
-
-    examiner_name = None
-    if hasattr(job_config, "speaker_map"):
-        examiner_name = (getattr(job_config, "speaker_map", {}) or {}).get(examiner_id)
-    elif isinstance(job_config, dict):
-        speaker_map = job_config.get("speaker_map", {}) or {}
-        examiner_name = speaker_map.get(examiner_id)
-        if examiner_name is None:
-            examiner_name = speaker_map.get(str(examiner_id))
-    return examiner_id, examiner_name
+    return _resolve_speaker_identity(job_config, "examining_attorney_id", original)
 
 
 def _looks_like_question_text(text: str) -> bool:
@@ -147,10 +190,10 @@ def _looks_like_generic_answer_fragment(text: str) -> bool:
         return True
 
     words = normalized.split()
-    if len(words) > 8:
+    if len(words) > MAX_GENERIC_ANSWER_FRAGMENT_WORDS:
         return False
 
-    if re.fullmatch(r"[A-Z][A-Za-z'.-]+(?:\s+[A-Z][A-Za-z'.-]+){0,5}\.?", normalized):
+    if _PROPER_NOUN_FRAGMENT_RE.fullmatch(normalized):
         return True
 
     return normalized[0].isupper()
@@ -239,7 +282,8 @@ def split_inline_answers(blocks: List[Block], job_config: Any = None) -> List[Bl
 
         text = block.text.strip()
         # Non-greedy + DOTALL: split on the first '?', not the last.
-        match = re.match(r"(.+?\?)\s+(.+)", text, re.DOTALL)
+        # _INLINE_QA_SPLIT_RE is pre-compiled at module load.
+        match = _INLINE_QA_SPLIT_RE.match(text)
         if not match:
             new_blocks.append(block)
             continue
@@ -369,7 +413,7 @@ def _merge_orphaned_continuations(blocks: List[Block]) -> List[Block]:
         word_count = len((block.text or "").split())
         same_speaker = prev.speaker_id == block.speaker_id
         same_type = prev.block_type == block.block_type
-        is_tiny = word_count <= 3
+        is_tiny = word_count <= TINY_CONTINUATION_WORD_COUNT
         is_mergeable = block.block_type in mergeable_types
 
         # Filler-only blocks ("Uh-huh.", "Mm-hmm.") are standalone testimony.
@@ -448,7 +492,11 @@ def _remove_near_duplicate_blocks(blocks: List[Block]) -> List[Block]:
         except (TypeError, ValueError):
             time_diff = None
 
-        if similarity >= 0.85 and time_diff is not None and time_diff < 1.0:
+        if (
+            similarity >= NEAR_DUPLICATE_SIMILARITY_THRESHOLD
+            and time_diff is not None
+            and time_diff < NEAR_DUPLICATE_TIME_WINDOW_S
+        ):
             if len(block.text or "") > len(prev.text or ""):
                 result[-1] = block
         else:
