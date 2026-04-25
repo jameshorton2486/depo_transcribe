@@ -935,120 +935,10 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._browse_file,
         ).pack(side="right")
 
-        # ── "or" separator ─────────────────────────────────────────────────
-        sep_row = ctk.CTkFrame(container, fg_color="transparent")
-        sep_row.pack(fill="x", pady=(0, 1))
-        ctk.CTkLabel(
-            sep_row,
-            text="───  or open an existing transcript to review / correct  ───",
-            font=ctk.CTkFont(size=12),
-            text_color="#445566",
-        ).pack()
-
-        # ── Load Existing Transcript card ──────────────────────────────────
-        self._load_card = ctk.CTkFrame(container, border_width=1, border_color="#1A3A4A")
-        self._load_card.pack(fill="x", pady=(0, 1))
-
-        load_inner = ctk.CTkFrame(self._load_card, fg_color="transparent")
-        load_inner.pack(fill="x", padx=6, pady=1)
-
-        load_hdr = ctk.CTkFrame(load_inner, fg_color="transparent")
-        load_hdr.pack(fill="x", pady=(0, 2))
-
-        make_section_header(load_hdr, "Existing Transcript").pack(side="left")
-
-        ctk.CTkLabel(
-            load_hdr,
-            text="Review or correct an existing transcript",
-            font=ctk.CTkFont(size=13),
-            text_color="#445566",
-        ).pack(side="left", padx=(12, 0))
-
-        self._clear_load_btn = ctk.CTkButton(
-            load_hdr,
-            text="✕ Clear",
-            width=70,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#441A1A",
-            text_color="#CC4444",
-            hover_color="#2A0A0A",
-            state="disabled",
-            command=self._clear_correction_mode,
-        )
-        self._clear_load_btn.pack(side="right")
-
-        load_file_row = ctk.CTkFrame(load_inner, fg_color="transparent")
-        load_file_row.pack(fill="x", pady=(0, 3))
-
-        self._load_path_entry = ctk.CTkEntry(
-            load_file_row,
-            placeholder_text="Browse to a saved transcript .txt file…",
-            state="disabled",
-        )
-        self._load_path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
-
-        self._load_browse_btn = ctk.CTkButton(
-            load_file_row,
-            text="Browse…",
-            width=80,
-            fg_color=BTN_UTILITY_BLUE,
-            hover_color="#0F3E8A",
-            text_color="white",
-            command=self._browse_existing_transcript,
-        )
-        self._load_browse_btn.pack(side="right")
-
-        self._load_meta_frame = ctk.CTkFrame(load_inner, fg_color="transparent")
-
-        self._load_meta_cause = ctk.CTkLabel(
-            self._load_meta_frame, text="", font=ctk.CTkFont(size=13), text_color="#4488CC"
-        )
-        self._load_meta_name = ctk.CTkLabel(
-            self._load_meta_frame, text="", font=ctk.CTkFont(size=13), text_color="#4488CC"
-        )
-        self._load_meta_date = ctk.CTkLabel(
-            self._load_meta_frame, text="", font=ctk.CTkFont(size=13), text_color="#4488CC"
-        )
-        self._load_meta_ufm = ctk.CTkLabel(
-            self._load_meta_frame, text="", font=ctk.CTkFont(size=13), text_color="#4488CC"
-        )
-
-        for lbl in (
-            self._load_meta_cause,
-            self._load_meta_name,
-            self._load_meta_date,
-            self._load_meta_ufm,
-        ):
-            lbl.pack(side="left", padx=(0, 16))
-
-        self._load_action_frame = ctk.CTkFrame(load_inner, fg_color="transparent")
-
-        self._open_loaded_btn = ctk.CTkButton(
-            self._load_action_frame,
-            text="Open in Transcript Tab →",
-            width=180,
-            fg_color="#0F5A6A",
-            hover_color="#0A3A4A",
-            command=self._open_loaded_transcript,
-        )
-        self._open_loaded_btn.pack(side="left")
-
-        self._review_loaded_btn = ctk.CTkButton(
-            self._load_action_frame,
-            text="☰ Review & Edit UFM",
-            width=150,
-            state="disabled",
-            command=self._open_review_dialog,
-        )
-        self._review_loaded_btn.pack(side="left", padx=(8, 0))
-
-        ctk.CTkLabel(
-            self._load_action_frame,
-            text="Transcription disabled in correction mode",
-            font=ctk.CTkFont(size=13),
-            text_color="#334455",
-        ).pack(side="right")
+        # The "Existing Transcript" loader lives on the Transcript tab now
+        # (Load Case button). This tab is purely for creating new transcripts;
+        # populating case metadata + NOD PDF still flows through this tab via
+        # the public load_case_folder() method, called from Tab 2.
 
         # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
         settings_card = ctk.CTkFrame(container)
@@ -1409,7 +1299,6 @@ class TranscribeTab(ctk.CTkFrame):
             text="\U0001f4dd  Reporter Notes",
             fg_color=_DEFAULT_BUTTON_COLOR,
         )
-        self._review_loaded_btn.configure(state="disabled")
         self._set_case_files_panel_expanded(True)
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
@@ -1443,17 +1332,8 @@ class TranscribeTab(ctk.CTkFrame):
             "Aggressive (noisy/poor audio)",
         }:
             self._quality_var.set(audio_quality)
-        if hasattr(self, "_load_meta_frame"):
-            self._load_meta_frame.pack_forget()
-        if hasattr(self, "_load_action_frame"):
-            self._load_action_frame.pack_forget()
-        if hasattr(self, "_load_path_entry"):
-            self._load_path_entry.configure(state="normal")
-            self._load_path_entry.delete(0, "end")
-            self._load_path_entry.configure(state="disabled")
         if self._correction_mode:
             self._set_create_buttons(state="disabled", text="CORRECTION MODE — Transcription Disabled")
-        logger.info("Case state reset.")
 
     def _force_rescan(self):
         """Force re-detection of PDF and reporter notes from source_docs."""
@@ -1734,30 +1614,7 @@ class TranscribeTab(ctk.CTkFrame):
             app.transcript_tab.load_transcript(self._last_transcript_path)
             app.tab_view.set("Transcript")
 
-    # ── Load Existing Transcript ─────────────────────────────────────────────────
-
-    def _browse_existing_transcript(self):
-        """
-        Open a FOLDER picker to select a project case folder.
-
-        Expected structure (selected folder = the case/witness folder):
-          {base}\\{YYYY}\\{Mon}\\{CauseNumber}\\{last_first}\\   ← SELECT THIS
-              Deepgram\\       ← transcripts (.txt) live here
-              source_docs\\    ← NOD PDFs live here
-
-        After selecting the folder, automatically finds the most recently
-        modified .txt transcript in the Deepgram\\ subfolder and loads it
-        along with all other project files.
-        """
-        folder = filedialog.askdirectory(
-            title="Select Case Folder  (e.g. coger_matthew)",
-            initialdir=self._base_dir_var.get(),
-            mustexist=True,
-        )
-        if not folder:
-            return
-
-        self._load_project_folder(folder)
+    # ── Load Existing Transcript (driven by Tab 2's "Load Case" button) ─────
 
     def _load_project_folder(self, folder: str):
         """
@@ -1825,12 +1682,6 @@ class TranscribeTab(ctk.CTkFrame):
         from core.job_config_manager import load_job_config
         job_config_data = load_job_config(folder)
         self._apply_saved_transcription_settings(job_config_data)
-
-        # ── 5. Update path entry to show folder (not just the .txt file) ──────
-        self._load_path_entry.configure(state="normal")
-        self._load_path_entry.delete(0, "end")
-        self._load_path_entry.insert(0, folder)
-        self._load_path_entry.configure(state="disabled")
 
         logger.info("[LoadProject] Project loaded from: %s", folder)
 
@@ -1904,22 +1755,6 @@ class TranscribeTab(ctk.CTkFrame):
                 ufm_fields_data,
                 witness_fallback=witness_display,
             )
-            self._review_loaded_btn.configure(state="normal")
-
-        self._load_path_entry.configure(state="normal")
-        self._load_path_entry.delete(0, "end")
-        self._load_path_entry.insert(0, txt_path)
-        self._load_path_entry.configure(state="disabled")
-
-        self._load_meta_cause.configure(text=f"Cause: {cause_number or '—'}")
-        self._load_meta_name.configure(text=f"Witness: {witness_display or '—'}")
-        self._load_meta_date.configure(text=f"Date: {depo_date or '—'}")
-        self._load_meta_ufm.configure(
-            text=f"UFM: {len(ufm_fields_data)} fields" if ufm_fields_data else "UFM: not found"
-        )
-        self._load_meta_frame.pack(fill="x", pady=(0, 4))
-        self._load_action_frame.pack(fill="x", pady=(2, 0))
-        self._clear_load_btn.configure(state="normal")
 
         self._set_create_buttons(state="disabled", text="CORRECTION MODE — Transcription Disabled")
 
@@ -1959,20 +1794,10 @@ class TranscribeTab(ctk.CTkFrame):
             self._open_loaded_transcript()
 
     def _clear_correction_mode(self):
-        """Exit correction mode and reset the load panel."""
+        """Exit correction mode and reset case state for a fresh transcription."""
         self._correction_mode = False
         self._loaded_transcript_path = None
         self._loaded_case_folder = None
-
-        self._load_meta_frame.pack_forget()
-        self._load_action_frame.pack_forget()
-
-        self._load_path_entry.configure(state="normal")
-        self._load_path_entry.delete(0, "end")
-        self._load_path_entry.configure(state="disabled")
-
-        self._clear_load_btn.configure(state="disabled")
-        self._review_loaded_btn.configure(state="disabled")
 
         self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
 
