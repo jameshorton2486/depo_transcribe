@@ -697,6 +697,12 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._conf_label.pack(side="left")
 
+        # Prev / Next / Confirm previously lived here as well. They are now
+        # promoted to the always-visible review row in the header
+        # (_header_prev_btn / _header_next_btn / _header_confirm_btn) so
+        # navigation is reachable without expanding the bottom panel.
+        # Keeping this row for the Highlight toggle, which has no header
+        # counterpart.
         self._highlight_toggle = ctk.CTkCheckBox(
             conf_row,
             text="Highlight",
@@ -705,40 +711,6 @@ class TranscriptTab(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
         )
         self._highlight_toggle.pack(side="right")
-
-        self._confirm_btn = ctk.CTkButton(
-            conf_row,
-            text="Confirm",
-            width=88,
-            fg_color="#1A6B3A",
-            hover_color="#145230",
-            command=self._confirm_current_word,
-        )
-        self._confirm_btn.pack(side="right", padx=(0, 6))
-
-        self._next_flagged_btn = ctk.CTkButton(
-            conf_row,
-            text="Next →",
-            width=78,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#334",
-            text_color="#8ab",
-            command=self._go_to_next_flagged,
-        )
-        self._next_flagged_btn.pack(side="right", padx=(0, 6))
-
-        self._prev_flagged_btn = ctk.CTkButton(
-            conf_row,
-            text="← Prev",
-            width=78,
-            fg_color="transparent",
-            border_width=1,
-            border_color="#334",
-            text_color="#8ab",
-            command=self._go_to_previous_flagged,
-        )
-        self._prev_flagged_btn.pack(side="right", padx=(0, 6))
 
         self._low_conf_pady = (0, 3)
         self._conf_toggle_btn = ctk.CTkButton(
