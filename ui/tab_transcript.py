@@ -26,6 +26,8 @@ from core.confidence_docx_exporter import export_confidence_docx
 from ui._components import (
     BTN_AI_PURPLE,
     BTN_AI_PURPLE_HOVER,
+    BTN_OUTLINE_BORDER,
+    BTN_OUTLINE_TEXT,
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
@@ -646,24 +648,25 @@ class TranscriptTab(ctk.CTkFrame):
         self._stop_btn = ctk.CTkButton(player_row, text="Stop", width=72, command=self._stop_audio)
         self._stop_btn.pack(side="left", padx=(0, 8))
 
-        # ── Speed control ────────────────────────────────────────────────────
-        self._speed_down_btn = ctk.CTkButton(
-            player_row, text="◀", width=24, command=self._speed_down,
-            font=ctk.CTkFont(size=13),
-        )
-        self._speed_down_btn.pack(side="left", padx=(0, 2))
-
-        self._speed_label = ctk.CTkLabel(
-            player_row, text="1.0×", width=38,
-            font=ctk.CTkFont(size=13), anchor="center",
-        )
-        self._speed_label.pack(side="left")
-
-        self._speed_up_btn = ctk.CTkButton(
-            player_row, text="▶", width=24, command=self._speed_up,
-            font=ctk.CTkFont(size=13),
-        )
-        self._speed_up_btn.pack(side="left", padx=(2, 8))
+        # ── Speed presets ────────────────────────────────────────────────────
+        # Replaces the prior ◀ / 1.0× / ▶ stepper with discrete preset buttons.
+        # One click jumps directly to common review speeds — slow for complex
+        # testimony, fast for skimming clear sections. _speed_rates is the
+        # source of truth; this loop renders one button per rate.
+        self._speed_btns: list[ctk.CTkButton] = []
+        for idx, rate in enumerate(self._speed_rates):
+            btn = ctk.CTkButton(
+                player_row,
+                text=f"{rate:.2g}×",
+                width=44,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda i=idx: self._set_speed(i),
+            )
+            btn.pack(side="left", padx=(0, 2))
+            self._speed_btns.append(btn)
+        # Trailing spacer so Skip Gap doesn't crowd the last preset button.
+        self._speed_btns[-1].pack_configure(padx=(0, 8))
+        self._refresh_speed_buttons()
         # ────────────────────────────────────────────────────────────────────
 
         self._skip_gap_btn = ctk.CTkButton(
@@ -2713,12 +2716,36 @@ class TranscriptTab(ctk.CTkFrame):
             self._speed_idx += 1
             self._apply_speed()
 
+    def _set_speed(self, idx: int) -> None:
+        """Jump directly to a preset speed by index into _speed_rates."""
+        if 0 <= idx < len(self._speed_rates):
+            self._speed_idx = idx
+            self._apply_speed()
+
     def _apply_speed(self) -> None:
         rate = self._speed_rates[self._speed_idx]
-        label = f"{rate:.2g}×"   # "0.5×", "1×", "1.25×", etc.
-        self._speed_label.configure(text=label)
         if self._player:
             self._player.set_rate(rate)
+        self._refresh_speed_buttons()
+
+    def _refresh_speed_buttons(self) -> None:
+        """Highlight the active speed-preset button; outline the rest."""
+        for idx, btn in enumerate(getattr(self, "_speed_btns", [])):
+            if idx == self._speed_idx:
+                btn.configure(
+                    fg_color=BTN_UTILITY_BLUE,
+                    hover_color=BTN_UTILITY_BLUE_HOVER,
+                    text_color="white",
+                    border_width=0,
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    hover_color="#22384F",
+                    text_color=BTN_OUTLINE_TEXT,
+                    border_width=1,
+                    border_color=BTN_OUTLINE_BORDER,
+                )
 
     # ── Waveform ──────────────────────────────────────────────────────────────
 
