@@ -1175,20 +1175,13 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._review_btn.pack(side="right", padx=(6, 0))
 
-        # Short status text only - fits inline on the toolbar without
-        # wrapping onto a second line. The long instructional copy that
-        # used to live here ("upload an NOD PDF or reporter notes...") was
-        # wrapping into the button strip and rendering as orphaned text
-        # like "or reporter case data." between Open Transcript and Re-Scan.
+        # Hidden status label. The widget is kept so the ~15 .configure()
+        # callers around the file remain valid no-ops. Visible feedback for
+        # extraction / load events now goes through the Transcript-tab log
+        # panel (_append_transcript_log) and messagebox dialogs.
         self._extract_status_label = ctk.CTkLabel(
-            toolbar_right,
-            text="No documents loaded",
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
-            anchor="e",
-            justify="right",
+            toolbar_right, text="", font=ctk.CTkFont(size=12),
         )
-        self._extract_status_label.pack(side="right", padx=(0, 8))
         # ── Speaker Labels (hidden until transcript completes) ──────────────
         self._speaker_card = ctk.CTkFrame(
             container,
@@ -1644,10 +1637,7 @@ class TranscribeTab(ctk.CTkFrame):
         path = self._current_case_path
         logger.info("[UI] Opening folder: %s", path)
         if not path or not os.path.isdir(path):
-            self._extract_status_label.configure(
-                text="Output folder not found",
-                text_color="#CC4444",
-            )
+            messagebox.showerror("Output Folder Not Found", f"No folder at:\n{path or '(none)'}")
             return
         os.startfile(path)
 
@@ -1656,10 +1646,7 @@ class TranscribeTab(ctk.CTkFrame):
         path = self._last_transcript_path
         logger.info("[UI] Loading transcript: %s", path)
         if not path or not os.path.isfile(path):
-            self._extract_status_label.configure(
-                text="Transcript file not found",
-                text_color="#CC4444",
-            )
+            messagebox.showerror("Transcript Not Found", f"No transcript at:\n{path or '(none)'}")
             return
         app = self.winfo_toplevel()
         app.transcript_tab.load_transcript(path)
@@ -1799,6 +1786,9 @@ class TranscribeTab(ctk.CTkFrame):
         self._loaded_transcript_path = txt_path
         self._loaded_case_folder = deepgram_dir
         self._ufm_fields = ufm_fields_data
+        # _open_transcript reads _last_transcript_path; populate it so the
+        # toolbar button works in the load-existing-case flow too.
+        self._last_transcript_path = txt_path
 
         witness_display = f"{witness_first} {witness_last}".strip()
         if ufm_fields_data:
@@ -1811,6 +1801,11 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._current_case_path = os.path.dirname(deepgram_dir)
         self._update_path_preview()
+
+        # Enable the toolbar open buttons now that we have both a folder
+        # path and a transcript path on disk.
+        self._open_folder_btn.configure(state="normal")
+        self._open_transcript_btn.configure(state="normal")
 
         logger.info(
             "[CorrectionMode] Loaded transcript: %s | cause=%s witness=%s %s",
