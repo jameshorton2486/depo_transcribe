@@ -1243,12 +1243,16 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._rescan_btn.pack(side="right", padx=(6, 0))
 
+        # Short status text only - fits inline on the toolbar without
+        # wrapping onto a second line. The long instructional copy that
+        # used to live here ("upload an NOD PDF or reporter notes...") was
+        # wrapping into the button strip and rendering as orphaned text
+        # like "or reporter case data." between Open Transcript and Re-Scan.
         self._extract_status_label = ctk.CTkLabel(
             toolbar_right,
-            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
+            text="No documents loaded",
             font=ctk.CTkFont(size=12),
             text_color="gray",
-            wraplength=320,
             anchor="e",
             justify="right",
         )
@@ -1406,7 +1410,7 @@ class TranscribeTab(ctk.CTkFrame):
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
         self._extract_status_label.configure(
-            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
+            text="No documents loaded",
             text_color="gray",
         )
 
