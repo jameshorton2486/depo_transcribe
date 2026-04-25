@@ -1092,6 +1092,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="\U0001f504 Re-Scan",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._force_rescan,
         )
         self._rescan_btn.pack(side="right", padx=(10, 0))
@@ -1180,6 +1182,8 @@ class TranscribeTab(ctk.CTkFrame):
             text="\U0001f4cb Review & Edit",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             state="disabled",
             command=self._open_review_dialog,
         )
