@@ -42,6 +42,14 @@ class TrainingTab(ctk.CTkFrame):
             text_color="gray",
         ).pack(anchor="w", pady=(0, 8))
 
+        # ── STEP 1 — paste a before/after example ────────────────────────────
+        ctk.CTkLabel(
+            outer,
+            text="STEP 1 — Paste a before/after example",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#9AB3CC",
+        ).pack(anchor="w", pady=(0, 2))
+
         input_row = ctk.CTkFrame(outer, fg_color="transparent")
         input_row.pack(fill="x", pady=(0, 8))
         input_row.grid_columnconfigure(0, weight=1)
@@ -89,9 +97,16 @@ class TrainingTab(ctk.CTkFrame):
         )
         self._correct_box.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
+        # ── STEP 2 — add context (optional) ──────────────────────────────────
         ctk.CTkLabel(
             outer,
-            text="Rule Instruction  (Optional)",
+            text="STEP 2 — Add context (optional)",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#9AB3CC",
+        ).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(
+            outer,
+            text="Rule Instruction",
             font=ctk.CTkFont(size=11, weight="bold"),
         ).pack(anchor="w")
         ctk.CTkLabel(
@@ -106,6 +121,14 @@ class TrainingTab(ctk.CTkFrame):
             height=34,
         )
         self._instruction_entry.pack(fill="x", pady=(0, 8))
+
+        # ── STEP 3 — generate ────────────────────────────────────────────────
+        ctk.CTkLabel(
+            outer,
+            text="STEP 3 — Generate",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#9AB3CC",
+        ).pack(anchor="w", pady=(0, 2))
 
         action_row = ctk.CTkFrame(outer, fg_color="transparent")
         action_row.pack(fill="x", pady=(0, 8))
@@ -139,6 +162,14 @@ class TrainingTab(ctk.CTkFrame):
         )
         self._status_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
 
+        # ── STEP 4 — review and approve ──────────────────────────────────────
+        ctk.CTkLabel(
+            outer,
+            text="STEP 4 — Review and approve",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#9AB3CC",
+        ).pack(anchor="w", pady=(0, 2))
+
         output_header = ctk.CTkFrame(outer, fg_color="transparent")
         output_header.pack(fill="x")
         ctk.CTkLabel(
@@ -165,6 +196,10 @@ class TrainingTab(ctk.CTkFrame):
             fg_color="#0A1020",
         )
         self._output_box.pack(fill="x", pady=(4, 8))
+        # Show a friendly empty-state until the user actually generates
+        # rules. _set_output_placeholder also restores this whenever the
+        # box is cleared (Clear button, no-rules result).
+        self._set_output_placeholder()
 
         divider = ctk.CTkFrame(outer, height=1, fg_color="#252535")
         divider.pack(fill="x", pady=(0, 8))
@@ -255,6 +290,9 @@ class TrainingTab(ctk.CTkFrame):
                 "#44CC88",
             )
         else:
+            # No rules came back. Restore the placeholder so the box does
+            # not leave a misleading "results pending" empty state.
+            self._set_output_placeholder()
             self._set_status("No rules generated — try adding a Rule Instruction.", "gray")
 
     def _on_approve(self):
@@ -272,13 +310,23 @@ class TrainingTab(ctk.CTkFrame):
         except ValueError as exc:
             self._set_status(f"Save failed: {exc}", "#FF4444")
 
+    _OUTPUT_PLACEHOLDER = (
+        'Click "⚙  Analyze & Generate Rules" to see proposed corrections here.\n'
+        "You can review and approve them before they are added to the rule store."
+    )
+
+    def _set_output_placeholder(self) -> None:
+        """Show the Generated Rules empty-state hint inside _output_box."""
+        self._output_box.configure(state="normal")
+        self._output_box.delete("1.0", "end")
+        self._output_box.insert("1.0", self._OUTPUT_PLACEHOLDER)
+        self._output_box.configure(state="disabled")
+
     def _on_clear(self):
         self._incorrect_box.delete("1.0", "end")
         self._correct_box.delete("1.0", "end")
         self._instruction_entry.delete(0, "end")
-        self._output_box.configure(state="normal")
-        self._output_box.delete("1.0", "end")
-        self._output_box.configure(state="disabled")
+        self._set_output_placeholder()
         self._proposed_rules = []
         self._approve_btn.configure(state="disabled")
         self._set_status("")
