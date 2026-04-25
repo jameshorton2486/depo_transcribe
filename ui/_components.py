@@ -73,6 +73,35 @@ TOOLBAR_BTN_W = 160
 TOOLBAR_BTN_H = 32
 
 
+# ── Surface tokens ───────────────────────────────────────────────────────────
+# Names for the three dark surface levels used by tabs. Existing widgets
+# inherit CTk's default theme background; these tokens are for new widgets
+# that need to opt into a specific level (e.g. a card-on-card composition or
+# the transcript editor area).
+
+BG_BASE = "#0a0c10"        # outermost app background
+BG_CARD = "#0f1218"        # card surface (one level above base)
+BG_TRANSCRIPT = "#07080c"  # transcript editor (one level below base)
+
+
+# ── Status pill (badge) tokens ───────────────────────────────────────────────
+# Colors for small rounded badges used for counts ("Flagged: 5", "Reviewed:
+# 120"). Background and border are precomputed blends of the brand hex over
+# BG_BASE — the mockup specifies 10% fill / 20% border; CTk has no alpha so
+# we bake the result. Text color reuses the brand hex unchanged so badges
+# read as the same family as section headers / speaker labels.
+
+# Amber family (BTN_PRIMARY_AMBER #B8860B blended over BG_BASE)
+PILL_AMBER_BG = "#1B180F"      # 10% B8860B
+PILL_AMBER_BORDER = "#2D240F"  # 20% B8860B
+PILL_AMBER_TEXT = BTN_PRIMARY_AMBER
+
+# Blue family (SECTION_HEADER_ACCENT #3A7FBF blended over BG_BASE)
+PILL_BLUE_BG = "#0F1822"       # 10% 3A7FBF
+PILL_BLUE_BORDER = "#142333"   # 20% 3A7FBF
+PILL_BLUE_TEXT = SECTION_HEADER_ACCENT
+
+
 def make_section_header(
     parent,
     text: str,
