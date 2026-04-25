@@ -1038,35 +1038,38 @@ class TranscribeTab(ctk.CTkFrame):
             text_color="#334455",
         ).pack(side="right")
 
-        # ── SECTION 2: Settings Row ──────────────────────────────────────────
+        # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
         settings_card = ctk.CTkFrame(container)
         settings_card.pack(fill="x", pady=(0, 2))
 
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
         settings_row.pack(fill="x", padx=8, pady=2)
-        settings_row.columnconfigure(0, weight=0)
-        settings_row.columnconfigure(1, weight=1)
-        settings_row.columnconfigure(2, weight=0)
 
-        model_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
-        model_inner.grid(row=0, column=0, sticky="ew", padx=(0, 12))
-        ctk.CTkLabel(model_inner, text="Model", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        # Model - label inline with combo, single line
+        ctk.CTkLabel(
+            settings_row,
+            text="Model:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(side="left", padx=(0, 6))
         self._model_var = ctk.StringVar(value="nova-3")
         self._model_combo = ctk.CTkComboBox(
-            model_inner,
+            settings_row,
             values=["nova-3", "nova-3-medical"],
             variable=self._model_var,
             state="readonly",
             width=150,
         )
-        self._model_combo.pack(fill="x", pady=(2, 0))
+        self._model_combo.pack(side="left", padx=(0, 12))
 
-        quality_inner = ctk.CTkFrame(settings_row, fg_color="transparent")
-        quality_inner.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(quality_inner, text="Processing Mode", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        # Processing Mode - label inline with combo on the same line
+        ctk.CTkLabel(
+            settings_row,
+            text="Processing Mode:",
+            font=ctk.CTkFont(size=13, weight="bold"),
+        ).pack(side="left", padx=(0, 6))
         self._quality_var = ctk.StringVar(value="ENHANCED (fair audio)")
         self._quality_combo = ctk.CTkComboBox(
-            quality_inner,
+            settings_row,
             values=[
                 "Default",
                 "ENHANCED (fair audio)",
@@ -1076,14 +1079,16 @@ class TranscribeTab(ctk.CTkFrame):
             state="readonly",
             width=210,
         )
-        self._quality_combo.pack(fill="x", pady=(2, 0))
+        self._quality_combo.pack(side="left", padx=(0, 8))
+
+        # Auto-detected tier hint - same row, blank until set
         self._audio_tier_label = ctk.CTkLabel(
-            quality_inner,
+            settings_row,
             text="",
             font=ctk.CTkFont(size=11),
             text_color="gray",
         )
-        self._audio_tier_label.pack(anchor="w", pady=(2, 0))
+        self._audio_tier_label.pack(side="left")
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(container)
