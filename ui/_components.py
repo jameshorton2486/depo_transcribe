@@ -67,6 +67,11 @@ CARD_GAP_PY = 24
 CARD_INNER_PADX = 12
 CARD_INNER_PADY = 10
 
+# Uniform width/height for toolbar action buttons across tabs. Keeps the
+# control strip reading as a single row rather than a mix of widths.
+TOOLBAR_BTN_W = 160
+TOOLBAR_BTN_H = 32
+
 
 def make_section_header(
     parent,

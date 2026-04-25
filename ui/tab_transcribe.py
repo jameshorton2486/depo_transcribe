@@ -28,6 +28,8 @@ from ui._components import (
     CARD_GAP_PY,
     CARD_INNER_PADX,
     CARD_INNER_PADY,
+    TOOLBAR_BTN_H,
+    TOOLBAR_BTN_W,
     make_section_header,
 )
 
@@ -1070,11 +1072,26 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="From NOD PDF").pack(fill="x", pady=(2, 0))
         self._date_var.trace_add("write", lambda *_: self._update_path_preview())
 
+        # Save-path preview shares its row with Re-Scan. The label expands to
+        # fill the available width; Re-Scan stays anchored on the right.
+        save_row = ctk.CTkFrame(case_card, fg_color="transparent")
+        save_row.pack(fill="x", padx=6, pady=(0, 2))
+
         self._path_preview_label = ctk.CTkLabel(
-            case_card, text="", font=ctk.CTkFont(size=13),
-            text_color="gray", wraplength=860, anchor="w",
+            save_row, text="", font=ctk.CTkFont(size=13),
+            text_color="gray", wraplength=680, anchor="w", justify="left",
         )
-        self._path_preview_label.pack(anchor="w", padx=6, pady=(0, 2))
+        self._path_preview_label.pack(side="left", expand=True, fill="x")
+
+        self._rescan_btn = ctk.CTkButton(
+            save_row,
+            text="\U0001f504 Re-Scan",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            command=self._force_rescan,
+        )
+        self._rescan_btn.pack(side="right", padx=(10, 0))
+
         self._update_path_preview()
 
         # ── 5. Case Files / Output ───────────────────────────────────────────
@@ -1100,11 +1117,6 @@ class TranscribeTab(ctk.CTkFrame):
 
         toolbar = ctk.CTkFrame(kt_inner, fg_color="transparent")
         toolbar.pack(fill="x", pady=(0, 2))
-
-        # Uniform sizing for every toolbar button so the row reads as a
-        # consistent control strip rather than a mix of widths.
-        TOOLBAR_BTN_W = 160
-        TOOLBAR_BTN_H = 32
 
         toolbar_left = ctk.CTkFrame(toolbar, fg_color="transparent")
         toolbar_left.pack(side="left", anchor="w")
@@ -1151,7 +1163,8 @@ class TranscribeTab(ctk.CTkFrame):
         toolbar_right.pack(side="right", anchor="e")
 
         # Pack right-to-left so the visual order is:
-        # [status]   [Re-Scan]   [Review & Edit]
+        # [status]   [Review & Edit]
+        # Re-Scan moved next to the "Will save to:" preview in case_card.
         self._review_btn = ctk.CTkButton(
             toolbar_right,
             text="\U0001f4cb Review & Edit",
@@ -1161,15 +1174,6 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._open_review_dialog,
         )
         self._review_btn.pack(side="right", padx=(6, 0))
-
-        self._rescan_btn = ctk.CTkButton(
-            toolbar_right,
-            text="\U0001f504 Re-Scan",
-            width=TOOLBAR_BTN_W,
-            height=TOOLBAR_BTN_H,
-            command=self._force_rescan,
-        )
-        self._rescan_btn.pack(side="right", padx=(6, 0))
 
         # Short status text only - fits inline on the toolbar without
         # wrapping onto a second line. The long instructional copy that
