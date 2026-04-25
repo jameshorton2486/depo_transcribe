@@ -12,6 +12,7 @@ MORSON'S COMPLIANCE (Morson's English Guide for Court Reporters):
     Reason: Morson's requires objections as separate sentence fragments, exactly spoken.
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
@@ -22,6 +23,41 @@ from .models import (
 )
 from .pages.post_record import derive_correct_spelling
 from .speaker_resolver import ROLE_ATTORNEY, ROLE_EXAMINING_ATTORNEY, ROLE_INTERPRETER, ROLE_OPPOSING_COUNSEL, ROLE_REPORTER, ROLE_VIDEOGRAPHER, ROLE_WITNESS
+
+
+__all__ = [
+    "ClassifierState",
+    "classify_block",
+    "classify_blocks",
+    "split_correct_mid",
+    "fix_trailing_okay_in_answer",
+    "flag_name_unverified",
+    "flag_witness_conflict",
+    "flag_date_uncertain",
+    "flag_exhibit_unclear",
+    "flag_caption_discrepancy",
+    "flag_post_record_spelling",
+]
+
+
+# ── Module logger ─────────────────────────────────────────────────────────────
+logger = logging.getLogger("spec_engine.classifier")
+
+
+# ── Tunable thresholds (named to match assertions in test_ui_invariants.py) ──
+# Word-count ceiling above which a short utterance is no longer treated as
+# pre-record chatter (greetings, mic checks). Anything longer is assumed to be
+# substantive and is preserved.
+MAX_PRE_RECORD_WORD_COUNT = 12
+# Word-count ceiling for a generic short utterance to be treated as a witness
+# answer when it appears after a Q line.
+MAX_GENERIC_ANSWER_WORDS = 12
+# Word-count ceiling specifically for blocks already labeled as attorney that
+# we are willing to re-route as an answer (diarization-failure rescue).
+MAX_ATTORNEY_LABEL_ANSWER_WORDS = 6
+# Length of the text sample included in a SCOPIST flag when an unmapped
+# speaker ID is encountered.
+SPEAKER_FLAG_SAMPLE_LEN = 60
 
 
 # ── Objection detection (Morson's: preserve as spoken) ────────────────────────
@@ -49,6 +85,12 @@ PRE_RECORD_KEYWORDS = [
     'volume check', 'lighting', 'hold on', 'just a second',
     'everyone ready',
 ]
+# Pre-compiled keyword regexes — built once at import time so that
+# _is_pre_record_chatter() does not re-compile per keyword per block.
+_PRE_RECORD_KEYWORD_RES = [
+    re.compile(rf'\b{re.escape(keyword)}\b', re.IGNORECASE)
+    for keyword in PRE_RECORD_KEYWORDS
+]
 
 def _is_pre_record_chatter(text: str) -> bool:
     sanitized = (text or "").strip()
@@ -58,13 +100,11 @@ def _is_pre_record_chatter(text: str) -> bool:
     for prefix in ('Q.', 'A.', 'THE REPORTER', 'MR.', 'MS.', 'MRS.', 'DR.', 'SPEAKER'):
         if upper.startswith(prefix):
             return False
-    if len(sanitized.split()) > 12:
+    if len(sanitized.split()) > MAX_PRE_RECORD_WORD_COUNT:
         return False
     lowered = sanitized.lower()
-    for keyword in PRE_RECORD_KEYWORDS:
-        # Raw f-string: \\b is literal "\b" (two chars), not a word boundary.
-        # Use \b so the pattern actually matches word boundaries.
-        if re.search(rf'\b{re.escape(keyword)}\b', lowered):
+    for pattern in _PRE_RECORD_KEYWORD_RES:
+        if pattern.search(lowered):
             return True
     return False
 CONCLUDED_RE   = re.compile(r'deposition\s+(?:is\s+)?concluded', re.IGNORECASE)
@@ -120,6 +160,11 @@ CORRECT_MID_RE = re.compile(
 )
 
 TRAILING_OKAY_RE = re.compile(r'\s{1,2}Okay\.$')
+
+# Sentence-boundary detector used inside _detect_embedded_answer. Pre-compiled
+# so the regex isn't rebuilt on every embedded-answer split attempt.
+_EMBEDDED_ANSWER_END_RE = re.compile(r'(?<=[.!?])\s+[A-Z]')
+
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
 QUESTION_LEAD_PHRASES = (
@@ -230,6 +275,22 @@ class ClassifierState:
         return flag
 
 
+# ── JobConfig accessor helper ─────────────────────────────────────────────────
+# JobConfig may arrive as either a dataclass-style object or a plain dict.
+# Extract the dual-access pattern so each call site is a single line and the
+# behavior stays identical to the original inline checks.
+
+def _get_config_value(job_config, key: str, default=None):
+    """Read a value from JobConfig (object) or dict, returning default if missing."""
+    if job_config is None:
+        return default
+    if hasattr(job_config, key):
+        return getattr(job_config, key, default)
+    if isinstance(job_config, dict):
+        return job_config.get(key, default)
+    return default
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_time(text: str) -> Optional[str]:
@@ -259,7 +320,7 @@ def _detect_embedded_answer(
         if not question_part or not remainder:
             return None
 
-        end_match = re.search(r'(?<=[.!?])\s+[A-Z]', remainder)
+        end_match = _EMBEDDED_ANSWER_END_RE.search(remainder)
         if end_match:
             answer_part = remainder[:end_match.start()].strip()
             continuation = remainder[end_match.start():].strip()
@@ -339,11 +400,11 @@ def _looks_like_answer_after_question(text: str, speaker_label_upper: str = "") 
 
     is_attorney_label = any(marker in (speaker_label_upper or "") for marker in ATTORNEY_LABEL_MARKERS)
     if is_attorney_label:
-        return len(normalized.split()) <= 6 and any(
+        return len(normalized.split()) <= MAX_ATTORNEY_LABEL_ANSWER_WORDS and any(
             lowered.startswith(starter) for starter in EMBEDDED_ANSWER_STARTERS
         )
 
-    return len(normalized.split()) <= 12
+    return len(normalized.split()) <= MAX_GENERIC_ANSWER_WORDS
 
 
 def split_correct_mid(text: str) -> Optional[Tuple[str, str, str]]:
@@ -381,12 +442,7 @@ def fix_trailing_okay_in_answer(blocks: list[Tuple[LineType, str]]) -> list[Tupl
 
 
 def _get_label(job_config, speaker_id: int) -> str:
-    if hasattr(job_config, "speaker_map"):
-        speaker_map = getattr(job_config, "speaker_map", {}) or {}
-    elif isinstance(job_config, dict):
-        speaker_map = job_config.get("speaker_map", {}) or {}
-    else:
-        speaker_map = {}
+    speaker_map = _get_config_value(job_config, "speaker_map", {}) or {}
     return speaker_map.get(speaker_id, f"SPEAKER {speaker_id}")
 
 
@@ -399,27 +455,12 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
       3. Punctuation and simple heuristics
       4. Previous-block context
     """
-    examining_attorney_id = None
-    if job_config is not None:
-        if hasattr(job_config, "examining_attorney_id"):
-            examining_attorney_id = getattr(job_config, "examining_attorney_id", None)
-        elif isinstance(job_config, dict):
-            examining_attorney_id = job_config.get("examining_attorney_id")
+    examining_attorney_id = _get_config_value(job_config, "examining_attorney_id")
 
     if job_config is not None:
-        _verified = (
-            getattr(job_config, "speaker_map_verified", False)
-            if hasattr(job_config, "speaker_map_verified")
-            else (
-                job_config.get("speaker_map_verified", False)
-                if isinstance(job_config, dict)
-                else False
-            )
-        )
+        _verified = _get_config_value(job_config, "speaker_map_verified", False)
         if not _verified:
-            import logging as _logging
-
-            _logging.getLogger("spec_engine.classifier").warning(
+            logger.warning(
                 "classify_blocks() called with unverified speaker map. "
                 "Speaker roles will use heuristics only. "
                 "Call SpeakerVerifyDialog before final processing to ensure accurate output."
@@ -548,7 +589,7 @@ def classify_block(
     # Never silently fall through to generic speaker labeling for an unmapped ID.
     if sid not in job_config.speaker_map:
         n = state.next_flag()
-        sample = text[:60].replace('\n', ' ')
+        sample = text[:SPEAKER_FLAG_SAMPLE_LEN].replace('\n', ' ')
         flag_text = (
             f'[SCOPIST: FLAG {n}: Speaker {sid} role not in speaker_map. '
             f'Sample: "{sample}"]'
