@@ -453,6 +453,8 @@ def test_merge_utterances_marks_low_confidence():
 
 
 def test_smooth_speakers_corrects_short_flip_glitch():
+    """A truly short A→B→A bounce (sub-200ms, non-answer text) still
+    gets smoothed. This is the case the glitch heuristic exists for."""
     utterances = [
         {
             "speaker": 0,
@@ -465,9 +467,9 @@ def test_smooth_speakers_corrects_short_flip_glitch():
         {
             "speaker": 1,
             "start": 0.45,
-            "end": 0.7,
-            "transcript": "Yes.",
-            "confidence": 0.99,
+            "end": 0.55,  # 100ms — true sub-200ms glitch territory
+            "transcript": "uh",
+            "confidence": 0.40,
             "words": [],
         },
         {
@@ -483,6 +485,85 @@ def test_smooth_speakers_corrects_short_flip_glitch():
     result = transcriber.smooth_speakers(utterances)
 
     assert result[1]["speaker"] == 0
+
+
+def test_smooth_speakers_preserves_short_witness_yes():
+    """CONTRACT CHANGE: Witness saying 'Yes.' between two attorney lines
+    must NOT be reassigned to the attorney's speaker, even when short.
+    Previously _is_short_glitch + smooth_speakers erased these legitimate
+    deposition responses. The whitelist in SHORT_ANSWER_WHITELIST
+    guards against that."""
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 5.0,
+            "transcript": "Do you solemnly swear to tell the truth?",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 1,
+            "start": 5.2,
+            "end": 5.45,  # 250ms — short, but a real witness "Yes."
+            "transcript": "Yes.",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 0,
+            "start": 5.7,
+            "end": 7.0,
+            "transcript": "Thank you.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    result = transcriber.smooth_speakers(utterances)
+
+    assert result[1]["speaker"] == 1, "Short 'Yes.' must stay with the witness"
+
+
+def test_merge_utterances_keeps_short_witness_response_separate():
+    """End-to-end: a real Speaker 0 → Speaker 1 'Yes.' → Speaker 0 pattern
+    (with all gaps under MERGE_GAP_THRESHOLD_SECONDS) survives the merge
+    intact. Before the SHORT_ANSWER_WHITELIST + tighter glitch threshold,
+    'Yes.' was reassigned to Speaker 0 and absorbed into the surrounding
+    attorney block."""
+    utterances = [
+        {
+            "speaker": 0,
+            "start": 0.0,
+            "end": 5.0,
+            "transcript": "Do you solemnly swear to tell the truth?",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 1,
+            "start": 5.2,
+            "end": 5.45,
+            "transcript": "Yes.",
+            "confidence": 0.99,
+            "words": [],
+        },
+        {
+            "speaker": 0,
+            "start": 5.7,
+            "end": 7.0,
+            "transcript": "Thank you, sir.",
+            "confidence": 0.99,
+            "words": [],
+        },
+    ]
+
+    smoothed = transcriber.smooth_speakers(utterances)
+    result = transcriber.merge_utterances(smoothed)
+
+    assert len(result) == 3
+    assert [u["speaker"] for u in result] == [0, 1, 0]
+    assert result[1]["transcript"] == "Yes."
 
 
 def test_transcribe_chunk_rejects_empty_merged_output(monkeypatch, tmp_path):

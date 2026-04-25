@@ -31,10 +31,32 @@ SKIP_SILENCE = False
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 10
 MERGE_GAP_THRESHOLD_SECONDS = 0.6
-MERGE_MIN_WORD_COUNT = 3
+# Lowered from 3 → 1 so a single-word legitimate witness response (e.g. "Yes.")
+# is not absorbed into the surrounding attorney block during merge.
+MERGE_MIN_WORD_COUNT = 1
 LOW_CONFIDENCE_THRESHOLD = 0.85
-SHORT_GLITCH_MAX_DURATION_SECONDS = 0.5
+# Tightened from 0.5 → 0.2. True Deepgram speaker bounces are sub-200ms;
+# 0.5s is long enough for a real "Yes." or "No." witness response, which
+# this heuristic was wrongly erasing in depositions.
+SHORT_GLITCH_MAX_DURATION_SECONDS = 0.2
 SENTENCE_ENDINGS = (".", "?", "!")
+
+# Legitimate short witness responses — depositions are full of these. If the
+# middle utterance in an A→B→A pattern is one of these words, treat it as a
+# real speaker turn, not a Deepgram glitch.
+SHORT_ANSWER_WHITELIST = frozenset({
+    "yes", "no", "yeah", "yep", "nope", "nah",
+    "correct", "right", "sure", "okay", "ok",
+    "true", "false",
+    "uh-huh", "mm-hmm", "uh-uh", "mm-mm",
+})
+
+
+def _is_short_answer(utterance: dict) -> bool:
+    """True if utterance text is a single canonical witness response word."""
+    text = (utterance.get("transcript") or "").strip().lower()
+    text = text.rstrip(".,;:?!").strip()
+    return text in SHORT_ANSWER_WHITELIST
 
 ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
@@ -138,6 +160,10 @@ def _is_short_glitch(prev_item: dict | None, item: dict, next_item: dict | None)
         return False
     if _utterance_duration(item) >= SHORT_GLITCH_MAX_DURATION_SECONDS:
         return False
+    # Never override a real witness response. "Yes.", "No.", "Correct.",
+    # etc. are legitimate speaker turns in depositions, not glitches.
+    if _is_short_answer(item):
+        return False
 
     prev_gap = _coerce_float(item.get("start", 0.0)) - _coerce_float(prev_item.get("end", 0.0))
     next_gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(item.get("end", 0.0))
@@ -173,6 +199,10 @@ def smooth_speakers(utterances: list) -> list:
         if prev_speaker != next_speaker or current_speaker == prev_speaker:
             continue
         if _utterance_duration(current) >= SHORT_GLITCH_MAX_DURATION_SECONDS:
+            continue
+        # Same whitelist guard as _is_short_glitch — protect real short
+        # witness responses ("Yes.", "No.") from being smoothed away.
+        if _is_short_answer(current):
             continue
 
         prev_gap = _coerce_float(current.get("start", 0.0)) - _coerce_float(prev_item.get("end", 0.0))
