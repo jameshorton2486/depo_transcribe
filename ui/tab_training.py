@@ -41,20 +41,39 @@ class TrainingTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
-        outer = ctk.CTkFrame(self, fg_color="transparent")
-        outer.pack(fill="both", expand=True, padx=10, pady=(6, 0))
-
+        # Header sits above the columns, full width.
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=10, pady=(6, 0))
         ctk.CTkLabel(
-            outer,
+            header,
             text="Training Engine",
             font=ctk.CTkFont(size=14, weight="bold"),
         ).pack(anchor="w")
         ctk.CTkLabel(
-            outer,
+            header,
             text="Teach the system to recognize and correct transcript patterns automatically.",
             font=ctk.CTkFont(size=11),
             text_color="gray",
         ).pack(anchor="w", pady=(0, 8))
+
+        # Two-column grid: left scrolls vertically (steps), right is a
+        # sticky scrollable panel (Active Library). 2:1 weight with a
+        # 360-px minimum on the right so the library never collapses.
+        # Responsive stacking under ~1100 px is deferred — the existing
+        # window default is wide enough; revisit if it ships narrow.
+        columns = ctk.CTkFrame(self, fg_color="transparent")
+        columns.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+        columns.grid_columnconfigure(0, weight=2)
+        columns.grid_columnconfigure(1, weight=1, minsize=360)
+        columns.grid_rowconfigure(0, weight=1)
+
+        self._left_col = ctk.CTkScrollableFrame(columns, fg_color="transparent")
+        self._left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+
+        self._right_col = ctk.CTkScrollableFrame(columns, fg_color="transparent")
+        self._right_col.grid(row=0, column=1, sticky="nsew")
+
+        outer = self._left_col
 
         # ── STEP 1 — paste a before/after example ────────────────────────────
         make_section_header(outer, "STEP 1 — Paste a before/after example").pack(
@@ -205,10 +224,13 @@ class TrainingTab(ctk.CTkFrame):
         # box is cleared (Clear button, no-rules result).
         self._set_output_placeholder()
 
-        divider = ctk.CTkFrame(outer, height=1, fg_color="#252535")
-        divider.pack(fill="x", pady=(0, 8))
+        # Active Library lives in the right column (sticky panel) instead
+        # of the bottom of the left column. The textbox-based view here
+        # is the existing read-only display; commit G replaces it with
+        # interactive per-row widgets.
+        library = self._right_col
 
-        active_header = ctk.CTkFrame(outer, fg_color="transparent")
+        active_header = ctk.CTkFrame(library, fg_color="transparent")
         active_header.pack(fill="x")
         self._rules_count_label = ctk.CTkLabel(
             active_header,
@@ -228,7 +250,7 @@ class TrainingTab(ctk.CTkFrame):
         self._edit_rules_btn.pack(side="right")
 
         self._active_rules_box = ctk.CTkTextbox(
-            outer,
+            library,
             font=ctk.CTkFont(family="Courier New", size=10),
             state="disabled",
             fg_color="#080F1A",
