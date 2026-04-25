@@ -528,6 +528,13 @@ class TranscriptTab(ctk.CTkFrame):
         )
         self._pill_remaining.pack(side="left")
 
+        # Emerald sibling that replaces _pill_remaining when every flagged
+        # word has been reviewed. Created here but not packed — the toggle
+        # happens in _update_review_counts so the pill row reflects state.
+        self._pill_done = make_status_pill(
+            self._review_pills_frame, "Done", variant="emerald"
+        )
+
         self._header_confirm_btn = ctk.CTkButton(
             review_row,
             text="Mark Reviewed",
@@ -1691,7 +1698,16 @@ class TranscriptTab(ctk.CTkFrame):
             return
         self._pill_flagged.text_label.configure(text=f"Flagged: {flagged}")
         self._pill_reviewed.text_label.configure(text=f"Reviewed: {reviewed}")
-        self._pill_remaining.text_label.configure(text=f"Remaining: {remaining}")
+        # When every flagged word has been reviewed, swap the amber Remaining
+        # pill for the emerald Done pill — restores the explicit completion
+        # signal that the prior single-label scheme encoded via text_color.
+        if flagged > 0 and remaining == 0:
+            self._pill_remaining.pack_forget()
+            self._pill_done.pack(side="left")
+        else:
+            self._pill_done.pack_forget()
+            self._pill_remaining.pack(side="left")
+            self._pill_remaining.text_label.configure(text=f"Remaining: {remaining}")
 
     def _render_with_confidence(self, words: list[dict]):
         # DO NOT update the textbox here.

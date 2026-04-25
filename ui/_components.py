@@ -101,10 +101,20 @@ PILL_BLUE_BG = "#0F1822"       # 10% 3A7FBF
 PILL_BLUE_BORDER = "#142333"   # 20% 3A7FBF
 PILL_BLUE_TEXT = SECTION_HEADER_ACCENT
 
+# Emerald family (#10B981 blended over BG_BASE) — for the "Done" pill
+# that replaces Remaining when the reviewer has confirmed every flag.
+# BTN_SAFE_GREEN (#1A6B3A) is too muted for badge text on the dark surface,
+# and the prior single-label scheme used #44AA44 inline only; the emerald
+# family is genuinely missing from the palette.
+PILL_EMERALD_BG = "#0B1D1B"      # 10% 10B981
+PILL_EMERALD_BORDER = "#0B2F27"  # 20% 10B981
+PILL_EMERALD_TEXT = "#10B981"
+
 
 _PILL_VARIANTS = {
     "amber": (PILL_AMBER_BG, PILL_AMBER_BORDER, PILL_AMBER_TEXT),
     "blue": (PILL_BLUE_BG, PILL_BLUE_BORDER, PILL_BLUE_TEXT),
+    "emerald": (PILL_EMERALD_BG, PILL_EMERALD_BORDER, PILL_EMERALD_TEXT),
 }
 
 

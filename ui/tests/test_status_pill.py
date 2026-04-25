@@ -17,6 +17,9 @@ from ui._components import (
     PILL_BLUE_BG,
     PILL_BLUE_BORDER,
     PILL_BLUE_TEXT,
+    PILL_EMERALD_BG,
+    PILL_EMERALD_BORDER,
+    PILL_EMERALD_TEXT,
     make_status_pill,
 )
 
@@ -70,9 +73,24 @@ def test_blue_label_text_color_is_blue(root):
     assert label.cget("text_color") == PILL_BLUE_TEXT
 
 
+def test_emerald_variant_uses_emerald_palette(root):
+    pill = make_status_pill(root, "Done", variant="emerald")
+    assert pill.cget("fg_color") == PILL_EMERALD_BG
+
+
+def test_emerald_variant_border_matches_palette(root):
+    pill = make_status_pill(root, "Done", variant="emerald")
+    assert pill.cget("border_color") == PILL_EMERALD_BORDER
+
+
+def test_emerald_label_text_color_is_emerald(root):
+    pill = make_status_pill(root, "Done", variant="emerald")
+    assert pill.text_label.cget("text_color") == PILL_EMERALD_TEXT
+
+
 def test_unknown_variant_raises_keyerror(root):
     with pytest.raises(KeyError):
-        make_status_pill(root, "X", variant="emerald")
+        make_status_pill(root, "X", variant="not-a-real-variant")
 
 
 def test_text_label_attribute_points_at_inner_label(root):
