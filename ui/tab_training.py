@@ -137,66 +137,66 @@ class TrainingTab(ctk.CTkFrame):
         )
         self._correct_box.pack(fill="both", expand=True)
 
-        # ── STEP 2 — add context (optional) ──────────────────────────────────
-        make_section_header(outer, "STEP 2 — Add context (optional)").pack(
-            anchor="w", pady=(0, 2)
-        )
+        # ── Step 02 — Contextual Instruction ──────────────────────────────────
+        # Combines the prior STEP 2 (entry) and STEP 3 (Analyze + Clear +
+        # status) into one card. Entry on top, status row below: status
+        # label left, Clear + Analyze right.
+        step_02 = make_card_with_accent(outer, accent=SECTION_HEADER_ACCENT)
+        step_02.pack(fill="x", pady=(0, 12))
+
+        step_02_header = ctk.CTkFrame(step_02.content, fg_color="transparent")
+        step_02_header.pack(fill="x", pady=(0, 10))
+        make_numbered_chip(
+            step_02_header, "02", accent=SECTION_HEADER_ACCENT
+        ).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(
-            outer,
-            text="Rule Instruction",
+            step_02_header,
+            text="CONTEXTUAL INSTRUCTION",
             font=ctk.CTkFont(size=11, weight="bold"),
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            outer,
-            text='Describe the rule — e.g. "Always correct subpoena deuces tecum spelling"',
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        ).pack(anchor="w", pady=(0, 4))
+            text_color=TEXT_PRIMARY,
+        ).pack(side="left", anchor="w")
+
         self._instruction_entry = ctk.CTkEntry(
-            outer,
-            placeholder_text="Describe the correction rule in plain English…",
-            height=34,
+            step_02.content,
+            placeholder_text='e.g. "Always correct subpoena duces tecum spelling"',
+            height=40,
         )
-        self._instruction_entry.pack(fill="x", pady=(0, 8))
+        self._instruction_entry.pack(fill="x", pady=(0, 10))
 
-        # ── STEP 3 — generate ────────────────────────────────────────────────
-        make_section_header(outer, "STEP 3 — Generate").pack(
-            anchor="w", pady=(0, 2)
+        action_row = ctk.CTkFrame(step_02.content, fg_color="transparent")
+        action_row.pack(fill="x")
+        # Status label takes the leftmost slot so it reads naturally; the
+        # Clear / Analyze buttons cluster on the right per the mockup.
+        self._status_label = ctk.CTkLabel(
+            action_row,
+            text="Status: Ready",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_MUTED,
+            anchor="w",
         )
-
-        action_row = ctk.CTkFrame(outer, fg_color="transparent")
-        action_row.pack(fill="x", pady=(0, 8))
+        self._status_label.pack(side="left", fill="x", expand=True)
         self._generate_btn = ctk.CTkButton(
             action_row,
             text="⚙  Analyze & Generate Rules",
             fg_color=self._TEAL,
             hover_color=self._TEAL_HOVER,
-            height=34,
-            width=220,
+            height=40,
+            width=240,
             command=self._on_generate,
         )
-        self._generate_btn.pack(side="left", padx=(0, 6))
+        self._generate_btn.pack(side="right")
         self._clear_btn = ctk.CTkButton(
             action_row,
             text="✕  Clear",
             fg_color="transparent",
             border_width=1,
-            text_color="#CC4444",
-            width=80,
+            text_color=TEXT_MUTED,
+            width=90,
+            height=40,
             hover_color="#1A1A1A",
             command=self._on_clear,
         )
-        self._clear_btn.pack(side="left")
-        # Standardized 'Status: <state>' format - matches the Transcript
-        # tab so the user sees the same idle text shape on every tab.
-        self._status_label = ctk.CTkLabel(
-            action_row,
-            text="Status: Ready",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            anchor="w",
-        )
-        self._status_label.pack(side="left", fill="x", expand=True, padx=(12, 0))
+        self._clear_btn.pack(side="right", padx=(0, 8))
 
         # ── STEP 4 — review and approve ──────────────────────────────────────
         make_section_header(outer, "STEP 4 — Review and approve").pack(

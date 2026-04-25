@@ -60,3 +60,28 @@ def test_clear_callback_empties_both_boxes(tab):
     assert tab._incorrect_box.get("1.0", "end").strip() == ""
     assert tab._correct_box.get("1.0", "end").strip() == ""
     assert tab._instruction_entry.get() == ""
+
+
+# ── Step 02 — Contextual Instruction (commit E) ──────────────────────────────
+
+def test_instruction_entry_is_a_ctk_entry(tab):
+    assert isinstance(tab._instruction_entry, ctk.CTkEntry)
+
+
+def test_generate_button_is_a_ctk_button(tab):
+    assert isinstance(tab._generate_btn, ctk.CTkButton)
+
+
+def test_clear_button_is_a_ctk_button(tab):
+    assert isinstance(tab._clear_btn, ctk.CTkButton)
+
+
+def test_status_label_idle_text_is_ready(tab):
+    assert tab._status_label.cget("text") == "Status: Ready"
+
+
+def test_set_status_idle_resets_to_ready_label(tab):
+    tab._set_status("Calling Claude API…")
+    assert tab._status_label.cget("text") != "Status: Ready"
+    tab._set_status("")
+    assert tab._status_label.cget("text") == "Status: Ready"
