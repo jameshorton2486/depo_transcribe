@@ -1163,91 +1163,88 @@ class TranscribeTab(ctk.CTkFrame):
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
         kt_inner.pack(fill="x", padx=8, pady=(2, 2))
 
+        # ── Single inline toolbar: Upload / Notes / Folder / Transcript on
+        #     the left, Re-Scan / Review & Edit / status on the right. ──────
+        # Hidden containers from the previous accordion layout are kept as
+        # no-op shims so that _set_case_files_panel_expanded and
+        # _toggle_case_files_panel (which still get called from the upload
+        # handlers) do not trip on missing attributes.
         self._case_files_header = ctk.CTkFrame(kt_inner, fg_color="transparent")
-        self._case_files_header.pack(fill="x", pady=(0, 3))
-        self._case_files_toggle_btn = ctk.CTkButton(
-            self._case_files_header,
-            text="▼ Case Files",
-            anchor="w",
-            fg_color="transparent",
-            hover_color="#132334",
-            text_color="white",
-            border_width=0,
-            command=self._toggle_case_files_panel,
-        )
-        self._case_files_toggle_btn.pack(side="left", fill="x", expand=True)
-
         self._case_files_body = ctk.CTkFrame(kt_inner, fg_color="transparent")
-        self._case_files_body.pack(fill="x", pady=(0, 1))
+        self._case_files_toggle_btn = None
 
-        src_btn_row = ctk.CTkFrame(self._case_files_body, fg_color="transparent")
-        src_btn_row.pack(fill="x", pady=(0, 1))
+        toolbar = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        toolbar.pack(fill="x", pady=(0, 2))
+
+        toolbar_left = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_left.pack(side="left", anchor="w")
 
         self._upload_pdf_btn = ctk.CTkButton(
-            src_btn_row,
+            toolbar_left,
             text="\U0001f4c4  Upload NOD / PDF",
             width=160,
             command=self._handle_pdf_upload,
         )
-        self._upload_pdf_btn.pack(side="left", padx=(0, 8))
+        self._upload_pdf_btn.pack(side="left", padx=(0, 6))
 
         self._upload_reporter_notes_btn = ctk.CTkButton(
-            src_btn_row,
+            toolbar_left,
             text="\U0001f4dd  Reporter Notes",
             width=150,
             command=self._upload_reporter_notes,
         )
-        self._upload_reporter_notes_btn.pack(side="left")
-
-        self._rescan_btn = ctk.CTkButton(
-            src_btn_row,
-            text="\U0001f504 Re-Scan",
-            width=80,
-            command=self._force_rescan,
-        )
-        self._rescan_btn.pack(side="right")
-
-        # Extraction status label (shown after PDF upload or scan)
-        self._extract_status_label = ctk.CTkLabel(
-            self._case_files_body,
-            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
-            wraplength=820,
-            anchor="w",
-            justify="left",
-        )
-        self._extract_status_label.pack(anchor="w", pady=(2, 0))
-        self._review_btn = ctk.CTkButton(
-            self._case_files_body,
-            text="\U0001f4cb Review & Edit",
-            width=135,
-            state="disabled",
-            command=self._open_review_dialog,
-        )
-        self._review_btn.pack(anchor="e", pady=(2, 3))
-
-        # ── 5b. Output action buttons ────────────────────────────────────────
-        output_row = ctk.CTkFrame(kt_inner, fg_color="transparent")
-        output_row.pack(fill="x")
+        self._upload_reporter_notes_btn.pack(side="left", padx=(0, 6))
 
         self._open_folder_btn = ctk.CTkButton(
-            output_row,
+            toolbar_left,
             text="Open Output Folder",
             width=150,
             state="disabled",
             command=self._open_output_folder,
         )
-        self._open_folder_btn.pack(side="left", padx=(0, 4))
+        self._open_folder_btn.pack(side="left", padx=(0, 6))
 
         self._open_transcript_btn = ctk.CTkButton(
-            output_row,
+            toolbar_left,
             text="Open Transcript",
             width=130,
             state="disabled",
             command=self._open_transcript,
         )
         self._open_transcript_btn.pack(side="left")
+
+        toolbar_right = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_right.pack(side="right", anchor="e")
+
+        # Pack right-to-left so the visual order is:
+        # [status]   [Re-Scan]   [Review & Edit]
+        self._review_btn = ctk.CTkButton(
+            toolbar_right,
+            text="\U0001f4cb Review & Edit",
+            width=135,
+            state="disabled",
+            command=self._open_review_dialog,
+        )
+        self._review_btn.pack(side="right", padx=(6, 0))
+
+        self._rescan_btn = ctk.CTkButton(
+            toolbar_right,
+            text="\U0001f504 Re-Scan",
+            width=90,
+            command=self._force_rescan,
+        )
+        self._rescan_btn.pack(side="right", padx=(6, 0))
+
+        self._extract_status_label = ctk.CTkLabel(
+            toolbar_right,
+            text="No documents loaded — upload an NOD PDF or reporter notes to load case data.",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+            wraplength=320,
+            anchor="e",
+            justify="right",
+        )
+        self._extract_status_label.pack(side="right", padx=(0, 8))
         # ── Speaker Labels (hidden until transcript completes) ──────────────
         self._speaker_card = ctk.CTkFrame(container)
         # Not packed yet — shown by _show_speaker_section() after transcription
@@ -1335,17 +1332,16 @@ class TranscribeTab(ctk.CTkFrame):
             self._current_case_path = None
 
     def _set_case_files_panel_expanded(self, expanded: bool) -> None:
+        # The accordion was retired in favor of a single inline toolbar.
+        # The toolbar is always visible, so there is nothing to expand or
+        # collapse. We keep this method as a no-op so existing callers (the
+        # upload handlers) do not break.
         self._case_files_expanded = bool(expanded)
-        if hasattr(self, "_case_files_toggle_btn"):
-            self._case_files_toggle_btn.configure(
+        toggle_btn = getattr(self, "_case_files_toggle_btn", None)
+        if toggle_btn is not None:
+            toggle_btn.configure(
                 text="▼ Case Files" if self._case_files_expanded else "▶ Case Files"
             )
-        if not hasattr(self, "_case_files_body"):
-            return
-        if self._case_files_expanded:
-            self._case_files_body.pack(fill="x", pady=(0, 1))
-        else:
-            self._case_files_body.pack_forget()
 
     def _toggle_case_files_panel(self) -> None:
         self._set_case_files_panel_expanded(not self._case_files_expanded)
