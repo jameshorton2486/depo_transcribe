@@ -1101,13 +1101,19 @@ class TranscribeTab(ctk.CTkFrame):
         toolbar = ctk.CTkFrame(kt_inner, fg_color="transparent")
         toolbar.pack(fill="x", pady=(0, 2))
 
+        # Uniform sizing for every toolbar button so the row reads as a
+        # consistent control strip rather than a mix of widths.
+        TOOLBAR_BTN_W = 160
+        TOOLBAR_BTN_H = 32
+
         toolbar_left = ctk.CTkFrame(toolbar, fg_color="transparent")
         toolbar_left.pack(side="left", anchor="w")
 
         self._upload_pdf_btn = ctk.CTkButton(
             toolbar_left,
             text="\U0001f4c4  Upload NOD / PDF",
-            width=160,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             command=self._handle_pdf_upload,
         )
         self._upload_pdf_btn.pack(side="left", padx=(0, 6))
@@ -1115,7 +1121,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._upload_reporter_notes_btn = ctk.CTkButton(
             toolbar_left,
             text="\U0001f4dd  Reporter Notes",
-            width=150,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             command=self._upload_reporter_notes,
         )
         self._upload_reporter_notes_btn.pack(side="left", padx=(0, 6))
@@ -1123,7 +1130,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._open_folder_btn = ctk.CTkButton(
             toolbar_left,
             text="Open Output Folder",
-            width=150,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             state="disabled",
             command=self._open_output_folder,
         )
@@ -1132,7 +1140,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._open_transcript_btn = ctk.CTkButton(
             toolbar_left,
             text="Open Transcript",
-            width=130,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             state="disabled",
             command=self._open_transcript,
         )
@@ -1146,7 +1155,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._review_btn = ctk.CTkButton(
             toolbar_right,
             text="\U0001f4cb Review & Edit",
-            width=135,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             state="disabled",
             command=self._open_review_dialog,
         )
@@ -1155,7 +1165,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._rescan_btn = ctk.CTkButton(
             toolbar_right,
             text="\U0001f504 Re-Scan",
-            width=90,
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
             command=self._force_rescan,
         )
         self._rescan_btn.pack(side="right", padx=(6, 0))
@@ -1437,10 +1448,7 @@ class TranscribeTab(ctk.CTkFrame):
                 self._date_var.set(ufm["depo_date"])
 
             self._extract_status_label.configure(
-                text=(
-                    f"Reloaded case settings from job_config.json"
-                    + (f"  ({len(self._confirmed_spellings)} spellings)" if self._confirmed_spellings else "")
-                ),
+                text="Reloaded case settings from job_config.json",
                 text_color="#44AA66",
             )
             self._pdf_already_loaded = True
@@ -1629,17 +1637,29 @@ class TranscribeTab(ctk.CTkFrame):
         return dest
 
     def _open_output_folder(self):
-        if self._current_case_path and os.path.isdir(self._current_case_path):
-            import subprocess
-
-            subprocess.Popen(f'explorer "{self._current_case_path}"')
+        path = self._current_case_path
+        logger.info("[UI] Opening folder: %s", path)
+        if not path or not os.path.isdir(path):
+            self._extract_status_label.configure(
+                text="Output folder not found",
+                text_color="#CC4444",
+            )
+            return
+        os.startfile(path)
 
     def _open_transcript(self):
         """Load transcript into Transcript tab and switch to it."""
-        if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
-            app = self.winfo_toplevel()
-            app.transcript_tab.load_transcript(self._last_transcript_path)
-            app.tab_view.set("Transcript")
+        path = self._last_transcript_path
+        logger.info("[UI] Loading transcript: %s", path)
+        if not path or not os.path.isfile(path):
+            self._extract_status_label.configure(
+                text="Transcript file not found",
+                text_color="#CC4444",
+            )
+            return
+        app = self.winfo_toplevel()
+        app.transcript_tab.load_transcript(path)
+        app.tab_view.set("Transcript")
 
     # ── Load Existing Transcript (driven by Tab 2's "Load Case" button) ─────
 
@@ -1961,16 +1981,10 @@ class TranscribeTab(ctk.CTkFrame):
             self._review_btn.configure(state="normal")
             self._confirmed_spellings = dict(intake_result.confirmed_spellings)
             self._extract_status_label.configure(
-                text=(
-                    f"Case data extracted"
-                    + (f"  ({len(self._confirmed_spellings)} spellings)" if self._confirmed_spellings else "")
-                ),
+                text="Case data extracted",
                 text_color="#44FF44",
             )
-            self._append_transcript_log(
-                "Case data extracted from PDF"
-                + (f" with {len(self._confirmed_spellings)} confirmed spellings" if self._confirmed_spellings else "")
-            )
+            self._append_transcript_log("Case data extracted from PDF")
             if self._current_case_path:
                 self._create_case_folders_now()
                 if self._last_pdf_path:
