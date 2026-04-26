@@ -311,6 +311,15 @@ class CorrectionsTab(ctk.CTkFrame):
         )
         self._open_docx_btn.pack(side="left", padx=(6, 0))
 
+        self._save_corpus_btn = ctk.CTkButton(
+            foot, text="Save to Training Corpus", width=190,
+            fg_color="transparent", border_width=1, border_color="#334",
+            text_color="#8ab", font=ctk.CTkFont(size=11),
+            state="disabled",
+            command=self._save_to_training_corpus,
+        )
+        self._save_corpus_btn.pack(side="left", padx=(6, 0))
+
         self._footer_label = ctk.CTkLabel(
             foot, text="",
             font=ctk.CTkFont(size=10), text_color="#334455", anchor="e",
@@ -416,6 +425,7 @@ class CorrectionsTab(ctk.CTkFrame):
         self._generate_docx_btn.configure(state="disabled")
         self._generate_full_docx_btn.configure(state="disabled")
         self._open_docx_btn.configure(state="disabled")
+        self._save_corpus_btn.configure(state="disabled")
         self._run_status.configure(text="Ready to run corrections.", text_color="gray")
         self._set_viewer_source(
             "Viewer Source: none (load a transcript to see corrections)",
@@ -450,6 +460,7 @@ class CorrectionsTab(ctk.CTkFrame):
         self._generate_docx_btn.configure(state="disabled")
         self._generate_full_docx_btn.configure(state="disabled")
         self._open_docx_btn.configure(state="disabled")
+        self._save_corpus_btn.configure(state="disabled")
 
         for card in (self._stat_corrections, self._stat_flags,
                      self._stat_blocks, self._stat_spellings):
@@ -579,6 +590,7 @@ class CorrectionsTab(ctk.CTkFrame):
             self._generate_docx_btn.configure(state="normal")
             self._generate_full_docx_btn.configure(state="normal")
             self._open_docx_btn.configure(state="disabled")
+            self._save_corpus_btn.configure(state="normal")
 
             folder = str(Path(corr_path).parent) if corr_path else ""
             self._footer_label.configure(
@@ -910,3 +922,43 @@ class CorrectionsTab(ctk.CTkFrame):
     def _open_docx(self):
         if self._docx_path and os.path.isfile(self._docx_path):
             subprocess.Popen(["start", "", self._docx_path], shell=True)
+
+    def _save_to_training_corpus(self):
+        """Copy this case's pipeline outputs into training_corpus/{slug}/."""
+        if not self._corrected_path or not os.path.isfile(self._corrected_path):
+            messagebox.showerror(
+                "No corrected transcript",
+                "Run the corrections pipeline before saving to the corpus.",
+            )
+            return
+
+        from core.training_corpus import save_to_corpus
+
+        result = save_to_corpus(
+            corrected_path=self._corrected_path,
+            ai_corrected_text=self._ai_text or None,
+        )
+
+        if not result.get("success"):
+            err = result.get("error") or "Unknown error"
+            messagebox.showerror("Save to Training Corpus failed", err)
+            self._append_log(f"ERROR (corpus save): {err}")
+            return
+
+        slug = result.get("slug", "")
+        corpus_dir = result.get("corpus_dir", "")
+        written = result.get("files_written", [])
+        skipped = result.get("files_skipped", [])
+
+        lines = [f"Saved to training_corpus/{slug}/"]
+        for name in written:
+            lines.append(f"  + {name}")
+        for name in skipped:
+            lines.append(f"  · skipped: {name}")
+        msg = "\n".join(lines)
+
+        self._append_log(msg)
+        self._run_status.configure(
+            text=f"✓ Saved to corpus: {slug}", text_color="#44FF44",
+        )
+        messagebox.showinfo("Saved to Training Corpus", f"{msg}\n\n{corpus_dir}")
