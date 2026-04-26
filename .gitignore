@@ -31,3 +31,10 @@ tmp_app_window*.png
 CONSOLIDATION_PROMPT.md.pdf
 **(2).docx
 
+# Training corpus — real client transcripts contain PII and never get
+# committed. Only the workflow README and the .gitkeep are tracked, so
+# the directory exists in the repo but case folders stay local.
+training_corpus/*
+!training_corpus/README.md
+!training_corpus/.gitkeep
+
