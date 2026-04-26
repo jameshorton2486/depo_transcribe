@@ -206,7 +206,7 @@ def analyze_audio(file_path: str) -> AudioAnalysis:
         tier = "CLEAN"
     elif snr_db >= 15:
         tier = "ENHANCED"
-        issues.append(f"Estimated SNR {snr_db:.0f} dB — using pyannote diarization")
+        issues.append(f"Estimated SNR {snr_db:.0f} dB — ENHANCED tier (Deepgram diarization)")
     else:
         tier = "RESCUE"
         issues.append(f"Estimated SNR {snr_db:.0f} dB — applying conservative denoising")

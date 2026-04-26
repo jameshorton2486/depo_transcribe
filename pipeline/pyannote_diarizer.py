@@ -2,6 +2,28 @@
 pipeline/pyannote_diarizer.py
 
 GPU-accelerated pyannote.audio speaker diarization for Depo-Pro.
+
+DEAD CODE — as of 2026-04-25, neither diarize() nor align_speakers() is
+called from anywhere in the active pipeline. Speaker labels in
+production come exclusively from Deepgram (transcriber.py: diarize=true).
+
+This module was introduced in commit 57cbe35 (2026-04-12) as part of an
+audio-pipeline upgrade but was never wired into core/job_runner.py or
+the spec_engine path. The module is preserved here, unmodified,
+pending an explicit decision on whether to:
+
+  (a) Wire it up — would change every transcript's speaker labels and
+      requires per-CLAUDE.md §17 deliberation: the witness's audio
+      attribution is the legal record, and any heuristic that
+      reassigns speaker IDs is testimony-altering.
+  (b) Delete the module — irreversible without a re-add; the original
+      author's intent is not documented in the commit message.
+
+Do NOT add invocations from production code without explicit
+deliberation per CLAUDE.md §17. If you arrived here looking for "why
+isn't pyannote running?" — it isn't, and the misleading description
+strings in pipeline/preprocessor.py that suggested otherwise were
+corrected on 2026-04-25.
 """
 
 from __future__ import annotations

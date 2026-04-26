@@ -27,8 +27,11 @@ CLEAN_CONFIG = {
 ENHANCED_CONFIG = {
     "highpass_freq": 80,
     "loudnorm": True,
-    "afftdn": False,  # OFF — pyannote diarization handles speaker issues
-    "description": "ENHANCED: highpass + loudnorm + pyannote diarization",
+    "afftdn": False,  # OFF — Deepgram nova-3 outperforms afftdn for diarization
+    # Description matches what _build_filter_chain() actually emits — no
+    # pyannote runs, only the FFmpeg filters listed here. Deepgram
+    # (transcriber.py: diarize=true) is the diarization engine.
+    "description": "ENHANCED: highpass + loudnorm + Deepgram diarization",
 }
 
 RESCUE_CONFIG = {
@@ -36,7 +39,10 @@ RESCUE_CONFIG = {
     "loudnorm": True,
     "afftdn": False,  # OFF — noisereduce handles this in job_runner
     "noisereduce": True,
-    "description": "RESCUE: highpass + loudnorm + noisereduce + pyannote",
+    # Description matches what _build_filter_chain() + job_runner.py emit.
+    # noisereduce is a separate pre-Deepgram pass; pyannote is NOT in the
+    # active path despite the dead module at pipeline/pyannote_diarizer.py.
+    "description": "RESCUE: highpass + loudnorm + noisereduce + Deepgram diarization",
 }
 
 QUALITY_CONFIGS = {
