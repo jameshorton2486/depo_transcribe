@@ -3397,6 +3397,10 @@ class TranscriptTab(ctk.CTkFrame):
             self._original_text = self._canonical_text or self._textbox.get("1.0", "end-1c")
         self._processed_text = corrected_text
         self._apply_text_update(self._processed_text)
+        # Repaint highlights immediately against the current word map so the
+        # reviewer keeps the low-confidence color cues during proofreading,
+        # even before the async _load_word_data round-trip completes below.
+        self._apply_confidence_highlights()
         try:
             self._textbox._textbox.mark_set("insert", cursor_pos)
             self._textbox._textbox.see(cursor_pos)
@@ -3407,6 +3411,7 @@ class TranscriptTab(ctk.CTkFrame):
         if corrected_path:
             self._corrected_path = corrected_path
             self._update_path_label()
+            self._load_low_confidence_words(corrected_path)
             self._load_word_data(corrected_path)
 
         count = result.get("correction_count", 0)
@@ -3534,6 +3539,10 @@ class TranscriptTab(ctk.CTkFrame):
             except Exception:
                 cursor_pos = "1.0"
             self._apply_text_update(result_text)
+            # Same proofreading-continuity fix as _on_corrections_done — keep
+            # the low-confidence highlights visible after the AI pass replaces
+            # the textbox content.
+            self._apply_confidence_highlights()
             self._processed_text = result_text
             try:
                 self._textbox._textbox.mark_set("insert", cursor_pos)
@@ -3545,6 +3554,7 @@ class TranscriptTab(ctk.CTkFrame):
             if save_path:
                 with open(save_path, "w", encoding="utf-8") as fh:
                     fh.write(result_text)
+                self._load_low_confidence_words(save_path)
                 self._load_word_data(save_path)
 
             self.set_status("✓ AI correction complete — transcript updated.", "#44FF44")
