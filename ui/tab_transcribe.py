@@ -18,6 +18,7 @@ from typing import Any
 import customtkinter as ctk
 
 from ui._components import (
+    AUDIO_VIDEO_EXTENSIONS,
     BTN_PRIMARY_AMBER,
     BTN_PRIMARY_AMBER_HOVER,
     BTN_SAFE_GREEN,
@@ -41,12 +42,6 @@ logger = get_logger(__name__)
 
 # Default output directory
 _DEFAULT_BASE_DIR = r"C:\Users\james\Depositions"
-
-# Supported file extensions
-_AUDIO_VIDEO_EXTENSIONS = (
-    ("Audio / Video files", "*.mp3 *.mp4 *.wav *.m4a *.mov *.avi *.mkv *.flac"),
-    ("All files", "*.*"),
-)
 
 # ── Row colours for the review dialog ────────────────────────────────────────
 _ROW_BG_A = "#1A1A2E"
@@ -1556,7 +1551,7 @@ class TranscribeTab(ctk.CTkFrame):
     # ── Actions ──────────────────────────────────────────────────────────────
 
     def _browse_file(self):
-        path = filedialog.askopenfilename(filetypes=_AUDIO_VIDEO_EXTENSIONS)
+        path = filedialog.askopenfilename(filetypes=AUDIO_VIDEO_EXTENSIONS)
         if path:
             if self._correction_mode:
                 self._clear_correction_mode()

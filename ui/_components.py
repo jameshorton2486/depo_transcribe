@@ -48,6 +48,16 @@ BTN_SAFE_GREEN_HOVER = "#145230"
 BTN_AI_PURPLE = "#6B2A8C"
 BTN_AI_PURPLE_HOVER = "#4E1E66"
 
+
+# ── Shared file-picker filetypes ──────────────────────────────────────────────
+# Used by the Transcribe tab's Browse button and any dialog that needs the
+# same audio/video selection scope (e.g. multi-file combine dialog). Single
+# source of truth so the dialog and the main button can never drift apart.
+AUDIO_VIDEO_EXTENSIONS = (
+    ("Audio / Video files", "*.mp3 *.mp4 *.wav *.m4a *.mov *.avi *.mkv *.flac"),
+    ("All files", "*.*"),
+)
+
 BTN_UTILITY_BLUE = "#1558C0"
 BTN_UTILITY_BLUE_HOVER = "#0F3E8A"
 
