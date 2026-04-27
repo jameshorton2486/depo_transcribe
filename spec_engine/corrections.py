@@ -916,6 +916,17 @@ def _apply_safe_rewrite(
             original_text,
             re.IGNORECASE,
         ))
+    ) or (
+        # Spoken-time conversion ("Eight forty five PM." → "8:45 p.m.")
+        # is also inherently a >50% reduction. Same defensive prefix
+        # pattern as fix_cause_number_digits — only authorize shortening
+        # when the original text actually contains an a.m./p.m. shape
+        # the rule could legitimately have processed.
+        pattern == 'fix_spoken_times'
+        and bool(re.search(
+            r'\b(?:[Aa]\.?[Mm]\.?|[Pp]\.?[Mm]\.?)\b',
+            original_text,
+        ))
     )
     return safe_apply(
         original_text,
@@ -1719,7 +1730,20 @@ def fix_spoken_times(text: str) -> str:
                 return m.group(0)
             return f"{hour}:{minute} {ampm}"
 
-        return spoken_time.sub(_spoken_repl, working)
+        working = spoken_time.sub(_spoken_repl, working)
+
+        # Collapse trailing dots after a.m./p.m. that the substitutions
+        # above leave behind. The compact_numeric and spoken_time regexes
+        # both terminate at a word boundary, which backs off any literal
+        # "." present in the input (because . is non-word and the next
+        # char is also non-word so no boundary). The substitutions then
+        # emit "a.m."/"p.m." while the input "." remains, producing
+        # "p.m..". One regex pass with \.+ collapses any number of
+        # trailing dots in one shot — handles both the common
+        # single-extra-dot case and the pathological already-double
+        # input (8:45 p.m.. → 8:45 p.m...) without iteration.
+        working = re.sub(r'\b([ap]\.m\.)\.+', r'\1', working)
+        return working
 
     return _apply_outside_protected_segments(text, _replace)
 
@@ -2480,6 +2504,10 @@ def normalize_time_and_dashes(
         return f"{normalized_time} {dotted}"
 
     text = TIME_RE.sub(_fix_time, text)
+    # Same trailing-dot collapse as fix_spoken_times — TIME_RE has the
+    # same word-boundary backoff property, so "8:45 PM." normalizes to
+    # "8:45 p.m.." without this guard.
+    text = re.sub(r'\b([ap]\.m\.)\.+', r'\1', text)
     return _apply_safe_rewrite(
         original,
         text,
