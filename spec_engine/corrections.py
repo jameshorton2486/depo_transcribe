@@ -902,6 +902,20 @@ def _apply_safe_rewrite(
     ) or (
         pattern == 'fix_spoken_dates'
         and compact_date_output
+    ) or (
+        # Spoken-digit collapse for cause numbers is inherently a >50%
+        # reduction (eleven words like "two zero two five C I two three
+        # two six seven" → "2025CI23267"). MIN_REWRITE_RATIO=0.5
+        # otherwise silently discards it. The guard requires a real
+        # "Cause Number" / "Cause No." prefix in the ORIGINAL text
+        # before authorizing the shortening, so this can't be abused
+        # if the rule's regex is ever weakened.
+        pattern == 'fix_cause_number_digits'
+        and bool(re.search(
+            r'\b(Cause\s+No\.?|Cause\s+Number)\b',
+            original_text,
+            re.IGNORECASE,
+        ))
     )
     return safe_apply(
         original_text,
@@ -1721,13 +1735,26 @@ def fix_cause_number_digits(text: str) -> str:
         r'zero|one|two|three|four|five|six|seven|eight|nine|'
         r'[a-zA-Z]|CI|CV|LT|dash'
     )
+    # Two regex defects fixed here:
+    # 1. The prefix is anchored with \b so "because" no longer matches
+    #    "cause" under re.IGNORECASE.
+    # 2. The digit group is "first token, then zero-or-more (space + token)",
+    #    terminated by \b. The previous "(?:\s+|$)" terminator inside the
+    #    repetition rejected trailing punctuation like "." or ",", which
+    #    truncated the last spoken digit ("...two six seven." became
+    #    "...2326seven."). \b allows the run to terminate naturally at
+    #    any non-word character.
     pattern = re.compile(
-        rf'(Cause\s+No\.?|Cause\s+Number)\s+((?:(?:{digit_or_letter})(?:\s+|$))+)',
+        rf'\b(Cause\s+No\.?|Cause\s+Number)\s+'
+        rf'((?:{digit_or_letter})(?:\s+(?:{digit_or_letter}))*)\b',
         re.IGNORECASE,
     )
 
     def _replace(segment: str) -> str:
         def _collapse(match: re.Match) -> str:
+            # .strip() is defensive — the new regex pattern won't capture
+            # trailing whitespace into group(2), but keeping the strip
+            # makes the contract explicit at the call site.
             spoken = match.group(2).strip()
             collapsed = _collapse_spoken_digits(spoken).replace("dash", "-").replace(" ", "")
             return f"Cause No. {collapsed}"
