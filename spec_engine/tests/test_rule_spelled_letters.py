@@ -118,3 +118,60 @@ class TestInterface:
         assert "T-O-V-A-R" in result
         assert len(records) == 1
         assert records[0].pattern == "spelled_letter_hyphenation_rule157"
+
+
+# ── Phase C — left-boundary leak fix ─────────────────────────────────────────
+# The original regex used \b as the left anchor. Word boundaries match
+# between any non-word character and a word character, so the apostrophe
+# in "it's" qualified — the `s` got pulled into the spelled-letter
+# sequence ("it's j e b ..." → "it'S-J-E-B-..."). The fix narrows the
+# left anchor to (?<![\w']) so neither word characters NOR apostrophe
+# can immediately precede the matched first letter.
+
+class TestLeftBoundaryApostropheLeak:
+
+    def test_spelled_after_apostrophe_word_does_not_consume_s(self):
+        # The bug case from the prompt.
+        text = "Spell that. it's j e b a m a n i."
+        result = clean_block(text, _cfg())[0]
+        assert "J-E-B-A-M-A-N-I" in result
+        # The leak symptom — `s` from `it's` consumed as first letter.
+        assert "it'S-" not in result
+        assert "'S-J" not in result
+        # The contraction must survive intact.
+        assert "it's" in result
+
+    def test_standalone_uppercase_sequence_still_hyphenated(self):
+        text = "J E B A M A N I"
+        result = clean_block(text, _cfg())[0]
+        assert "J-E-B-A-M-A-N-I" in result
+
+    def test_no_spelled_sequence_unchanged(self):
+        text = "she said it would be complicated"
+        result = clean_block(text, _cfg())[0]
+        # The rule should have nothing to do here. Verify no hyphen
+        # form was injected and the contraction-shaped phrase isn't
+        # touched.
+        assert "-" not in result
+        assert "would be" in result
+
+    def test_possessive_then_spelled_letters(self):
+        # John's stays intact; the spelled sequence still hyphenates.
+        text = "She said John's name. C O G E R is the spelling."
+        result = clean_block(text, _cfg())[0]
+        assert "John's" in result
+        assert "C-O-G-E-R" in result
+        # Specifically, the trailing s in John's must not be eaten.
+        assert "John'S-" not in result
+        assert "'S-C" not in result
+
+    def test_correction_record_emitted_after_fix(self):
+        # Mirror of the prompt's required CorrectionRecord assertion.
+        # Even with the boundary tightened, a real spelled-letter run
+        # still emits the audit record.
+        text = "Spell that. it's j e b a m a n i."
+        _, records, _ = clean_block(text, _cfg())
+        assert any(
+            "spelled_letter_hyphenation_rule157" in record.pattern
+            for record in records
+        )

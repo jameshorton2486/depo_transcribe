@@ -735,8 +735,17 @@ ARTIFACT_DUPLICATE_RE = re.compile(r'\b(\w{4,})\s+\1\b', re.IGNORECASE)
 # Requires word boundary at start and end.
 # Multi-letter words break the sequence — only single chars match.
 # Letters followed by periods are not matched (protects Q. A. initials).
+#
+# Left anchor: (?<![\w']) instead of \b. The \b boundary creates a
+# word/non-word transition between an apostrophe and the following
+# letter (e.g. "it's j..." — `'` is non-word, `s` is word, so \b
+# matches). That made the rule consume the `s` from `it's` as the
+# first letter of a spelled sequence, producing "it'S-J-E-B-...".
+# Excluding both word characters AND apostrophe in the lookbehind
+# blocks the leak while still permitting starts at whitespace,
+# string boundary, or any other non-word/non-apostrophe character.
 SPELLED_LETTERS_RE = re.compile(
-    r'\b([A-Za-z](?:\s+[A-Za-z]){2,})\b'
+    r"(?<![\w'])([A-Za-z](?:\s+[A-Za-z]){2,})\b"
 )
 
 
