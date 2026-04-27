@@ -773,18 +773,28 @@ docs/transcription_standards/depo_pro_style.md
 ```
 
 This is the project's house style guide for Texas court reporter
-transcripts. It captures the subset of conventions that affect the
-pipeline's automated output and the corpus-driven rule promotion
-process. It does NOT replace Morson's, the Texas UFM, or NCRA
-guidelines — court reporters using Depo-Pro consult those independently.
+transcripts. It is **grounded in the Uniform Format Manual for Texas
+Reporters' Records** (Tex. Sup. Ct. Misc. Docket No. 10-9077, as
+amended by 10-9113), the binding state authority for any reporter's
+record produced for a Texas court. Sections of the guide cite UFM
+section numbers throughout (e.g., "UFM 3.15" for the verbatim rule).
+
+**When the house style guide conflicts with the UFM, the UFM controls.**
+This isn't house preference — it's a Texas Supreme Court order, and
+non-compliance is grounds for CRCB discipline. Where the UFM is silent,
+the guide falls back on UFM-cited secondary authorities (Gregg
+Reference Manual, Merriam-Webster, Elements of Style) before resorting
+to house style decisions.
 
 ### How to use it
 
 - **When proposing a new MULTIWORD_CORRECTIONS or AI Correct prompt
   rule:** cite the section number from `depo_pro_style.md` that the
-  rule enforces. Rules without a documented basis should be questioned
-  during promotion review, not auto-approved. This is the discipline
-  that prevents speculative rule accumulation.
+  rule enforces, plus the UFM section if the style guide section cites
+  one. Rules that map to UFM-cited sections are obvious accept; rules
+  without any documented basis should be questioned during promotion
+  review, not auto-approved. This is the discipline that prevents
+  speculative rule accumulation.
 - **When producing a `ground_truth.txt` for the training corpus:**
   apply the rules consistently. The categorized diff tooling will tag
   fixes with section numbers from this guide so we can track which
