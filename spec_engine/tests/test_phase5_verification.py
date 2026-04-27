@@ -124,7 +124,10 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
         blocks = [Block(speaker_id=99, text="Loose text", raw_text="", block_type=BlockType.UNKNOWN)]
         assert "Loose text" in format_blocks_to_text(blocks)
 
-    def test_non_qa_paragraphs_use_three_tabs_and_single_newline(self):
+    def test_non_qa_paragraphs_use_three_tabs_and_blank_line_separator(self):
+        # Phase G — emit_blocks now separates blocks with "\n\n" (blank
+        # line) instead of "\n". The original test name (..._and_single_newline)
+        # was asserting the old joining; renamed and assertion flipped.
         from core.correction_runner import format_blocks_to_text
 
         blocks = [
@@ -147,7 +150,13 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
         result = format_blocks_to_text(blocks)
         assert "\t\t\tTHE REPORTER:  This deposition is taking place via Zoom." in result
         assert "\n\tA.\tYes, ma'am." in result
-        assert "\n\n" not in result
+        # Phase G: blocks are now separated by "\n\n", not "\n". The
+        # assertion was flipped from "not in" to "in" along with the
+        # rename above.
+        assert "\n\n" in result
+        # And no triple-newline regression — the join is exactly two
+        # newlines, no more.
+        assert "\n\n\n" not in result
 
 
 class TestFix5C_EmitSpLineSingleSpace:

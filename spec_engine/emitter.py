@@ -249,7 +249,12 @@ def emit_blocks(blocks: list) -> str:
                 lines.append(text)
             last_speaker_label = None
 
-    return "\n".join(lines)
+    # Phase G — separate blocks with a blank line ("\n\n") so speaker turns
+    # get visual separation in the plain-text textbox / _corrected.txt
+    # output. Reporter convention is one blank line between blocks. This
+    # is plain-text-only; DOCX paragraph spacing is handled separately
+    # via _set_paragraph_format.
+    return "\n\n".join(lines)
 
 
 # ── DOCX line emitters (Spec Section 3.3) ────────────────────────────────────

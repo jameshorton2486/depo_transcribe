@@ -68,13 +68,17 @@ def test_emit_blocks_suppresses_label_on_consecutive_same_speaker_blocks():
     ]
 
     result = emit_blocks(blocks)
-    lines = result.split("\n")
+    # Phase G — emit_blocks now joins with "\n\n" (blank line between
+    # blocks). Split on that to get block-level chunks; .split("\n")
+    # would yield ["block1", "", "block2", ...] with empty strings
+    # between content lines.
+    blocks_out = result.split("\n\n")
 
-    assert lines[0] == (
+    assert blocks_out[0] == (
         "\t\t\tMR. GONZALEZ:  Have you done anything that would "
         "affect your testimony?"
     )
-    assert lines[1] == (
+    assert blocks_out[1] == (
         "\t\t\tAlright, Peter. Can you tell me your full name?"
     )
 
@@ -188,3 +192,24 @@ class TestQALineFormat:
         # Defensive: SP line must NOT have been converted to a tab
         # form by a stray over-broad edit.
         assert "\t\t\tTHE REPORTER:\t" not in result
+
+
+# ── Phase G — plain-text inter-block spacing ─────────────────────────────────
+# emit_blocks now joins blocks with "\n\n" (blank line) instead of "\n".
+# Reporter convention is visual separation between speaker turns. The
+# DOCX path is unaffected — paragraph spacing in DOCX is handled by
+# _set_paragraph_format. This is plain-text-only.
+
+
+def test_emit_blocks_separates_blocks_with_blank_line():
+    blocks = [
+        Block(text="Did you go there?", block_type=BlockType.QUESTION, speaker_id=2),
+        Block(text="Yes, sir.", block_type=BlockType.ANSWER, speaker_id=1),
+    ]
+    result = emit_blocks(blocks)
+    # Two blocks joined with one blank line between them.
+    assert "\n\n" in result
+    # And exactly one — no triple-newline regression.
+    assert "\n\n\n" not in result
+    # Specifically: the Q line ends, then a blank line, then the A line.
+    assert "\tQ.\tDid you go there?\n\n\tA.\tYes, sir." in result
