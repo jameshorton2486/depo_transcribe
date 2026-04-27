@@ -16,6 +16,13 @@ PROTECTED_ABBREVIATIONS = (
     "Dr.",
     "Prof.",
 )
+# Single-letter initials inside names — "Holly D. Scholl", "J. K. Rowling".
+# These look identical to a sentence terminator (single uppercase letter,
+# period, whitespace, capital) so the splitter mistakes them for sentence
+# breaks. The lookahead (?=\s+[A-Z]) avoids consuming the trailing capital,
+# so consecutive initials (J. K. Rowling) are all caught in a single
+# re.sub pass without iteration.
+INITIAL_RE = re.compile(r'\b([A-Z])\.(?=\s+[A-Z])')
 
 SHORT_ANSWER_SET = {
     "Yes.",
@@ -46,6 +53,11 @@ def split_block_text(text: str) -> list[str]:
     protected = stripped
     for abbreviation in PROTECTED_ABBREVIATIONS:
         protected = protected.replace(abbreviation, abbreviation.replace(".", ABBREVIATION_PLACEHOLDER))
+
+    # Protect single-letter initials AFTER the abbreviation pass so the
+    # "Dr." / "Mr." replacements are already in placeholder form and
+    # can't be re-matched here as "D." / "M." with a capital lookahead.
+    protected = INITIAL_RE.sub(rf"\1{ABBREVIATION_PLACEHOLDER}", protected)
 
     sentences = [
         sentence.replace(ABBREVIATION_PLACEHOLDER, ".")
