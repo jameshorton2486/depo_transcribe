@@ -164,26 +164,40 @@ def _word_change_ratio(original: str, candidate: str) -> float:
     return delta / baseline
 
 
-def _validate_ai_output(original: str, candidate: str) -> bool:
+def _validate_ai_output(original: str, candidate: str) -> tuple[bool, str]:
+    """Validate AI-corrected chunk against original.
+
+    Returns ``(passed, reason)`` where ``reason`` is an empty string on
+    success, or a short snake_case identifier of the specific check that
+    failed. The reason is logged at the call site so a 50%+ revert rate
+    can be diagnosed without re-running the model — see the
+    AICorrector revert-rate diagnostic for why this granularity exists.
+    """
     if not _verbatim_counts_preserved(original, candidate):
-        return False
+        return False, "verbatim_count"
     if not _preserves_special_verbatim_forms(original, candidate):
-        return False
+        return False, "special_verbatim_forms"
     if not _preserves_structure(original, candidate):
-        return False
+        return False, "structure"
     if not _within_length_delta(original, candidate):
-        return False
+        return False, "length_delta"
     if _word_change_ratio(original, candidate) > MAX_WORD_CHANGE_RATIO:
-        return False
+        return False, "word_change_ratio"
 
     original_lines = original.splitlines()
     candidate_lines = candidate.splitlines()
     if len(original_lines) != len(candidate_lines):
-        return False
-    return all(
+        # Defensive: _preserves_structure already rejects line-count
+        # mismatches, so this branch is unreachable in practice. Kept
+        # for safety; if it ever fires, surface a distinct reason so we
+        # know the structural pre-check has drifted.
+        return False, "line_count"
+    if not all(
         _line_preserves_protected_content(original_line, candidate_line)
         for original_line, candidate_line in zip(original_lines, candidate_lines)
-    )
+    ):
+        return False, "protected_content"
+    return True, ""
 
 
 # ── AI correction runner ──────────────────────────────────────────────────────
@@ -467,8 +481,9 @@ def run_ai_correction(
             continue
 
         corrected_chunk = _restore_verbatim(corrected_protected_chunk, protected)
-        if not _validate_ai_output(chunk, corrected_chunk):
-            _log('AI output failed validation — reverting to original chunk')
+        passed, reason = _validate_ai_output(chunk, corrected_chunk)
+        if not passed:
+            _log(f'AI output failed validation ({reason}) — reverting to original chunk')
             results.append(chunk)
             continue
 

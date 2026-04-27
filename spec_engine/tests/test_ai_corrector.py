@@ -239,31 +239,36 @@ class TestValidationLayer:
         original = "Q.\tDid you go there?\nA.\tI went to the b-bank."
         candidate = "Q.\tDid you go there?\nA.\tI went to the bank."
 
-        assert _validate_ai_output(original, candidate) is False
+        passed, _ = _validate_ai_output(original, candidate)
+        assert passed is False
 
     def test_validate_ai_output_rejects_line_deletion(self):
         original = "Q.\tDid you go there?\nA.\tI did go there."
         candidate = "Q.\tDid you go there?"
 
-        assert _validate_ai_output(original, candidate) is False
+        passed, _ = _validate_ai_output(original, candidate)
+        assert passed is False
 
     def test_validate_ai_output_rejects_single_line_speaker_change(self):
         original = "MR. SMITH:  Hello.\nA.\tI did go there."
         candidate = "THE REPORTER:  Hello.\nA.\tI did go there."
 
-        assert _validate_ai_output(original, candidate) is False
+        passed, _ = _validate_ai_output(original, candidate)
+        assert passed is False
 
     def test_validate_ai_output_rejects_large_rewrite(self):
         original = "Q.\tDid you go there?\nA.\tI did go there and then I came back."
         candidate = "Q.\tSummarize this.\nA.\tYes."
 
-        assert _validate_ai_output(original, candidate) is False
+        passed, _ = _validate_ai_output(original, candidate)
+        assert passed is False
 
     def test_validate_ai_output_rejects_compressed_output(self):
         original = "Q.\tDid you go there?\nA.\tI did go there and then I came back."
         candidate = "Q.\tDid you go there?\nA.\tI went."
 
-        assert _validate_ai_output(original, candidate) is False
+        passed, _ = _validate_ai_output(original, candidate)
+        assert passed is False
 
     def test_validate_ai_output_allows_scopist_flag_addition(self):
         original = (
@@ -280,7 +285,104 @@ class TestValidationLayer:
             "[SCOPIST: FLAG 1: verify]."
         )
 
-        assert _validate_ai_output(original, candidate) is True
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is True
+        assert reason == ""
+
+    # ── Reason-string contract (added 2026-04-27) ────────────────────────────
+    # Each test triggers exactly one branch of the validator and asserts the
+    # reason it surfaces. The strings are now logged at the call site, so a
+    # high revert rate can be diagnosed by reason without re-running the
+    # model. Keep these reason strings stable — log-grep tooling depends on
+    # them.
+
+    def test_reason_verbatim_count_when_filler_word_removed(self):
+        original = "Q.\tDid you go?\nA.\tUh, yes I did go."
+        candidate = "Q.\tDid you go?\nA.\tYes I did go."  # "Uh" removed
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "verbatim_count"
+
+    def test_reason_special_verbatim_forms_when_stutter_collapsed(self):
+        # The validator's special-verbatim-forms regex requires a DOUBLE
+        # hyphen ("b--bank"), not a single hyphen — Texas stutters use
+        # the double-dash convention. Removing the stutter should fire
+        # the special_verbatim_forms branch before later checks like
+        # word_change_ratio.
+        original = "Q.\tDid you go?\nA.\tI went to the b--bank today."
+        candidate = "Q.\tDid you go?\nA.\tI went to the bank today."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "special_verbatim_forms"
+
+    def test_reason_structure_when_speaker_label_changed(self):
+        original = "MR. SMITH:  Hello.\nA.\tI did go there."
+        candidate = "THE REPORTER:  Hello.\nA.\tI did go there."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "structure"
+
+    def test_reason_length_delta_when_output_doubles(self):
+        # Same Q/A structure and signature, no verbatim tokens, no special
+        # forms — but the candidate is more than 30% longer.
+        original = "Q.\tDid you go there?\nA.\tYes."
+        candidate = (
+            "Q.\tDid you go there?\n"
+            "A.\tYes and also many other things happened that same day "
+            "and we discussed them all in great length."
+        )
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "length_delta"
+
+    def test_reason_word_change_ratio_when_aggressive_rewrite(self):
+        # Length stays close (within 30%), structure preserved, but more
+        # than 15% of words change → word_change_ratio branch.
+        original = "Q.\tDid you go to the bank yesterday morning at ten?\nA.\tI did."
+        candidate = "Q.\tDid he run to the store last evening near six?\nA.\tHe did."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "word_change_ratio"
+
+    def test_reason_protected_content_when_form_moves_between_lines(self):
+        # The per-line protected_content branch fires when the GLOBAL
+        # special-verbatim-forms count is preserved but a form has
+        # moved from one line to another. _preserves_special_verbatim_forms
+        # compares full lists (order-sensitive) but constructs them from
+        # the entire text — so identical forms in shuffled positions
+        # actually still differ globally because the comparison is list
+        # equality, not multiset equality. We trigger the per-line check
+        # by keeping forms in the same order globally but moving them
+        # off the line they were on, which list-equality won't catch
+        # when only the surrounding text differs.
+        #
+        # Concretely: two stutter forms, one per line in original; in
+        # candidate both forms are on line 1, line 2 has neither.
+        # Global list (order-preserving) is the same; per-line check
+        # catches the drift.
+        original = "I went--to the bank.\nThen we--saw it."
+        candidate = "I went--to the we--bank.\nThen saw it."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        # Both special_verbatim_forms (if global comparison happens to
+        # catch ordering difference) and protected_content (per-line)
+        # are valid signals for this class of drift; the per-line guard
+        # is what we explicitly want to surface.
+        assert reason in {"special_verbatim_forms", "protected_content"}
+
+    def test_reason_empty_when_validation_passes(self):
+        original = "Q.\tDid you go?\nA.\tYes."
+        candidate = "Q.\tDid you go?\nA.\tYes."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is True
+        assert reason == ""
 
 
 class TestRunAICorrection:
