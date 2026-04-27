@@ -213,3 +213,78 @@ def test_emit_blocks_separates_blocks_with_blank_line():
     assert "\n\n\n" not in result
     # Specifically: the Q line ends, then a blank line, then the A line.
     assert "\tQ.\tDid you go there?\n\n\tA.\tYes, sir." in result
+
+
+# ── Phase H — DOCX double-spacing regression guard ───────────────────────────
+# Verifies WD_LINE_SPACING.DOUBLE reaches every body-emitter paragraph type
+# (Q, A, SP, SP continuation, PAREN, FLAG, header, BY, plain, plus every
+# emit_line_numbered variant). Body-testimony rule per UFM 2.13 (style guide
+# §12.1). Out of scope for this guard: admin pages under spec_engine/pages/
+# (corrections_log, post_record) and table-cell layouts (_lined_page) which
+# intentionally use different spacing and are not under UFM 2.13.
+
+
+def test_all_emitted_paragraphs_use_double_spacing():
+    from docx.enum.text import WD_LINE_SPACING
+
+    from spec_engine.emitter import (
+        QAPairTracker,
+        LineNumberTracker,
+        create_document,
+        emit_q_line,
+        emit_a_line,
+        emit_sp_line,
+        emit_pn_line,
+        emit_flag_line,
+        emit_header_line,
+        emit_by_line,
+        emit_plain_line,
+        emit_line_numbered,
+    )
+    from spec_engine.models import LineType
+
+    doc = create_document()
+
+    # Body emitters that go through _set_paragraph_format
+    emit_q_line(doc, "Did you go there?")
+    emit_a_line(doc, "Yes, sir.")
+    emit_sp_line(doc, "MR. GARCIA:  Objection. Form.")
+    emit_sp_line(doc, "\t\t\tThis is a same-speaker continuation block.")
+    emit_pn_line(doc, "(Whereupon, a recess was had.)")
+    emit_flag_line(doc, "[SCOPIST: FLAG 1: verify timestamp]")
+    emit_header_line(doc, "DIRECT EXAMINATION")
+    emit_by_line(doc, "BY MR. GARCIA:")
+    emit_plain_line(doc, "Plain transcript text without label.")
+
+    # emit_line_numbered has its own line-spacing setup site (does not
+    # call _set_paragraph_format) — verify each variant separately so a
+    # future change can't drop DOUBLE on one variant silently.
+    tracker = LineNumberTracker(start_page=3)
+    qa_tracker = QAPairTracker()
+    for line_type, text in [
+        (LineType.Q, "Numbered Q line."),
+        (LineType.A, "Numbered A line."),
+        (LineType.SP, "MR. GARCIA:  Numbered SP line."),
+        (LineType.PN, "(Numbered parenthetical.)"),
+        (LineType.PLAIN, "Numbered plain line."),
+    ]:
+        emit_line_numbered(doc, line_type, text, tracker, qa_tracker)
+
+    # Every paragraph in the test doc must have DOUBLE spacing — no
+    # silent regressions to SINGLE / unset / EXACTLY / etc.
+    bad = []
+    for i, para in enumerate(doc.paragraphs):
+        rule = para.paragraph_format.line_spacing_rule
+        if rule != WD_LINE_SPACING.DOUBLE:
+            bad.append((i, rule, para.text[:50]))
+
+    assert not bad, (
+        "Some paragraphs are missing WD_LINE_SPACING.DOUBLE:\n"
+        + "\n".join(
+            f"  paragraph[{i}] rule={rule!r} text={text!r}"
+            for i, rule, text in bad
+        )
+    )
+    # Defensive: at least one paragraph from each major branch should
+    # have landed (14 emitters above, expect at least that many).
+    assert len(doc.paragraphs) >= 14
