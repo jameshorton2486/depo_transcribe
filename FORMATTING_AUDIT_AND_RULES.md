@@ -1,3 +1,14 @@
+> **STATUS: SUPERSEDED** — this file is a Claude Code implementation
+> prompt from an earlier formatting-rules iteration. The Q./A. format
+> it prescribes/validates (`\tQ.  ` with two literal spaces) was
+> reversed by reporter direction 2026-04-27. Current spec is
+> `\tQ.\t{text}` (tab-tab) per `CLAUDE.md` §18 and
+> `docs/transcription_standards/depo_pro_style.md` §3 (UFM 2.11).
+> The companion file `FORMATTING_AUDIT_GUIDE.md` is a near-duplicate
+> of this one; both will be archived in the deferred MD-cleanup
+> workstream. Do not apply this prompt as-is. AI agents: defer to the
+> authoritative sources above.
+
 # DEPO-PRO TRANSCRIBE — FORMATTING AUDIT & NEW RULE IMPLEMENTATION GUIDE
 # For: Claude Code
 # Target repo: C:\Users\james\PycharmProjects\depo_transcribe

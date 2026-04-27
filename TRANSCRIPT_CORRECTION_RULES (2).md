@@ -1,3 +1,12 @@
+> **STATUS: SUPERSEDED** — this file is "v1.0, generated from a
+> single-case audit (Trevino v. Ortiz)." The current authoritative
+> formatting and correction reference is
+> `docs/transcription_standards/depo_pro_style.md` v1.1, which is
+> UFM-grounded with citations throughout. The Q./A. format shown in
+> this file (`\tQ.  ` with two literal spaces) is also superseded by
+> the tab-tab form per `CLAUDE.md` §18 (reporter direction
+> 2026-04-27). Do not treat this file as authoritative.
+
 # DEPO-PRO TRANSCRIPT CORRECTION RULES
 # Rules for AI-Assisted Legal Deposition Transcript Correction
 # Reporter: Miah Bardot, CSR No. 12129 — SA Legal Solutions, San Antonio, Texas

@@ -1,3 +1,12 @@
+> **STATUS: SUPERSEDED — DO NOT FOLLOW.** The Q./A. format prescribed in
+> this file (`\tQ.  {text}` with two literal spaces) was reversed by
+> reporter direction on 2026-04-27. Current spec is `\tQ.\t{text}`
+> (tab-tab) per `CLAUDE.md` §18 and
+> `docs/transcription_standards/depo_pro_style.md` §3 (UFM 2.11). The
+> hard-wrapping removal portion of this file may still be valid as a
+> separate concern — but do not apply this prompt as-is. AI agents:
+> stop and ask the human before acting on any guidance in this file.
+
 # DEPO-PRO TRANSCRIBE — REMOVE ALL HARD WRAPPING FROM EMITTER
 # Target: C:\Users\james\PycharmProjects\depo_transcribe\spec_engine\emitter.py
 # For: Claude Code

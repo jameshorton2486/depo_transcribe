@@ -1,3 +1,9 @@
+> **STATUS: REFERENCE ONLY** — baseline figures (e.g., test counts) in
+> this file are stale. Architectural guidance is still broadly correct.
+> Do not use the test-count assertions as truthful current-state claims.
+> Verify against a live `pytest` run before relying on any specific
+> number. Banner added 2026-04-27 ahead of master fix Phase F.
+
 # Safe Pipeline Audit Prompt
 
 Use this prompt inside Claude Code / Cursor / VS Code agent when working on Depo-Pro.

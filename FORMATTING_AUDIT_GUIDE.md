@@ -1,3 +1,13 @@
+> **STATUS: SUPERSEDED — NEAR-DUPLICATE.** This file is functionally
+> identical to `FORMATTING_AUDIT_AND_RULES.md` (3-line trivial diff,
+> same content). The Q./A. format it prescribes/validates (`\tQ.  `
+> with two literal spaces) was reversed by reporter direction
+> 2026-04-27. Current spec is `\tQ.\t{text}` (tab-tab) per
+> `CLAUDE.md` §18 and `docs/transcription_standards/depo_pro_style.md`
+> §3 (UFM 2.11). Both this file and its near-duplicate will be
+> archived in the deferred MD-cleanup workstream. Do not apply this
+> prompt as-is.
+
 # DEPO-PRO TRANSCRIBE — FORMATTING AUDIT & NEW RULE IMPLEMENTATION GUIDE
 # For: Claude Code
 # Target repo: C:\Users\james\PycharmProjects\depo_transcribe

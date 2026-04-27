@@ -1,3 +1,10 @@
+> **STATUS: HISTORICAL** — dated 2026-04-04, three weeks before this
+> banner was added. The file's self-claim of being the "current review
+> baseline" should be ignored. Specific factual claims (test counts,
+> fix status, file states) may be outdated. Treat as historical context
+> only. For current-state understanding, see `CLAUDE.md` and a live
+> `pytest` run. Banner added 2026-04-27 ahead of master fix Phase F.
+
 # Depo-Pro Pipeline Audit
 
 Date: 2026-04-04
