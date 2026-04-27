@@ -710,7 +710,10 @@ exact equality (not substring). Test file ships with the rule.
 
 **Gate 1 — Define** (before coding)
 What it fixes (one sentence) + 3 real examples + 2 false-positive guards
-+ priority slot in clean_block()
++ priority slot in clean_block() + **citation to the section number in
+`docs/transcription_standards/depo_pro_style.md` that the rule enforces**.
+Rules without a documented basis in the style guide should be questioned
+before promotion — see Section 24.
 
 **Gate 2 — Implement**
 Standalone function in corrections.py + registered in clean_block()
@@ -757,3 +760,58 @@ See `STABILIZATION_PLAN.md` for the complete phased plan.
 Zero-coverage functions (Phase 3): `apply_case_corrections`,
 `fix_conversational_titles`, `fix_even_dollar_amounts`,
 `fix_uh_huh_hyphenation`, `normalize_time_and_dashes`, `fix_qa_structure`
+
+---
+
+## 24. House Style Guide — Authority for Rule Promotion
+
+The authoritative reference for Depo-Pro's transcription conventions
+lives at:
+
+```
+docs/transcription_standards/depo_pro_style.md
+```
+
+This is the project's house style guide for Texas court reporter
+transcripts. It captures the subset of conventions that affect the
+pipeline's automated output and the corpus-driven rule promotion
+process. It does NOT replace Morson's, the Texas UFM, or NCRA
+guidelines — court reporters using Depo-Pro consult those independently.
+
+### How to use it
+
+- **When proposing a new MULTIWORD_CORRECTIONS or AI Correct prompt
+  rule:** cite the section number from `depo_pro_style.md` that the
+  rule enforces. Rules without a documented basis should be questioned
+  during promotion review, not auto-approved. This is the discipline
+  that prevents speculative rule accumulation.
+- **When producing a `ground_truth.txt` for the training corpus:**
+  apply the rules consistently. The categorized diff tooling will tag
+  fixes with section numbers from this guide so we can track which
+  rules the pipeline already enforces well and which need work.
+- **When evaluating an AI suggestion:** if a recommendation conflicts
+  with a numbered rule in this guide, the rule wins. If a recommendation
+  has no corresponding rule, that's a signal to question it (see also
+  Section 6's Anti-Generic-Refactor Rule).
+
+### What it is NOT used for (yet)
+
+The contents of this file are **not** loaded into the AI Correct system
+prompt. The verbatim preservation rules already in the prompt are
+stronger than what this file specifies, and injecting context like this
+is a separate decision that requires evidence from corpus diffs first
+(i.e., evidence that AI Correct is violating documented rules in ways
+context injection would fix). Until such evidence exists, this is
+reference material for humans (the reporter and the maintainer), not
+pipeline input.
+
+### Versioning
+
+The style guide is versioned in the repository (Section 14 of the guide
+itself). When a rule changes:
+
+1. Update the guide with the new rule and a brief justification.
+2. Update tests that depend on the old rule.
+3. Note the change in the commit message and reference the rule number.
+4. Re-run corpus diff tooling against existing ground truths to verify
+   no unintended regressions.
