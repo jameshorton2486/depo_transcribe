@@ -317,13 +317,37 @@ class TestValidationLayer:
         assert passed is False
         assert reason == "special_verbatim_forms"
 
-    def test_reason_structure_when_speaker_label_changed(self):
+    def test_reason_structure_speaker_prefix_when_speaker_label_changed(self):
         original = "MR. SMITH:  Hello.\nA.\tI did go there."
         candidate = "THE REPORTER:  Hello.\nA.\tI did go there."
 
         passed, reason = _validate_ai_output(original, candidate)
         assert passed is False
-        assert reason == "structure"
+        assert reason == "structure_speaker_prefix"
+
+    def test_reason_structure_line_count_when_lines_dropped(self):
+        # Line count drift is a distinct structural failure mode from
+        # signature or speaker-prefix drift. Surface it as its own reason
+        # so the operator can tell whether the AI is collapsing wrapped
+        # lines vs re-attributing speakers.
+        original = "Q.\tFirst question?\nA.\tFirst answer.\nQ.\tSecond question?"
+        candidate = "Q.\tFirst question?\nA.\tFirst answer."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "structure_line_count"
+
+    def test_reason_structure_signatures_when_qa_swapped_to_text(self):
+        # Same line count, no speaker labels — but the line-type signature
+        # changes because what was a Q. line becomes a plain TEXT line.
+        # That's the AI restructuring the Q/A skeleton, distinct from
+        # line-count drift or speaker-label drift.
+        original = "Q.\tDid you go?\nA.\tYes."
+        candidate = "Did you go?\nA.\tYes."
+
+        passed, reason = _validate_ai_output(original, candidate)
+        assert passed is False
+        assert reason == "structure_signatures"
 
     def test_reason_length_delta_when_output_doubles(self):
         # Same Q/A structure and signature, no verbatim tokens, no special

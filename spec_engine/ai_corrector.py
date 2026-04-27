@@ -131,23 +131,39 @@ def _line_signature(line: str) -> str:
     return 'TEXT'
 
 
-def _preserves_structure(original: str, candidate: str) -> bool:
+def _check_structure(original: str, candidate: str) -> str:
+    """Return ``""`` if structure is preserved, or a granular sub-reason.
+
+    Sub-reasons (stable strings — log-grep tooling depends on them):
+      - ``"structure_line_count"`` — line count differs between input/output
+      - ``"structure_signatures"`` — line type sequence (Q/A/SP/PAREN/TEXT/BLANK) differs
+      - ``"structure_speaker_prefix"`` — a speaker label changed (e.g. MR. SMITH → THE REPORTER)
+
+    The Caram post-NOD revert analysis (2026-04-27) showed `structure` as
+    the dominant validator block (3 of 6 reverts). Splitting it tells the
+    operator which structural change the AI is making most often, so the
+    next prompt-tuning or threshold decision has a target.
+    """
     original_lines = original.splitlines()
     candidate_lines = candidate.splitlines()
     if len(original_lines) != len(candidate_lines):
-        return False
+        return "structure_line_count"
 
     original_signatures = [_line_signature(line) for line in original_lines]
     candidate_signatures = [_line_signature(line) for line in candidate_lines]
     if original_signatures != candidate_signatures:
-        return False
+        return "structure_signatures"
 
     for original_line, candidate_line in zip(original_lines, candidate_lines):
         original_prefix = _extract_speaker_prefix(original_line)
         if original_prefix and original_prefix != _extract_speaker_prefix(candidate_line):
-            return False
+            return "structure_speaker_prefix"
 
-    return True
+    return ""
+
+
+def _preserves_structure(original: str, candidate: str) -> bool:
+    return _check_structure(original, candidate) == ""
 
 
 def _within_length_delta(original: str, candidate: str, max_ratio: float = MAX_LENGTH_DELTA_RATIO) -> bool:
@@ -177,8 +193,9 @@ def _validate_ai_output(original: str, candidate: str) -> tuple[bool, str]:
         return False, "verbatim_count"
     if not _preserves_special_verbatim_forms(original, candidate):
         return False, "special_verbatim_forms"
-    if not _preserves_structure(original, candidate):
-        return False, "structure"
+    structure_reason = _check_structure(original, candidate)
+    if structure_reason:
+        return False, structure_reason
     if not _within_length_delta(original, candidate):
         return False, "length_delta"
     if _word_change_ratio(original, candidate) > MAX_WORD_CHANGE_RATIO:
