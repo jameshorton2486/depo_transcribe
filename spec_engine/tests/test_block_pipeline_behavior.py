@@ -178,7 +178,7 @@ def test_formatter_outputs_tabs():
     )
 
     text = result["text"]
-    assert "\tQ.  " in text
+    assert "\tQ.\t" in text
 
 
 @pytest.mark.skip(reason="Output format and line wrapping not yet implemented — Phase 2 task")

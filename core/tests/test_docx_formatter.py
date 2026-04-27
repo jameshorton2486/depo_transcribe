@@ -93,8 +93,15 @@ def test_format_transcript_to_docx_creates_file_and_reports_progress(tmp_path):
 
     doc = Document(saved_path)
     assert len(doc.paragraphs) == 3
-    assert "\tQ.  Did you see that?" in doc.paragraphs[0].text
-    assert "\tA.  Yes." in doc.paragraphs[1].text
+    # Old-format input ("\tQ.  ") in the source file goes through
+    # _iter_formatted_lines which parses it into LineType.Q and re-emits
+    # via emit_q_line / _qa_visual_text — the Phase F'd emitter. Round-
+    # trip behavior: pre-Phase-F transcripts on disk are normalized to
+    # the new tab-tab format on DOCX export. Input strings above stay
+    # in old format intentionally — they represent real artifacts users
+    # have on disk; the test verifies the function handles them.
+    assert "\tQ.\tDid you see that?" in doc.paragraphs[0].text
+    assert "\tA.\tYes." in doc.paragraphs[1].text
 
 
 def test_format_transcript_to_docx_raises_for_missing_source(tmp_path):

@@ -174,7 +174,13 @@ def _validate_emit_input(line_type: LineType, text: str) -> str:
 
 
 def _qa_visual_text(prefix: str, text: str) -> str:
-    return f"\t{prefix}.  {text}"
+    # Two-tab construction (reporter direction 2026-04-27, supersedes the
+    # prior "two literal spaces" spec). The first tab indents to stop 1
+    # at 720 twips / 0.5"; the second tab lands the text at stop 2 at
+    # 1440 twips / 1.0". Tab stops are configured in _set_paragraph_format
+    # via [TAB_720, TAB_1440] for Q./A. paragraphs. See CLAUDE.md §18 and
+    # docs/transcription_standards/depo_pro_style.md §3 (UFM 2.11).
+    return f"\t{prefix}.\t{text}"
 
 
 def _speaker_visual_text(text: str) -> tuple[str, str, str]:
@@ -213,10 +219,11 @@ def emit_blocks(blocks: list) -> str:
             continue
 
         if block_value == "Q":
-            lines.append(f"\tQ.  {text}")
+            # Two-tab construction — see _qa_visual_text comment above.
+            lines.append(f"\tQ.\t{text}")
             last_speaker_label = None
         elif block_value == "A":
-            lines.append(f"\tA.  {text}")
+            lines.append(f"\tA.\t{text}")
             last_speaker_label = None
         elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
             label = name or role or "SPEAKER"

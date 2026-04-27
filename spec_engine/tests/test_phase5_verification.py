@@ -109,8 +109,8 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
         ]
 
         result = format_blocks_to_text(blocks)
-        assert "\tQ.  Did you witness the incident?" in result
-        assert "\tA.  Yes, I did." in result
+        assert "\tQ.\tDid you witness the incident?" in result
+        assert "\tA.\tYes, I did." in result
         assert "\t\t\tMR. BOYCE:  Objection.  Form." in result
 
     def test_empty_blocks_returns_empty_string(self):
@@ -146,7 +146,7 @@ class TestFix5B_FormatBlocksToTextCurrentContract:
 
         result = format_blocks_to_text(blocks)
         assert "\t\t\tTHE REPORTER:  This deposition is taking place via Zoom." in result
-        assert "\n\tA.  Yes, ma'am." in result
+        assert "\n\tA.\tYes, ma'am." in result
         assert "\n\n" not in result
 
 
