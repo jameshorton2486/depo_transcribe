@@ -2343,6 +2343,90 @@ def capitalize_first(text: str) -> str:
     return text[0].upper() + text[1:]
 
 
+# ── Phase E — fragment guard for enforce_terminal_punctuation ─────────────
+# These sets gate whether enforce_terminal_punctuation appends a period.
+# A block matching the fragment shape gets recorded as a skip and left
+# unchanged; verbatim words are never removed (CLAUDE.md §5).
+
+# Single-word incomplete utterances. Conjunctions, prepositions, and
+# bare interjections that, when standing alone, are trailing-off speech
+# the next block continues. Not closed-form sentences.
+_TERMINAL_PUNCT_FRAGMENT_ONE_WORD = frozenset({
+    "and", "or", "but", "so", "then", "if", "because",
+    "with", "to", "for", "of", "at", "on",
+    "it",  # bare "It" is rarely a complete sentence in deposition speech
+})
+
+# Closed-class single-word ANSWERS. These look like fragments by length
+# but are legitimate complete responses and must still get a period.
+_TERMINAL_PUNCT_COMPLETE_ANSWERS = frozenset({
+    "yes", "no", "correct", "incorrect", "true", "false",
+})
+
+# Filler interjections allowed in the trailing position of a 2-word
+# fragment chain ("So Okay", "Then Yeah"). On their own they don't
+# trigger a fragment skip — bare "Okay" and "Yeah" still get a period
+# via the existing rule 2 / rule 3 paths to preserve historical
+# behavior.
+_TERMINAL_PUNCT_FILLER = frozenset({
+    "okay", "yeah", "right", "well", "so", "then",
+})
+
+
+def _is_terminal_punctuation_fragment(stripped: str) -> bool:
+    """
+    True if a block looks like an incomplete utterance (trailing-off
+    speech that the next block continues) and should not have a
+    terminal period appended.
+
+    Multi-condition heuristic — requires AND not OR for the
+    short-block check. Trailing comma always wins (continuation).
+    """
+    if not stripped:
+        return False
+
+    # Trailing comma → continuation. Don't strip it, don't append.
+    if stripped.endswith(','):
+        return True
+
+    words = stripped.split()
+    if not words:
+        return False
+
+    last_word = words[-1].rstrip(',.!?').lower()
+    word_count = len(words)
+
+    if word_count == 1:
+        # Closed-class answers (Yes, No, Correct…) are NOT fragments.
+        # They're legitimate single-word responses; let rule 3 fire.
+        if last_word in _TERMINAL_PUNCT_COMPLETE_ANSWERS:
+            return False
+        # Bare conjunction / preposition / pronoun "It" → fragment.
+        if last_word in _TERMINAL_PUNCT_FRAGMENT_ONE_WORD:
+            return True
+        return False
+
+    if word_count == 2:
+        # Two-word fragment chain ("So Okay", "Then Yeah", "And then").
+        # First word in the strict fragment list AND last word in the
+        # filler-or-fragment list catches the trailing-off speech
+        # patterns from the Singh transcript without touching real
+        # 2-word answers like "Yes Okay" or "No sir."
+        first_word = words[0].rstrip(',.!?').lower()
+        if (first_word in _TERMINAL_PUNCT_FRAGMENT_ONE_WORD and
+                last_word in _TERMINAL_PUNCT_FILLER):
+            return True
+
+    # Short block (< 4 words) ending with a conjunction or preposition.
+    # The < 4 AND ends-with check is intentionally AND, not OR — a
+    # short complete sentence ("She came home") has no trailing
+    # conjunction so this branch doesn't fire on it.
+    if word_count < 4 and last_word in _TERMINAL_PUNCT_FRAGMENT_ONE_WORD:
+        return True
+
+    return False
+
+
 def enforce_terminal_punctuation(
     text: str,
     records: List[CorrectionRecord],
@@ -2352,6 +2436,12 @@ def enforce_terminal_punctuation(
     Ensure every Q or A block ends with sentence-ending punctuation.
 
     Rules applied:
+      0. (Phase E) If the block looks like an incomplete utterance —
+         standalone "And", "So", "It", "Then", "Here,", "So Okay",
+         a short block ending in a conjunction or preposition, or a
+         block ending in a continuation comma — record a skip event
+         and leave the block unchanged. Verbatim words are not
+         touched (CLAUDE.md §5).
       1. "Okay," at end of block → "Okay." (transition comma → period)
       2. Bare "Okay" at end of block with no punctuation → "Okay."
       3. Any block ending without .?! → append period
@@ -2361,6 +2451,18 @@ def enforce_terminal_punctuation(
     """
     original = text
     stripped = text.rstrip()
+
+    # Rule 0: fragment guard — skip terminal punctuation when the
+    # block is an incomplete utterance. Record the skip so the
+    # corrections log shows both fire and no-op decisions.
+    if _is_terminal_punctuation_fragment(stripped):
+        records.append(CorrectionRecord(
+            original=original,
+            corrected=original,
+            pattern='enforce_terminal_punctuation:skipped_fragment',
+            block_index=block_index,
+        ))
+        return original
 
     # Rule 1: "Okay," → "Okay." at end of block
     if stripped.endswith('Okay,'):
