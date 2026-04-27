@@ -943,6 +943,18 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._browse_file,
         ).pack(side="right")
 
+        # Multi-file button — opens the CombineAudioDialog. The single-file
+        # Browse flow above is unchanged; multi-file is opt-in.
+        ctk.CTkButton(
+            file_row,
+            text="Multiple Files…",
+            width=130,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            text_color="white",
+            command=self._open_combine_dialog,
+        ).pack(side="right", padx=(0, 6))
+
         # The "Existing Transcript" loader lives on the Transcript tab now
         # (Load Case button). This tab is purely for creating new transcripts;
         # populating case metadata + NOD PDF still flows through this tab via
@@ -1553,13 +1565,67 @@ class TranscribeTab(ctk.CTkFrame):
     def _browse_file(self):
         path = filedialog.askopenfilename(filetypes=AUDIO_VIDEO_EXTENSIONS)
         if path:
-            if self._correction_mode:
-                self._clear_correction_mode()
-            self._reset_case_state()
-            self._selected_file = path
-            self._set_entry_text(self._file_entry, path)
-            self._apply_filename_extraction(path)
-            self.after(300, self._auto_detect_source_docs)
+            self._ingest_selected_audio(path)
+
+    def _open_combine_dialog(self):
+        """Open the multi-file Combine dialog and ingest the result, if any.
+
+        The dialog returns dialog.result_path on success (combined audio
+        written under {case_root}/source_docs/_combined/) or None on
+        cancel. Cancel leaves the existing file selection unchanged.
+        """
+        from ui.dialog_combine_audio import CombineAudioDialog
+
+        # The dialog appends "_combined/" to whatever directory we pass,
+        # so source_docs/ here yields source_docs/_combined/<file>.
+        case_audio_dir = self._resolve_combine_output_dir()
+
+        dialog = CombineAudioDialog(parent=self, case_audio_dir=case_audio_dir)
+        self.wait_window(dialog)
+
+        if dialog.result_path:
+            self._ingest_selected_audio(str(dialog.result_path))
+
+    def _ingest_selected_audio(self, path: str):
+        """Single ingestion path for both Browse… and Multiple Files…
+        — keeps the two entry points aligned on case-state reset and
+        downstream metadata extraction."""
+        if self._correction_mode:
+            self._clear_correction_mode()
+        self._reset_case_state()
+        self._selected_file = path
+        self._set_entry_text(self._file_entry, path)
+        self._apply_filename_extraction(path)
+        self.after(300, self._auto_detect_source_docs)
+
+    def _resolve_combine_output_dir(self) -> Path:
+        """Decide where the combined audio should land.
+
+        Preferred: {case_root}/source_docs/. The dialog appends a
+        "_combined/" subfolder. We deliberately reuse source_docs/ rather
+        than introducing a new top-level audio/ folder so the case
+        structure stays predictable across cases (REQUIRED_SUBFOLDERS in
+        core/file_manager.py only knows about source_docs/ and Deepgram/).
+
+        Fallback: when case info isn't fully filled in yet, drop the
+        combined output under TEMP_DIR with a unique subfolder name. The
+        user can move it manually later if needed; the underlying
+        combine_audio_files call still succeeds.
+        """
+        case_root = (self._get_current_save_path() or "").strip()
+        if case_root and Path(case_root).is_dir():
+            # Make sure source_docs/ exists for cases that haven't had
+            # a NOD upload yet — the combiner will create _combined/
+            # under it.
+            self._create_case_folders_now()
+            return Path(case_root) / "source_docs"
+
+        # Fallback path. Use a per-session unique subfolder so two
+        # multi-file combines in the same session don't clobber each
+        # other.
+        from config import TEMP_DIR
+        import time
+        return Path(TEMP_DIR) / f"combined_{int(time.time())}"
 
     def _apply_filename_extraction(self, filepath: str):
         """Parse the audio filename for witness name."""
