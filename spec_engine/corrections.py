@@ -2509,6 +2509,7 @@ def enforce_direct_address_comma(
       "Yes ma'am"    → "Yes, ma'am."
       "No ma'am"     → "No, ma'am."
       "Yes Counsel"  → "Yes, Counsel."
+      "Yes your Honor" → "Yes, Your Honor."
       "All right Counsel" → "All right, Counsel."
 
     Does NOT fire when a comma is already present.
@@ -2519,8 +2520,16 @@ def enforce_direct_address_comma(
 
     # Yes/No + title — requires no existing comma
     text = re.sub(
-        r'\b(Yes|No)\s+(sir|ma\'am|counsel|Counsel)\b(?!,)',
+        r'\b(Yes|No)\s+(sir|ma\'am|counsel|Counsel)\b(?!\s*,)',
         r'\1, \2',
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    # Yes/No + your Honor — title-cased direct address with required comma.
+    text = re.sub(
+        r"\b(Yes|No)\s+your\s+honou?r\b(?!\s*,)",
+        lambda m: f"{m.group(1)}, Your Honor",
         text,
         flags=re.IGNORECASE,
     )

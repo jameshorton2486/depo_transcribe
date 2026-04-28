@@ -112,6 +112,7 @@ def _clean(text: str) -> str:
     that corrections.py enforces upstream.
     """
     normalized = (text or "").replace("\r", " ").replace("\n", " ")
+    normalized = normalized.replace("\xa0", " ").replace("\u202f", " ")
     normalized = normalized.replace("\t", " ")
     # Cap 3-or-more runs of spaces to 2 (keeps .?! double-space intact).
     normalized = re.sub(r" {3,}", "  ", normalized)

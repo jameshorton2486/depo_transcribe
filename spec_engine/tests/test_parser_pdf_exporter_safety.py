@@ -60,6 +60,34 @@ class TestParserSafety:
         assert blocks[0].raw_text == "One  Two"
         assert blocks[0].text == "One Two"
 
+    def test_detect_input_format_accepts_lowercase_qa_lines(self):
+        from spec_engine.parser import FORMAT_PLAIN_QA, detect_input_format
+
+        path = _save_docx([
+            "q. please state your name.",
+            "a. john doe.",
+        ])
+        try:
+            detected = detect_input_format(path)
+        finally:
+            os.unlink(path)
+
+        assert detected == FORMAT_PLAIN_QA
+
+    def test_detect_input_format_accepts_indented_qa_lines(self):
+        from spec_engine.parser import FORMAT_PLAIN_QA, detect_input_format
+
+        path = _save_docx([
+            "    Q: Please state your name.",
+            "    A: John Doe.",
+        ])
+        try:
+            detected = detect_input_format(path)
+        finally:
+            os.unlink(path)
+
+        assert detected == FORMAT_PLAIN_QA
+
 
 class TestPdfExporterSafety:
     def test_export_pdf_raises_for_missing_input_docx(self, tmp_path):
