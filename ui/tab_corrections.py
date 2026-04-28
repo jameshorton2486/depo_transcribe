@@ -792,7 +792,10 @@ class CorrectionsTab(ctk.CTkFrame):
         if result_text and not error:
             self._ai_text = result_text
             if self._corrected_path:
-                Path(self._corrected_path).write_text(result_text, encoding="utf-8")
+                corrected = Path(self._corrected_path)
+                ai_path = corrected.with_name(f"{corrected.stem}_ai_corrected.txt")
+                ai_path.write_text(result_text, encoding="utf-8")
+                self._corrected_path = str(ai_path)
             self._corrected_textbox.configure(state='normal')
             self._corrected_textbox.delete('1.0', 'end')
             self._corrected_textbox.insert('1.0', result_text)
