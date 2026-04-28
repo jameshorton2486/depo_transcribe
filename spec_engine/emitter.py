@@ -175,13 +175,13 @@ def _validate_emit_input(line_type: LineType, text: str) -> str:
 
 
 def _qa_visual_text(prefix: str, text: str) -> str:
-    # Two-tab construction (reporter direction 2026-04-27, supersedes the
-    # prior "two literal spaces" spec). The first tab indents to stop 1
-    # at 720 twips / 0.5"; the second tab lands the text at stop 2 at
-    # 1440 twips / 1.0". Tab stops are configured in _set_paragraph_format
-    # via [TAB_720, TAB_1440] for Q./A. paragraphs. See CLAUDE.md §18 and
-    # docs/transcription_standards/depo_pro_style.md §3 (UFM 2.11).
-    return f"\t{prefix}.\t{text}"
+    # One-tab + label + two-spaces construction. The leading tab indents
+    # to stop 1 at 720 twips / 0.5"; "Q." or "A." is then followed by TWO
+    # LITERAL SPACES before the question/answer text. This is the correct
+    # Texas UFM format. The reporter (Miah Bardot) re-confirmed this on
+    # 2026-04-28; the brief 2026-04-27 entry that mandated two tabs was
+    # incorrect and has been reverted. See CLAUDE.md §18.
+    return f"\t{prefix}.  {text}"
 
 
 def _speaker_visual_text(text: str) -> tuple[str, str, str]:
@@ -220,11 +220,11 @@ def emit_blocks(blocks: list) -> str:
             continue
 
         if block_value == "Q":
-            # Two-tab construction — see _qa_visual_text comment above.
-            lines.append(f"\tQ.\t{text}")
+            # One tab + "Q." + two spaces + text — see _qa_visual_text above.
+            lines.append(f"\tQ.  {text}")
             last_speaker_label = None
         elif block_value == "A":
-            lines.append(f"\tA.\t{text}")
+            lines.append(f"\tA.  {text}")
             last_speaker_label = None
         elif block_value in ("COLLOQUY", "SPEAKER", "SP"):
             label = name or role or "SPEAKER"

@@ -16,8 +16,8 @@ def test_emit_blocks_formats_question_answer_and_speaker_lines():
 
     result = emit_blocks(blocks)
 
-    assert "\tQ.\tDid you see that?" in result
-    assert "\tA.\tYes." in result
+    assert "\tQ.  Did you see that?" in result
+    assert "\tA.  Yes." in result
     assert "\t\t\tTHE REPORTER:  Please raise your right hand." in result
 
 
@@ -107,7 +107,7 @@ def test_emit_blocks_resets_speaker_chain_after_question():
     result = emit_blocks(blocks)
 
     assert "\t\t\tMR. GONZALEZ:  Let me start here." in result
-    assert "\tQ.\tDid you see it?" in result
+    assert "\tQ.  Did you see it?" in result
     assert "\t\t\tMR. GONZALEZ:  Another colloquy sentence." in result
 
 
@@ -133,11 +133,10 @@ def test_emit_blocks_re_emits_label_when_speaker_changes():
     assert "\t\t\tMS. SMITH:  Opposing counsel response." in result
 
 
-# ── Phase F — Q./A. line format change to tab-tab (reporter direction 2026-04-27)
-# These tests pin the new format contract: Q./A. lines emit a tab character
-# (not two literal spaces) between the label and the text. The change keeps
-# the SP line format unchanged. See CLAUDE.md §18 and
-# docs/transcription_standards/depo_pro_style.md §3 (UFM 2.11).
+# ── Q./A. line format — one tab + label + two literal spaces + text.
+# This is the correct Texas UFM format. The reporter (Miah Bardot) confirmed
+# 2026-04-28 after a brief 2026-04-27 entry that mandated two tabs was found
+# to be incorrect and reverted. SP line format is unaffected. See CLAUDE.md §18.
 
 
 class TestQALineFormat:
@@ -150,27 +149,25 @@ class TestQALineFormat:
         blocks = [Block(text=text, block_type=BlockType.ANSWER, speaker_id=1)]
         return emit_blocks(blocks)
 
-    def test_q_line_uses_tab_after_period(self):
+    def test_q_line_uses_two_spaces_after_period(self):
         result = self._emit_q_block("Did you go there?")
-        # New format: \tQ.\ttext
-        assert "\tQ.\tDid you go there?" in result
+        # Correct format: \tQ.  text  (one tab, Q., two literal spaces)
+        assert "\tQ.  Did you go there?" in result
 
-    def test_a_line_uses_tab_after_period(self):
+    def test_a_line_uses_two_spaces_after_period(self):
         result = self._emit_a_block("Yes, sir.")
-        # New format: \tA.\ttext
-        assert "\tA.\tYes, sir." in result
+        # Correct format: \tA.  text  (one tab, A., two literal spaces)
+        assert "\tA.  Yes, sir." in result
 
-    def test_q_line_no_double_spaces_after_period(self):
-        # Regression guard against the old form ever returning. The
-        # substring "\tQ.  " (tab + Q. + two literal spaces) must NOT
-        # appear anywhere in the emitter output once Phase F has
-        # landed. If a future patch reverts to the two-space form,
-        # this test fails.
+    def test_q_line_does_not_use_tab_after_period(self):
+        # Regression guard against the brief 2026-04-27 two-tab form
+        # accidentally returning. Q. must be followed by two literal
+        # spaces, NOT a tab character.
         result = self._emit_q_block("Did you go there?")
-        assert "\tQ.  " not in result
-        # And confirm the same for A. while we're here.
+        assert "\tQ.\t" not in result
+        # Same for A.
         result_a = self._emit_a_block("Yes, sir.")
-        assert "\tA.  " not in result_a
+        assert "\tA.\t" not in result_a
 
     def test_sp_line_format_unchanged(self):
         # Hard-stop guard. The SP line format remains the three-tab
@@ -212,7 +209,7 @@ def test_emit_blocks_separates_blocks_with_blank_line():
     # And exactly one — no triple-newline regression.
     assert "\n\n\n" not in result
     # Specifically: the Q line ends, then a blank line, then the A line.
-    assert "\tQ.\tDid you go there?\n\n\tA.\tYes, sir." in result
+    assert "\tQ.  Did you go there?\n\n\tA.  Yes, sir." in result
 
 
 def test_emit_blocks_normalizes_nonbreaking_spaces():
