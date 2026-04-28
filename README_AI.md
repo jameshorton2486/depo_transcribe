@@ -4,3 +4,6 @@ Before making changes in this repository, read [CLAUDE.md](./CLAUDE.md) in the p
 
 It contains architecture, invariants, forbidden actions, and the safe-change checklist.
 If any instruction conflicts with assumptions, `CLAUDE.md` wins.
+
+For markdown-instruction precedence and consolidated MD conflict audit results, read
+[`docs/MD_INSTRUCTION_GOVERNANCE_2026-04-28.md`](./docs/MD_INSTRUCTION_GOVERNANCE_2026-04-28.md).

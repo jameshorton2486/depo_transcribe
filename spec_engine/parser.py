@@ -35,7 +35,7 @@ def detect_input_format(docx_path: str) -> str:
     first_20 = [p.text.strip() for p in doc.paragraphs[:20] if p.text.strip()]
     if any(SPEAKER_LABEL_RE.match(t) or SPEAKER_INLINE_RE.match(t) for t in first_20):
         return FORMAT_DEEPGRAM
-    qa_pattern = re.compile(r'^[QA][.:\-]\s*\S')
+    qa_pattern = re.compile(r'^\s*[QA][.:\-]\s*\S', re.IGNORECASE)
     if any(qa_pattern.match(t) for t in first_20):
         return FORMAT_PLAIN_QA
     return FORMAT_UNKNOWN

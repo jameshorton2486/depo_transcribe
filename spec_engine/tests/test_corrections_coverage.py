@@ -8,6 +8,7 @@ Run: python -m pytest spec_engine/tests/test_corrections_coverage.py -v
 import pytest
 from spec_engine.corrections import (
     apply_case_corrections,
+    enforce_direct_address_comma,
     fix_conversational_titles,
     fix_even_dollar_amounts,
     fix_uh_huh_hyphenation,
@@ -199,6 +200,30 @@ class TestNormalizeTimeAndDashes:
     def test_no_change_leaves_no_record(self):
         records = []
         normalize_time_and_dashes("plain text here.", records, 0)
+        assert records == []
+
+
+# ─────────────────────────────────────────────
+# enforce_direct_address_comma
+# ─────────────────────────────────────────────
+
+class TestEnforceDirectAddressComma:
+
+    def test_yes_your_honor_gets_comma_and_title_case(self):
+        records = []
+        result = enforce_direct_address_comma("Yes your honor.", records, 0)
+        assert result == "Yes, Your Honor."
+
+    def test_no_your_honour_gets_comma_and_title_case(self):
+        records = []
+        result = enforce_direct_address_comma("No your honour.", records, 0)
+        assert result == "No, Your Honor."
+
+    def test_existing_yes_your_honor_comma_is_unchanged(self):
+        records = []
+        original = "Yes, Your Honor."
+        result = enforce_direct_address_comma(original, records, 0)
+        assert result == original
         assert records == []
 
 

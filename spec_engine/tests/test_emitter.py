@@ -215,6 +215,14 @@ def test_emit_blocks_separates_blocks_with_blank_line():
     assert "\tQ.\tDid you go there?\n\n\tA.\tYes, sir." in result
 
 
+def test_emit_blocks_normalizes_nonbreaking_spaces():
+    blocks = [
+        Block(text="Did\u00a0you\u202fgo there?", block_type=BlockType.QUESTION, speaker_id=2),
+    ]
+    result = emit_blocks(blocks)
+    assert result == "\tQ.\tDid you go there?"
+
+
 # ── Phase H — DOCX double-spacing regression guard ───────────────────────────
 # Verifies WD_LINE_SPACING.DOUBLE reaches every body-emitter paragraph type
 # (Q, A, SP, SP continuation, PAREN, FLAG, header, BY, plain, plus every
