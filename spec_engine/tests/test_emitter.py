@@ -217,7 +217,7 @@ def test_emit_blocks_normalizes_nonbreaking_spaces():
         Block(text="Did\u00a0you\u202fgo there?", block_type=BlockType.QUESTION, speaker_id=2),
     ]
     result = emit_blocks(blocks)
-    assert result == "\tQ.\tDid you go there?"
+    assert result == "\tQ.  Did you go there?"
 
 
 # ── Phase H — DOCX double-spacing regression guard ───────────────────────────
