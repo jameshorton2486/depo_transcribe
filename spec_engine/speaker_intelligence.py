@@ -29,6 +29,54 @@ SHORT_ANSWERS = {
     "okay.",
     "uh-huh.",
 }
+WITNESS_ANSWER_PREFIXES = (
+    "yes",
+    "no",
+    "correct",
+    "right",
+    "yeah",
+    "yep",
+    "yup",
+    "nope",
+    "nah",
+    "uh-huh",
+    "uh-uh",
+    "mm-hmm",
+    "mhmm",
+    "i ",
+    "i'm",
+    "i am",
+    "i was",
+    "i have",
+    "i had",
+    "i did",
+    "i do",
+    "i don't",
+    "i did not",
+    "i have not",
+    "i can",
+    "i could",
+    "i will",
+    "i would",
+    "my ",
+    "we ",
+    "we're",
+    "we are",
+    "our ",
+    "it's ",
+    "it is ",
+    "there was",
+    "there were",
+)
+NON_WITNESS_SEQUENCE_PREFIXES = (
+    "okay",
+    "all right",
+    "alright",
+    "let me",
+    "let's",
+    "so ",
+    "and so",
+)
 QUESTION_WORDS = (
     "who",
     "what",
@@ -58,6 +106,7 @@ INLINE_QA_RE = re.compile(
     re.IGNORECASE,
 )
 PREFIX_QUESTION_RE = re.compile(r"^(?P<prefix>.+?[.!])\s+(?P<question>[^?]+\?)$")
+MAX_SEQUENCE_ANSWER_WORDS = 18
 
 
 def _speaker_map_from_job(job_config: Any) -> dict[int, str]:
@@ -122,8 +171,28 @@ def _add_audit(block: Block, action: str, detail: str) -> None:
     )
 
 
+def _add_verification_flag(block: Block, detail: str) -> None:
+    flags = block.meta.setdefault("verification_flags", [])
+    if detail not in flags:
+        flags.append(detail)
+
+
+def _looks_like_witness_answer(text: str) -> bool:
+    normalized = (text or "").strip()
+    if not normalized or _looks_like_question(normalized):
+        return False
+
+    lowered = normalized.lower()
+    if any(lowered.startswith(prefix) for prefix in NON_WITNESS_SEQUENCE_PREFIXES):
+        return False
+    if any(lowered.startswith(prefix) for prefix in WITNESS_ANSWER_PREFIXES):
+        return True
+    return len(normalized.split()) <= MAX_SEQUENCE_ANSWER_WORDS and normalized[0].isupper()
+
+
 def infer_speaker_roles(blocks: List[Block], job_config: Any) -> List[Block]:
     configured_map = _speaker_map_from_job(job_config)
+    previous_role = ""
 
     for block in blocks:
         text = (block.text or "").strip()
@@ -131,10 +200,12 @@ def infer_speaker_roles(blocks: List[Block], job_config: Any) -> List[Block]:
             continue
 
         if block.speaker_id in configured_map:
+            previous_role = getattr(block, "speaker_role", "") or previous_role
             continue
 
         existing_role = getattr(block, "speaker_role", "") or ""
         if existing_role and existing_role != ROLE_UNKNOWN:
+            previous_role = existing_role
             continue
 
         lowered = text.lower()
@@ -150,6 +221,27 @@ def infer_speaker_roles(blocks: List[Block], job_config: Any) -> List[Block]:
             block.speaker_role = ROLE_ATTORNEY
             block.speaker_name = _examining_label(job_config)
             _add_audit(block, "infer_role", "question_detection")
+        elif _is_attorney_role(previous_role) and _looks_like_witness_answer(text):
+            block.speaker_role = ROLE_WITNESS
+            block.speaker_name = _witness_label(job_config)
+            block.speaker_id = _job_value(job_config, "witness_id", block.speaker_id)
+            _add_audit(block, "infer_role", "sequence_after_question")
+            _add_verification_flag(
+                block,
+                "speaker role inferred as witness from Q/A sequence — verify from audio",
+            )
+        elif previous_role == ROLE_WITNESS and _looks_like_question(text):
+            block.speaker_role = ROLE_ATTORNEY
+            block.speaker_name = _examining_label(job_config)
+            block.speaker_id = _job_value(job_config, "examining_attorney_id", block.speaker_id)
+            _add_audit(block, "infer_role", "sequence_after_answer")
+            _add_verification_flag(
+                block,
+                "speaker role inferred as counsel from Q/A sequence — verify from audio",
+            )
+
+        if getattr(block, "speaker_role", "") and getattr(block, "speaker_role", "") != ROLE_UNKNOWN:
+            previous_role = block.speaker_role
 
     return blocks
 
@@ -194,12 +286,34 @@ def enforce_qa_sequence(blocks: List[Block], job_config: Any) -> List[Block]:
             previous = result[-1]
             previous_role = getattr(previous, "speaker_role", "") or ""
             current_role = getattr(block, "speaker_role", "") or ""
-            if _is_attorney_role(previous_role) and _is_short_answer(text) and _is_attorney_role(current_role):
+            if (
+                _is_attorney_role(previous_role)
+                and current_role != ROLE_WITNESS
+                and _looks_like_witness_answer(text)
+            ):
                 block = copy.deepcopy(block)
                 block.speaker_role = ROLE_WITNESS
                 block.speaker_name = _witness_label(job_config)
                 block.speaker_id = _job_value(job_config, "witness_id", block.speaker_id)
-                _add_audit(block, "enforce_qa_sequence", "attorney_to_witness_short_answer")
+                _add_audit(block, "enforce_qa_sequence", "attorney_to_witness_sequence_answer")
+                _add_verification_flag(
+                    block,
+                    "speaker role inferred as witness from Q/A sequence — verify from audio",
+                )
+            elif (
+                previous_role == ROLE_WITNESS
+                and not _is_attorney_role(current_role)
+                and _looks_like_question(text)
+            ):
+                block = copy.deepcopy(block)
+                block.speaker_role = ROLE_ATTORNEY
+                block.speaker_name = _examining_label(job_config)
+                block.speaker_id = _job_value(job_config, "examining_attorney_id", block.speaker_id)
+                _add_audit(block, "enforce_qa_sequence", "witness_to_attorney_sequence_question")
+                _add_verification_flag(
+                    block,
+                    "speaker role inferred as counsel from Q/A sequence — verify from audio",
+                )
 
         result.append(block)
 

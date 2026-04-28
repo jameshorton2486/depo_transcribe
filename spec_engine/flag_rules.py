@@ -51,9 +51,9 @@ def generate_scopist_flags(blocks: List[Block]) -> List[Block]:
 
     for block_index, block in enumerate(blocks):
         result.append(block)
-        text = block.text or ""
-        if not text:
+        if block.block_type == BlockType.FLAG:
             continue
+        text = block.text or ""
 
         descriptions: list[str] = []
         has_garbled_number = bool(GARBLED_NUMBER_RE.search(text))
@@ -63,6 +63,12 @@ def generate_scopist_flags(blocks: List[Block]) -> List[Block]:
             descriptions.append("possible malformed currency")
         if UNRESOLVED_PHRASE_RE.search(text):
             descriptions.append("possible unresolved Deepgram garble")
+        for detail in (block.meta or {}).get("verification_flags", []):
+            if detail and detail not in descriptions:
+                descriptions.append(detail)
+
+        if not text and not descriptions:
+            continue
 
         for description in descriptions:
             result.append(_make_flag_block(block, flag_number, description, block_index))

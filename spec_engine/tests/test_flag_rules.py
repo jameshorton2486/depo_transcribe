@@ -29,3 +29,20 @@ def test_generate_scopist_flags_preserves_original_blocks():
     result = generate_scopist_flags([block])
 
     assert result == [block]
+
+
+def test_generate_scopist_flags_inserts_verification_flag_from_block_meta():
+    block = Block(
+        text="I reviewed the charts.",
+        raw_text="I reviewed the charts.",
+        speaker_id=1,
+        block_type=BlockType.ANSWER,
+        meta={"verification_flags": ["speaker role inferred as witness from Q/A sequence — verify from audio"]},
+    )
+
+    result = generate_scopist_flags([block])
+
+    assert len(result) == 2
+    assert result[0] is block
+    assert result[1].block_type == BlockType.FLAG
+    assert "speaker role inferred as witness from Q/A sequence" in result[1].text
