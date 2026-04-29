@@ -107,12 +107,12 @@ def test_transcribe_chunk_uses_legal_safe_defaults(monkeypatch, tmp_path):
 
     assert params["model"] == ["nova-3"]
     assert params["punctuate"] == ["true"]
-    assert params["paragraphs"] == ["false"]
+    assert params["paragraphs"] == ["true"]
     assert params["diarize"] == ["true"]
     assert params["utterances"] == ["true"]
     assert params["filler_words"] == ["true"]
-    assert params["smart_format"] == ["false"]
-    assert params["numerals"] == ["false"]
+    assert params["smart_format"] == ["true"]
+    assert params["numerals"] == ["true"]
     assert "diarize=True" not in captured["url"]
     assert "paragraphs=True" not in captured["url"]
 
@@ -198,7 +198,7 @@ def test_enforce_required_deepgram_flags_overrides_invalid_values():
 
     assert params["utterances"] == "true"
     assert params["diarize"] == "true"
-    assert params["paragraphs"] == "false"
+    assert params["paragraphs"] == "true"
 
 
 def test_transcribe_chunk_logs_params_and_utterance_count(monkeypatch, tmp_path, capsys):

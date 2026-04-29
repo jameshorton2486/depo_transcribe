@@ -65,8 +65,10 @@ REQUEST_DEBUG_PREFIX = "DEEPGRAM PARAMS:"
 REQUIRED_DEEPGRAM_FLAGS = {
     "utterances": "true",
     "diarize": "true",
-    "paragraphs": "false",
+    "paragraphs": "true",
     "punctuate": "true",
+    "smart_format": "true",
+    "numerals": "true",
 }
 
 # Transient HTTP failures that should trigger a retry. 401/403 are excluded
@@ -440,11 +442,9 @@ def _transcribe_direct(
     if not api_key:
         raise ValueError("DEEPGRAM_API_KEY is not set.")
 
-    # Legal transcript constraints:
-    # - filler_words must stay on for verbatim compliance (uh/um are legal record)
-    # - smart_format stays OFF to avoid Deepgram rewriting dates/currency
-    # - numerals must stay OFF — spec_engine owns all number normalization
-    # - paragraphs stays OFF so downstream formatting owns transcript structure
+    # Runtime transcript settings:
+    # - filler_words stays ON for verbatim compliance
+    # - smart_format/numerals/paragraphs are enabled by request
     # - utterances=True is required — correction_runner checks for this key
     # - preserve the current return contract; expose extra debug context without
     #   changing downstream behavior
@@ -455,13 +455,13 @@ def _transcribe_direct(
     params = normalize_params({
         "model":        model,
         "language":     "en",
-        "smart_format": False,
+        "smart_format": True,
         "diarize":      True,
         "punctuate":    True,
-        "paragraphs":   False,
+        "paragraphs":   True,
         "utterances":   True,
         "filler_words": True,
-        "numerals":     False,
+        "numerals":     True,
     })
     params = enforce_required_deepgram_flags(params)
     params = validate_deepgram_params(params)
