@@ -3,8 +3,7 @@ pipeline/exporter.py
 
 Writes the final transcript and JSON output files from Deepgram results.
 This exporter belongs to the pipeline layer and handles raw transcription-side
-outputs. It is distinct from spec_engine/exporter.py, which handles final
-legal-transcript export after structured correction/formatting.
+outputs before the clean-format cleanup/DOCX stage.
 
 OUTPUT FILES:
   1. {prefix}_transcript.txt    — Plain text with speaker labels and timestamps.

@@ -1,3 +1,0 @@
-"""
-Deterministic transcript evaluation helpers.
-"""

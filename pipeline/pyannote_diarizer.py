@@ -9,7 +9,7 @@ production come exclusively from Deepgram (transcriber.py: diarize=true).
 
 This module was introduced in commit 57cbe35 (2026-04-12) as part of an
 audio-pipeline upgrade but was never wired into core/job_runner.py or
-the spec_engine path. The module is preserved here, unmodified,
+the active cleanup path. The module is preserved here, unmodified,
 pending an explicit decision on whether to:
 
   (a) Wire it up — would change every transcript's speaker labels and

@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-from config import DEFAULT_KEYTERMS
+from config import DEFAULT_KEYTERMS, LOW_CONFIDENCE_THRESHOLD
 
 from core.file_manager import resolve_or_create_case
 
@@ -101,13 +101,7 @@ def run_transcription_job(
         if done_callback:
             done_callback(result)
 
-    # Import CONFIDENCE_LOW up front. Doing this inline near the end of the
-    # try block meant an import failure would abort the job after all the
-    # actual transcription work had completed.
-    try:
-        from core.word_data_loader import CONFIDENCE_LOW
-    except Exception:
-        CONFIDENCE_LOW = 0.85
+    CONFIDENCE_LOW = LOW_CONFIDENCE_THRESHOLD
 
     # Tracked so that if anything after chunk_audio() raises, we can still
     # clean up the temp WAV files in the except block.
@@ -284,6 +278,7 @@ def run_transcription_job(
         txt_path = deepgram_dir / txt_name
         json_path = deepgram_dir / json_name
         raw_txt_path = deepgram_dir / f"{base_name}_{stamp}_raw.txt"
+        canonical_raw_txt_path = deepgram_dir / "raw_deepgram.txt"
 
         _safe_write_text(txt_path, transcript_text, _log)
 
@@ -293,6 +288,7 @@ def run_transcription_job(
         if not raw_transcript_text.strip():
             raise RuntimeError("Raw transcript text could not be built from Deepgram utterances")
         _safe_write_text(raw_txt_path, raw_transcript_text, _log)
+        _safe_write_text(canonical_raw_txt_path, raw_transcript_text, _log)
 
         json_data = {
             "audio_file": audio_path,
@@ -330,6 +326,7 @@ def run_transcription_job(
             "chunks": assembled.get("raw_chunks", []),
         }
         _safe_write_json(raw_json_path, raw_data, _log)
+        _safe_write_json(deepgram_dir / "raw_deepgram.json", raw_data, _log)
 
         raw_words = assembled.get("words", [])
         low_conf_words = [

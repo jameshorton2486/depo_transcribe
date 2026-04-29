@@ -1,0 +1,30 @@
+{
+  "cause_number": "DC-25-13430",
+  "court": "191st District Court",
+  "county": "Dallas",
+  "judicial_district": "191ST",
+  "deposition_date": "2026-04-09",
+  "start_time": "9:00 AM",
+  "end_time": "12:30 PM",
+  "witness_name": "Bianca Caram",
+  "witness_credentials": "M.D.",
+  "plaintiff_name": "Maria Lopez",
+  "defendant_names": [
+    "Acme Medical Group"
+  ],
+  "reporter_name": "Miah Bardot",
+  "reporter_csr": "12129",
+  "attorneys": [
+    {
+      "name": "Jane Smith",
+      "role": "plaintiff",
+      "city": "Dallas"
+    },
+    {
+      "name": "Emily Johnson",
+      "role": "defendant",
+      "city": "Houston"
+    }
+  ],
+  "videographer_name": "Alex Video"
+}

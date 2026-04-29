@@ -1,9 +1,9 @@
 """
 core/ufm_field_mapper.py
 
-Canonical mapping between extracted intake data and UFM document fields.
+Canonical mapping between extracted intake data and saved case fields.
 Converts AI-extracted case intake JSON into the flat field dict used by
-the UFM page generators in spec_engine/pages/.
+the clean-format and job-config pipeline.
 """
 
 import re

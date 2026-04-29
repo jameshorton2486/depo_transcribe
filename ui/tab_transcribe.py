@@ -867,6 +867,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_reporter_notes_path: str | None = None
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
+        self._formatted_docx_path: str | None = None
         self._correction_mode: bool = False
         self._loaded_transcript_path: str | None = None
         self._loaded_case_folder: str | None = None
@@ -1196,13 +1197,29 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._review_btn.pack(side="right", padx=(6, 0))
 
-        # Hidden status label. The widget is kept so the ~15 .configure()
-        # callers around the file remain valid no-ops. Visible feedback for
-        # extraction / load events now goes through the Transcript-tab log
-        # panel (_append_transcript_log) and messagebox dialogs.
         self._extract_status_label = ctk.CTkLabel(
-            toolbar_right, text="", font=ctk.CTkFont(size=12),
+            toolbar_right, text="Ready", font=ctk.CTkFont(size=12), text_color="gray",
         )
+        self._extract_status_label.pack(side="right")
+
+        self._run_log_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        self._run_log_card.pack(fill="both", pady=(0, CARD_GAP_PY))
+
+        make_section_header(
+            self._run_log_card,
+            "RUN STATUS",
+            font_size=13,
+        ).pack(anchor="w", padx=12, pady=(10, 0))
+
+        self._run_log = ctk.CTkTextbox(self._run_log_card, height=160, wrap="word")
+        self._run_log.pack(fill="both", expand=True, padx=12, pady=(8, 10))
+        self._run_log.insert("1.0", "Ready.\n")
+        self._run_log.configure(state="disabled")
+
         # ── Speaker Labels (hidden until transcript completes) ──────────────
         self._speaker_card = ctk.CTkFrame(
             container,
@@ -1268,10 +1285,39 @@ class TranscribeTab(ctk.CTkFrame):
         entry.configure(state="disabled")
 
     def _append_transcript_log(self, msg: str):
-        self.winfo_toplevel().transcript_tab.append_log(msg)
+        self._run_log.configure(state="normal")
+        self._run_log.insert("end", f"{msg}\n")
+        self._run_log.see("end")
+        self._run_log.configure(state="disabled")
 
     def _set_transcript_status(self, text: str, color: str = "gray"):
-        self.winfo_toplevel().transcript_tab.set_status(text, color)
+        self._extract_status_label.configure(text=text, text_color=color)
+
+    def append_log(self, msg: str):
+        self._append_transcript_log(msg)
+
+    def set_status(self, text: str, color: str = "gray"):
+        self._set_transcript_status(text, color)
+
+    def set_transcription_running(self):
+        self._set_transcript_status("Transcribing audio...", "white")
+
+    def set_transcription_complete(self, transcript_path: str, folder_path: str):
+        self._last_transcript_path = transcript_path
+        self._current_txt_path = transcript_path
+        self._current_case_path = folder_path
+        self._set_transcript_status("Deepgram transcript complete", "#44FF44")
+
+    def set_transcription_failed(self, error_msg: str):
+        self._set_transcript_status(f"Transcription failed: {error_msg}", "#FF4444")
+
+    def load_transcript(self, filepath: str):
+        self._last_transcript_path = filepath
+        self._current_txt_path = filepath
+        self._append_transcript_log(f"Transcript available: {filepath}")
+
+    def set_audio_file(self, filepath: str):
+        self._selected_file = filepath
 
     def _set_create_buttons(self, state: str, text: str):
         self._create_btn.configure(state=state, text=text)
@@ -1749,9 +1795,8 @@ class TranscribeTab(ctk.CTkFrame):
         if not path:
             return
         self._last_transcript_path = path
-        app = self.winfo_toplevel()
-        app.transcript_tab.load_transcript(path)
-        app.tab_view.set("Transcript")
+        self.load_transcript(path)
+        os.startfile(path)
 
     # ── Load Existing Transcript (driven by Tab 2's "Load Case" button) ─────
 
@@ -1914,14 +1959,8 @@ class TranscribeTab(ctk.CTkFrame):
         """Switch to Transcript tab and load the existing transcript file."""
         if not self._loaded_transcript_path:
             return
-        app = self.winfo_toplevel()
-        app.transcript_tab.load_transcript(self._loaded_transcript_path)
-        if self._loaded_case_folder and os.path.isdir(self._loaded_case_folder):
-            app.transcript_tab._current_folder_path = self._loaded_case_folder
-            app.transcript_tab._open_folder_btn.configure(state="normal")
-        app.transcript_tab._open_transcript_btn.configure(state="normal")
-        app.transcript_tab.set_status("Correction mode — editing existing transcript", "#7DD8E8")
-        app.tab_view.set("Transcript")
+        self.load_transcript(self._loaded_transcript_path)
+        self.set_status("Existing transcript loaded", "#7DD8E8")
 
     def load_case_folder(self, folder: str) -> None:
         """
@@ -1953,7 +1992,6 @@ class TranscribeTab(ctk.CTkFrame):
         """
         Trigger transcription from the Transcribe tab and switch to Transcript.
         """
-        self.winfo_toplevel().tab_view.set("Transcript")
         self.start_transcription()
 
     def _handle_pdf_upload(self, pdf_path: str | None = None, auto_detected: bool = False):
@@ -2228,15 +2266,10 @@ class TranscribeTab(ctk.CTkFrame):
 
             # Disable button
             self._running = True
-            transcript_tab = self.winfo_toplevel().transcript_tab
-            # Open Output Folder + Open Transcript are pickers — leave them
-            # enabled during transcription so the user can still browse.
             self._set_create_buttons(state="disabled", text="Transcribing...")
-            transcript_tab._open_folder_btn.configure(state="disabled")
-            transcript_tab._open_transcript_btn.configure(state="disabled")
-            transcript_tab.set_transcription_running()
-
-            self.winfo_toplevel().tab_view.set("Transcript")
+            self._open_folder_btn.configure(state="disabled")
+            self._open_transcript_btn.configure(state="disabled")
+            self.set_transcription_running()
 
             # Launch background thread
             thread = threading.Thread(target=self._run_job, daemon=True)
@@ -2290,7 +2323,6 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _finish(self, result: dict):
         self._running = False
-        transcript_tab = self.winfo_toplevel().transcript_tab
 
         if result.get("success"):
             self._last_transcript_path = result.get("transcript_path")
@@ -2299,20 +2331,17 @@ class TranscribeTab(ctk.CTkFrame):
             self._last_output_dir = result.get("output_dir", "")
             # Open Output Folder + Open Transcript are pickers — already enabled.
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            self._open_folder_btn.configure(state="normal")
+            self._open_transcript_btn.configure(state="normal")
 
             # Show speaker labels section
             self._show_speaker_section()
 
             if self._last_transcript_path and os.path.isfile(self._last_transcript_path):
-                transcript_tab.set_transcription_complete(
+                self.set_transcription_complete(
                     transcript_path=self._last_transcript_path,
                     folder_path=self._current_case_path or self._last_output_dir,
                 )
-                if self._selected_file and os.path.isfile(self._selected_file):
-                    transcript_tab.set_audio_file(self._selected_file)
-                transcript_tab._open_folder_btn.configure(state="normal")
-                transcript_tab._open_transcript_btn.configure(state="normal")
-                self.winfo_toplevel().tab_view.set("Transcript")
 
             # Enable review button if case data has been extracted
             if self._extracted_case_data:
@@ -2328,12 +2357,104 @@ class TranscribeTab(ctk.CTkFrame):
             else:
                 self._audio_tier_label.configure(text="", text_color="gray")
             self._append_transcript_log("Transcription complete")
+            self._start_clean_format(result)
         else:
             error_msg = result.get("error", "Unknown error")
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
             self._audio_tier_label.configure(text="", text_color="gray")
-            transcript_tab.set_transcription_failed(error_msg)
+            self.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
+
+    def _build_clean_format_case_meta(self) -> dict[str, Any]:
+        from clean_format.formatter import build_case_meta_from_ufm
+        from core.job_config_manager import load_job_config
+
+        ufm_fields: dict[str, Any] = {}
+        if self._current_case_path:
+            config_data = load_job_config(self._current_case_path)
+            ufm_fields = dict(config_data.get("ufm_fields", {}) or {})
+
+        if not ufm_fields:
+            witness_name = " ".join(
+                part for part in (self._firstname_var.get().strip(), self._lastname_var.get().strip()) if part
+            )
+            ufm_fields = {
+                "cause_number": self._cause_var.get().strip(),
+                "court_caption": "",
+                "county": "",
+                "judicial_district": "",
+                "depo_date": self._date_var.get().strip(),
+                "depo_time_start": "",
+                "depo_time_end": "",
+                "witness_name": witness_name,
+                "plaintiff_name": "",
+                "defendant_name": "",
+                "reporter_name": "",
+                "csr_number": "",
+                "plaintiff_counsel": [],
+                "defense_counsel": [],
+            }
+
+        return build_case_meta_from_ufm(ufm_fields)
+
+    def _start_clean_format(self, result: dict) -> None:
+        self._set_transcript_status("Formatting transcript...", "white")
+        self._append_transcript_log("Formatting transcript...")
+        self._set_create_buttons(state="disabled", text="Formatting...")
+
+        thread = threading.Thread(
+            target=self._run_clean_format_job,
+            args=(result,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _run_clean_format_job(self, result: dict) -> None:
+        try:
+            from clean_format import format_transcript, write_deposition_docx
+
+            case_dir = Path(result.get("output_dir") or "")
+            raw_path = Path(result.get("raw_txt_path") or result.get("transcript_path") or "")
+            case_meta = self._build_clean_format_case_meta()
+            raw_text = raw_path.read_text(encoding="utf-8")
+
+            case_meta_path = case_dir / "case_meta.json"
+            case_meta_path.write_text(
+                json.dumps(case_meta, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            formatted_text = format_transcript(raw_text, case_meta)
+            witness_last = (case_meta.get("witness_name", "Witness").split() or ["Witness"])[-1]
+            date_part = str(case_meta.get("deposition_date", "")).replace("/", "-").replace(",", "")
+            docx_path = case_dir / f"{witness_last}_Deposition_{date_part}.docx"
+            saved_path = write_deposition_docx(formatted_text, case_meta, docx_path)
+
+            self.after(0, self._on_clean_format_done, {"success": True, "docx_path": saved_path})
+        except Exception as exc:
+            logger.exception("[TranscribeTab] clean_format failed")
+            self.after(0, self._on_clean_format_done, {"success": False, "error": str(exc)})
+
+    def _on_clean_format_done(self, result: dict) -> None:
+        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+
+        if result.get("success"):
+            self._formatted_docx_path = result.get("docx_path")
+            self._append_transcript_log(f"Transcript written to: {self._formatted_docx_path}")
+            self._set_transcript_status(
+                f"Transcript written to: {self._formatted_docx_path}",
+                "#44FF44",
+            )
+            folder = str(Path(self._formatted_docx_path).parent)
+            if messagebox.askyesno(
+                "Transcript Ready",
+                f"Transcript written to:\n{self._formatted_docx_path}\n\nOpen the folder?",
+            ):
+                os.startfile(folder)
+        else:
+            error_msg = result.get("error", "Unknown error")
+            self._append_transcript_log(f"Formatting failed: {error_msg}")
+            self._set_transcript_status(f"Formatting failed: {error_msg}", "#FF4444")
 
     # ── Speaker Label Methods ────────────────────────────────────────────────
 
@@ -2468,10 +2589,9 @@ class TranscribeTab(ctk.CTkFrame):
                 logger.warning("[SpeakerLabels] Could not update job_config.json: %s", exc)
 
         # ── 3. Update UI ──────────────────────────────────────────────────────
-        transcript_tab = self.winfo_toplevel().transcript_tab
-        transcript_tab.load_transcript(self._current_txt_path)
-        transcript_tab.set_status("Speaker labels applied", "#44FF44")
-        transcript_tab.append_log(
+        self.load_transcript(self._current_txt_path)
+        self.set_status("Speaker labels applied", "#44FF44")
+        self.append_log(
             f"Speaker labels applied: "
             + ", ".join(f"Speaker {k} → {v}" for k, v in speaker_map.items())
         )
