@@ -15,6 +15,10 @@ PROTECTED_ABBREVIATIONS = (
     "Ms.",
     "Dr.",
     "Prof.",
+    "Mister.",
+    "Doctor.",
+    "Reverend.",
+    "Professor.",
 )
 # Single-letter initials inside names — "Holly D. Scholl", "J. K. Rowling".
 # These look identical to a sentence terminator (single uppercase letter,

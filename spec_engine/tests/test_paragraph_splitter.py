@@ -137,6 +137,19 @@ def test_dr_smith_abbreviation_still_protected():
     assert result[0].startswith("Dr. Smith")
 
 
+def test_doctor_spelled_out_abbreviation_is_protected():
+    text = (
+        "Doctor. Anders reviewed the chart with counsel during the lunch "
+        "break and remained available for additional questioning as needed. "
+        "He later returned to the stand."
+    )
+    result = split_block_text(text)
+
+    assert len(result) == 2
+    assert result[0].startswith("Doctor. Anders")
+    assert result[1].startswith("He later returned")
+
+
 def test_singh_compound_case():
     # The realistic bug from the Singh transcript — initials embedded
     # mid-sentence followed by a real sentence terminator and a new
