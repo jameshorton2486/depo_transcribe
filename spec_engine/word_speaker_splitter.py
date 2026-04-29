@@ -45,6 +45,11 @@ def _retag_block(block: Block, speaker_id: int) -> Block:
     retagged.meta["split_reason"] = "per_word_speaker_retag"
     retagged.meta["split_from_word_speaker"] = True
     retagged.meta["original_block_speaker_id"] = block.speaker_id
+    if block.words:
+        if block.words[0].start is not None:
+            retagged.meta["start"] = block.words[0].start
+        if block.words[-1].end is not None:
+            retagged.meta["end"] = block.words[-1].end
     return retagged
 
 
