@@ -36,6 +36,24 @@ def test_split_mixed_speaker_utterances_keeps_block_without_word_speakers():
     assert result[0] is block
 
 
+def test_single_word_foreign_noise_is_consolidated_not_split():
+    block = Block(
+        text="Question um And",
+        raw_text="Question um And",
+        speaker_id=1,
+        words=[
+            Word(text="Question", speaker=1, start=0.0, end=0.5),
+            Word(text="um", speaker=0, start=0.5, end=0.7),
+            Word(text="And", speaker=1, start=0.7, end=0.9),
+        ],
+    )
+
+    result = split_mixed_speaker_utterances([block])
+
+    assert len(result) == 1
+    assert result[0] is block
+
+
 def test_splitter_does_not_duplicate_block_level_corrections_across_fragments():
     block = Block(
         text="Question Yes",
@@ -68,6 +86,7 @@ def test_splitter_retags_unanimous_word_speaker_disagreement_without_mutating_in
     assert len(result) == 1
     assert result[0].speaker_id == 0
     assert result[0].meta.get("split_reason") == "per_word_speaker_retag"
+    assert result[0].meta.get("split_from_word_speaker") is True
     assert result[0].meta.get("original_block_speaker_id") == 1
     assert block.speaker_id == 1
 
@@ -85,3 +104,54 @@ def test_splitter_keeps_matching_unanimous_blocks_unchanged():
     assert len(result) == 1
     assert result[0] is block
     assert "split_reason" not in result[0].meta
+
+
+def test_splitter_preserves_timing_and_metadata_across_fragments():
+    block = Block(
+        text="Question Yes Okay And",
+        raw_text="Question Yes Okay And",
+        speaker_id=1,
+        words=[
+            Word(text="Question", speaker=1, start=1.0, end=1.4),
+            Word(text="Yes", speaker=0, start=1.4, end=1.5),
+            Word(text="Okay", speaker=0, start=1.5, end=1.8),
+            Word(text="And", speaker=1, start=1.8, end=2.0),
+        ],
+        meta={"confidence": 0.91, "corrections": [{"pattern": "example"}]},
+    )
+
+    result = split_mixed_speaker_utterances([block])
+
+    assert len(result) == 3
+    assert [b.speaker_id for b in result] == [1, 0, 1]
+    assert [b.text for b in result] == ["Question", "Yes Okay", "And"]
+    assert result[0].meta["start"] == 1.0
+    assert result[0].meta["end"] == 1.4
+    assert result[1].meta["start"] == 1.4
+    assert result[1].meta["end"] == 1.8
+    assert result[2].meta["start"] == 1.8
+    assert result[2].meta["end"] == 2.0
+    assert result[1].meta.get("split_from_word_speaker") is True
+    assert "corrections" not in result[1].meta
+
+
+def test_splitter_handles_three_speaker_interleaving():
+    block = Block(
+        text="A B C D E F",
+        raw_text="A B C D E F",
+        speaker_id=1,
+        words=[
+            Word(text="A", speaker=1),
+            Word(text="B", speaker=2),
+            Word(text="C", speaker=2),
+            Word(text="D", speaker=0),
+            Word(text="E", speaker=0),
+            Word(text="F", speaker=1),
+        ],
+    )
+
+    result = split_mixed_speaker_utterances([block])
+
+    assert len(result) == 4
+    assert [b.speaker_id for b in result] == [1, 2, 0, 1]
+    assert [b.text for b in result] == ["A", "B C", "D E", "F"]
