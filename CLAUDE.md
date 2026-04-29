@@ -247,7 +247,7 @@ re-reading the reason column and confirming the domain impact.
 | Keyterms kept in pipeline | Boosts case-specific names (Coger, Murphy Oil, 2025CI19595) | Without keyterms, proper nouns have higher error rates |
 | afftdn over neural denoisers | Neural denoisers increase WER for ML models | They sound better but hurt Deepgram accuracy |
 | 24kHz sample rate | Preserves 4-8kHz sibilant band for name disambiguation | Lower rates lose consonant distinction (Coger vs Coker) |
-| smart_format=False, numerals=False, paragraphs=False | spec_engine owns date/number normalization (rules 4a–4c) and downstream structure assembly; Deepgram-side formatting would short-circuit those rules and conflict with block_builder | See §19 for full rationale; pinned by test_transcribe_chunk_uses_legal_safe_defaults |
+| smart_format=True, numerals=True, paragraphs=True | Deepgram now performs upstream formatting and utterance paragraph segmentation; downstream processing must tolerate preformatted dates/numbers and paragraph-aware utterance text | See §19 for the current request contract; pinned by test_transcribe_chunk_uses_requested_defaults |
 | Two correction passes (Python then AI) | Python = fast + free for deterministic patterns; AI = context-dependent cases only | Merging them makes simple fixes slow and expensive |
 | CorrectionRecord on every change | Audit trail for corrections log and diff viewer | Without it, changes are invisible to the court reporter |
 | run_logger.py for snapshots | Single tracing system | Do not create additional ad-hoc logging systems |
@@ -516,7 +516,7 @@ Replacing content corrupts the file on save (prior regression — do not repeat)
 3. `_save_transcript()` saves `_canonical_text`, not raw textbox
 4. Rule order in `clean_block()` — 14 rules — MUST NOT change
 5. Character replacement — MUST shift all subsequent word map offsets
-6. `smart_format` / `numerals` / `paragraphs` stay OFF; `filler_words` stays ON (see §19)
+6. `smart_format` / `numerals` / `paragraphs` stay ON; `filler_words` stays ON; `utt_split=0.8` is sent with `utterances=true` (see §19)
 
 ---
 
@@ -691,34 +691,29 @@ read the rationale before "fixing" them.
 ```python
 model        = "nova-3"   # or "nova-3-medical"
 language     = "en"
-smart_format = False      # OFF — Deepgram would rewrite dates/currency
-                          #       that spec_engine's deterministic rules
-                          #       (apply_number_to_word, apply_date_normalization)
-                          #       are responsible for normalizing.
+smart_format = True       # ON — Deepgram may normalize dates/currency upstream.
+                          #      Downstream corrections must tolerate preformatted
+                          #      values rather than assuming spoken-number input.
 punctuate    = True
-paragraphs   = False      # OFF — block_builder + emitter assemble transcript
-                          #       structure from utterances + diarization;
-                          #       Deepgram paragraphs would conflict with
-                          #       that downstream structure assembly.
+paragraphs   = True       # ON — Deepgram may segment utterance text into
+                          #      paragraph-friendly units before downstream
+                          #      block building and formatting.
 diarize      = True
 utterances   = True       # required — correction_runner reads this key
 filler_words = True       # verbatim compliance — uh/um are legal record
-numerals     = False      # OFF — spec_engine owns ALL number normalization
-                          #       (rules 4a–4c in §10). Deepgram numerals
-                          #       would short-circuit those rules.
+numerals     = True       # ON — Deepgram may emit digits upstream. Deterministic
+                          #      correction rules must tolerate numeral-first input.
 keyterms     = [...]      # up to 100, from NOD PDF / reporter notes
-# utt_split is intentionally NOT sent — pinned by
-# test_transcribe_chunk_does_not_send_utt_split_to_deepgram.
+utt_split    = 0.8        # split utterances after 0.8s of silence
 ```
 
-**Comparing app output to Deepgram Playground:** Playground defaults
-have `smart_format=true`, `paragraphs=true`, `numerals=true`. The
-output will look different even on the same audio. Format-level
-differences (spelled-out dates, no Deepgram paragraph breaks) are
-expected and corrected by the spec_engine layer downstream. Word-level
-differences (proper nouns, names) are the recognition signal worth
-investigating — addressed by keyterms and `confirmed_spellings`, not
-by toggling these flags.
+**Comparing app output to Deepgram Playground:** The application now
+matches the Playground-style defaults for `smart_format`, `paragraphs`,
+and `numerals`, while also sending `utterances=true`, `diarize=true`,
+`filler_words=true`, and `utt_split=0.8`. Remaining transcript
+differences should now be investigated primarily through keyterms,
+speaker diarization quality, and downstream correction behavior rather
+than those formatting flags.
 
 ---
 

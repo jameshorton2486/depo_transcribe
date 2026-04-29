@@ -80,6 +80,103 @@ def test_run_transcription_job_uses_and_persists_keyterms(monkeypatch, tmp_path)
     assert results[0]["success"] is True
 
 
+def test_run_transcription_job_passes_current_deepgram_defaults(monkeypatch, tmp_path):
+    import core.job_runner as job_runner
+
+    audio_path = tmp_path / "audio.wav"
+    audio_path.write_bytes(b"fake")
+
+    captured: dict = {}
+
+    monkeypatch.setattr(
+        job_runner,
+        "resolve_or_create_case",
+        lambda *args, **kwargs: (str(tmp_path / "case"), {"errors": [], "created": []}),
+    )
+    monkeypatch.setattr("pipeline.preprocessor.check_ffmpeg", lambda: True)
+    monkeypatch.setattr(
+        "pipeline.preprocessor.validate_audio_file",
+        lambda _path: {"valid": True, "duration": 60.0, "format": "wav"},
+    )
+    monkeypatch.setattr(
+        "pipeline.audio_quality.analyze_audio",
+        lambda _path: SimpleNamespace(
+            tier="CLEAN",
+            is_stereo=False,
+            zoom_dual_mono=False,
+            mono_strategy="average",
+            issues=[],
+        ),
+    )
+    monkeypatch.setattr(
+        "pipeline.preprocessor.normalize_audio",
+        lambda *args, **kwargs: str(tmp_path / "normalized.wav"),
+    )
+    monkeypatch.setattr(
+        "pipeline.vad_trimmer.trim_silence",
+        lambda path, output_path=None: SimpleNamespace(
+            output_path=str(tmp_path / "normalized_vad.wav"),
+            original_duration_s=60.0,
+            trimmed_duration_s=60.0,
+            silence_removed_s=0.0,
+            speech_segment_count=1,
+            was_trimmed=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "pipeline.chunker.chunk_audio",
+        lambda *args, **kwargs: [
+            SimpleNamespace(
+                file_path=str(tmp_path / "normalized_vad_chunk.wav"),
+                start_seconds=0.0,
+                end_seconds=60.0,
+            )
+        ],
+    )
+    monkeypatch.setattr("pipeline.chunker.cleanup_chunks", lambda _chunks: None)
+
+    def _fake_transcribe_chunk(*args, **kwargs):
+        captured["transcribe_kwargs"] = kwargs
+        return {
+            "raw": {"request_id": "abc123"},
+            "utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
+            "raw_utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
+            "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
+            "transcript": "Test testimony.",
+        }
+
+    monkeypatch.setattr("pipeline.transcriber.transcribe_chunk", _fake_transcribe_chunk)
+    monkeypatch.setattr(
+        "pipeline.assembler.reassemble_chunks",
+        lambda _results, _offsets: {
+            "transcript": "Speaker 0: Test testimony.",
+            "raw_utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
+            "utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
+            "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
+            "raw_chunks": [{"request_id": "abc123"}],
+        },
+    )
+    monkeypatch.setattr(
+        "core.job_config_manager.merge_and_save",
+        lambda *_args, **_kwargs: tmp_path / "case" / "source_docs" / "job_config.json",
+    )
+
+    results = []
+    job_runner.run_transcription_job(
+        audio_path=str(audio_path),
+        model="nova-3",
+        quality="CLEAN (good/excellent audio)",
+        base_dir=str(tmp_path),
+        keyterms=["Matthew Coger"],
+        done_callback=lambda result: results.append(result),
+    )
+
+    assert results[0]["success"] is True
+    assert captured["transcribe_kwargs"]["model"] == "nova-3"
+    assert "Matthew Coger" in captured["transcribe_kwargs"]["keyterms"]
+    assert len(captured["transcribe_kwargs"]["keyterms"]) >= 1
+
+
 def test_run_transcription_job_writes_auditable_json_metadata(monkeypatch, tmp_path):
     import core.job_runner as job_runner
 

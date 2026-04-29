@@ -1374,7 +1374,8 @@ def _collapse_spoken_digits(token_sequence: str) -> str:
     Convert spoken digit words and letter tokens into a compact token string.
 
     This is a generic helper for cause numbers, CSR numbers, addresses, and
-    similar Texas deposition numeric identifiers when smart_format is disabled.
+    similar Texas deposition numeric identifiers when spoken-number forms
+    still reach the deterministic correction layer.
     """
     tokens = token_sequence.strip().lower().split()
     result: list[str] = []
