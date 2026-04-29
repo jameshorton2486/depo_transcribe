@@ -19,6 +19,7 @@ from .objections import extract_objections
 from .paragraph_splitter import split_block_text
 from .preamble_rules import apply_preamble_rules
 from .word_speaker_splitter import split_mixed_speaker_utterances
+from .utterance_merger import merge_fragmented_utterances
 from .qa_fixer import fix_qa_structure
 from .speaker_mapper import map_speakers
 from .speaker_intelligence import enforce_qa_sequence, infer_speaker_roles
@@ -78,12 +79,40 @@ def process_blocks(
         _log.snapshot("01_blocks_raw", blocks)
         _log.log_step("Starting corrections", block_count=len(blocks))
 
+    # Split utterances whose word-level speaker IDs disagree with the
+    # utterance-level speaker. Runs BEFORE any text-correction stage so
+    # downstream rules see correctly-attributed blocks.
+    pre_split_count = len(blocks)
+    blocks = split_mixed_speaker_utterances(blocks)
+    if _log and len(blocks) != pre_split_count:
+        _log.snapshot("01a_blocks_speaker_split", blocks)
+        _log.log_step(
+            "Per-word speaker split complete",
+            input_blocks=pre_split_count,
+            output_blocks=len(blocks),
+            new_blocks=len(blocks) - pre_split_count,
+        )
+
+    # Re-fuse same-speaker utterances that Deepgram fragmented at
+    # within-turn pauses. Runs AFTER the splitter so word-level speaker
+    # corrections are already in place, and BEFORE any text-correction
+    # stage so corrections see coalesced turns.
+    pre_merge_count = len(blocks)
+    blocks = merge_fragmented_utterances(blocks)
+    if _log and len(blocks) != pre_merge_count:
+        _log.snapshot("01b_blocks_utterance_merged", blocks)
+        _log.log_step(
+            "Same-speaker utterance merge complete",
+            input_blocks=pre_merge_count,
+            output_blocks=len(blocks),
+            blocks_merged_away=pre_merge_count - len(blocks),
+        )
+
     blocks = apply_corrections(blocks, job_config)
     blocks = apply_deepgram_patterns(blocks)
     blocks = apply_nod_corrections(blocks, job_config)
     blocks = apply_preamble_rules(blocks)
     blocks = generate_scopist_flags(blocks)
-    blocks = split_mixed_speaker_utterances(blocks)
 
     if _log:
         _log.snapshot("02_blocks_corrected", blocks)

@@ -33,6 +33,7 @@ def test_process_blocks_preserves_spec_engine_pipeline_order(monkeypatch):
     monkeypatch.setattr(processor_module, "fix_qa_structure", _mark("fix_qa_structure"))
     monkeypatch.setattr(processor_module, "extract_objections", _mark("extract_objections"))
     monkeypatch.setattr(processor_module, "split_mixed_speaker_utterances", _mark("split_mixed_speaker_utterances"))
+    monkeypatch.setattr(processor_module, "merge_fragmented_utterances", _mark("merge_fragmented_utterances"))
 
     def _map(current_blocks, *args, **kwargs):
         calls.append("map_speakers")
@@ -56,8 +57,9 @@ def test_process_blocks_preserves_spec_engine_pipeline_order(monkeypatch):
     processor_module.process_blocks(blocks, cfg)
 
     assert calls == [
-        "apply_corrections",
         "split_mixed_speaker_utterances",
+        "merge_fragmented_utterances",
+        "apply_corrections",
         "map_speakers",
         "classify_blocks",
         "fix_qa_structure",
