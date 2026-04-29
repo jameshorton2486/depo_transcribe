@@ -525,17 +525,18 @@ Replacing content corrupts the file on save (prior regression — do not repeat)
 ### Line Formats
 
 ```
-Q line:  \t + "Q." + \t + text
-         Example: \tQ.\tDid you go there?
-         Two tabs frame the Q. The first tab indents to stop 1
-         (720 twips / 0.5"). The second tab lands the text at
-         stop 2 (1440 twips / 1.0"). Reporter direction
-         2026-04-27 — supersedes the prior "two literal spaces"
-         spec.
+Q line:  \t + "Q." + "  " + text
+         Example: \tQ.  Did you go there?
+         One tab indents to stop 1 (720 twips / 0.5"), then "Q."
+         is followed by TWO LITERAL SPACES before the question
+         text. This is the correct Texas UFM format. Reporter
+         (Miah Bardot) confirmed 2026-04-28; the prior
+         2026-04-27 entry that mandated two tabs was incorrect
+         and has been reverted.
 
-A line:  \t + "A." + \t + text
-         Example: \tA.\tYes, sir.
-         Same two-tab construction as Q.
+A line:  \t + "A." + "  " + text
+         Example: \tA.  Yes, sir.
+         Same one-tab + label + two-spaces construction as Q.
 
 SP line: \t\t\t + LABEL + ": " + TWO SPACES + text
          Example: \t\t\tMR. GARCIA:  Objection.  Form.
@@ -554,11 +555,11 @@ ALL line types — continuation wraps to LEFT MARGIN.
 No indent on continuation. Not aligned to text start.
 
 Correct:
-    \tQ.\tThis is the beginning of a very long question that
+    \tQ.  This is the beginning of a very long question that
 continues here at the left margin on the next line.
 
 Wrong:
-    \tQ.\tThis is the beginning of a very long question that
+    \tQ.  This is the beginning of a very long question that
          continues here aligned to the Q. text start.
 ```
 

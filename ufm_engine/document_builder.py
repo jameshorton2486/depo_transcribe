@@ -502,9 +502,9 @@ class DocumentBuilder:
         """Render one transcript body line using UFM tab conventions."""
         line_prefix = f"{line_number:>2} " if show_line_numbers else ""
         if entry_type == "Q":
-            return f"{line_prefix}\tQ.\t{line}" if line_index == 0 else f"{line_prefix}\t{line}"
+            return f"{line_prefix}\tQ.  {line}" if line_index == 0 else f"{line_prefix}\t{line}"
         if entry_type == "A":
-            return f"{line_prefix}\tA.\t{line}" if line_index == 0 else f"{line_prefix}\t{line}"
+            return f"{line_prefix}\tA.  {line}" if line_index == 0 else f"{line_prefix}\t{line}"
         if entry_type == "COLLOQUY":
             return f"{line_prefix}\t{speaker_label.upper()}:  {line}" if line_index == 0 else f"{line_prefix}\t{line}"
         if entry_type == "PAREN":

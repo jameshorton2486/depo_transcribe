@@ -100,8 +100,8 @@ def test_format_transcript_to_docx_creates_file_and_reports_progress(tmp_path):
     # the new tab-tab format on DOCX export. Input strings above stay
     # in old format intentionally — they represent real artifacts users
     # have on disk; the test verifies the function handles them.
-    assert "\tQ.\tDid you see that?" in doc.paragraphs[0].text
-    assert "\tA.\tYes." in doc.paragraphs[1].text
+    assert "\tQ.  Did you see that?" in doc.paragraphs[0].text
+    assert "\tA.  Yes." in doc.paragraphs[1].text
 
 
 def test_format_transcript_to_docx_raises_for_missing_source(tmp_path):

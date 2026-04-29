@@ -176,7 +176,7 @@ def test_q_line_format():
     emit_q_line(doc, "What is your name?")
     assert len(doc.paragraphs) == 1
     text = doc.paragraphs[0].text
-    assert '\tQ.\t' in text, f"FAIL: Q format wrong. Got: {repr(text)}"
+    assert '\tQ.  ' in text, f"FAIL: Q format wrong. Got: {repr(text)}"
 
 
 def test_a_line_format():
@@ -184,7 +184,7 @@ def test_a_line_format():
     doc = create_document()
     emit_a_line(doc, "My name is John Smith.")
     text = doc.paragraphs[0].text
-    assert '\tA.\t' in text, f"FAIL: A format wrong. Got: {repr(text)}"
+    assert '\tA.  ' in text, f"FAIL: A format wrong. Got: {repr(text)}"
 
 
 def test_sp_line_bold_label():
@@ -221,7 +221,7 @@ def test_emitter_q_line_wraps_to_multiple_paragraphs():
     doc = create_document()
     emit_q_line(doc, "word " * 20)
     assert len(doc.paragraphs) == 1
-    assert '\tQ.\t' in doc.paragraphs[0].text
+    assert '\tQ.  ' in doc.paragraphs[0].text
 
 
 def test_emitter_speaker_continuation_aligns_under_content():
@@ -647,7 +647,7 @@ def test_strip_preserves_qa_content():
 
 
 def test_strip_to_ascii_expands_tabs_consistently():
-    raw = " 1 \tQ.\tDid you see the accident?"
+    raw = " 1 \tQ.  Did you see the accident?"
     result = strip_to_ascii(raw)
     assert "\t" not in result
     assert "Q." in result
