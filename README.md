@@ -1,7 +1,18 @@
 # Depo-Pro Transcribe
 
-## AI Assistant Instructions
+Depo-Pro Transcribe is a desktop app that converts deposition audio/video into a clean reading-copy transcript: media is preprocessed, transcribed by Deepgram, cleaned by a single Claude pass in `clean_format`, and exported to a Word `.docx`.
 
-If you are using Claude, Cursor, Copilot, or any other AI coding tool, read [`CLAUDE.md`](./CLAUDE.md) before making changes.
+## Install / Run
+Create a virtual environment, install dependencies, set `DEEPGRAM_API_KEY` and `ANTHROPIC_API_KEY` in `.env`, then run:
 
-For markdown-instruction precedence and conflict handling, also check [`docs/MD_INSTRUCTION_GOVERNANCE_2026-04-28.md`](./docs/MD_INSTRUCTION_GOVERNANCE_2026-04-28.md).
+```bash
+pip install -r requirements.txt
+python app.py
+```
+
+## Test
+Run the test suite with:
+
+```bash
+pytest
+```

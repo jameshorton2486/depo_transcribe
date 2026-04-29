@@ -104,10 +104,7 @@ def run_transcription_job(
     # Import CONFIDENCE_LOW up front. Doing this inline near the end of the
     # try block meant an import failure would abort the job after all the
     # actual transcription work had completed.
-    try:
-        from core.word_data_loader import CONFIDENCE_LOW
-    except Exception:
-        CONFIDENCE_LOW = 0.85
+    CONFIDENCE_LOW = 0.85
 
     # Tracked so that if anything after chunk_audio() raises, we can still
     # clean up the temp WAV files in the except block.

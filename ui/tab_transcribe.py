@@ -2328,12 +2328,79 @@ class TranscribeTab(ctk.CTkFrame):
             else:
                 self._audio_tier_label.configure(text="", text_color="gray")
             self._append_transcript_log("Transcription complete")
+            self._append_transcript_log("Formatting transcript...")
+            self._set_transcript_status("Formatting transcript...", "white")
+            threading.Thread(target=self._run_clean_format_job, daemon=True).start()
         else:
             error_msg = result.get("error", "Unknown error")
             self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
             self._audio_tier_label.configure(text="", text_color="gray")
             transcript_tab.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
+
+    def _build_clean_format_case_meta(self) -> dict[str, Any]:
+        witness_first = self._firstname_var.get().strip()
+        witness_last = self._lastname_var.get().strip()
+        witness_name = f"{witness_first} {witness_last}".strip()
+        extracted = self._extracted_case_data if isinstance(self._extracted_case_data, dict) else {}
+        deets = extracted.get("deposition_details", {})
+        court_reporter = extracted.get("court_reporter", {})
+
+        case_style = str(deets.get("case_style", "")).strip()
+        plaintiff_name = "PLAINTIFF"
+        defendant_names = ["DEFENDANT"]
+        if " v. " in case_style:
+            left, right = case_style.split(" v. ", 1)
+            plaintiff_name = left.strip() or plaintiff_name
+            defendant_names = [name.strip() for name in right.split(",") if name.strip()] or defendant_names
+
+        return {
+            "cause_number": self._cause_var.get().strip(),
+            "court": deets.get("court", "DISTRICT COURT"),
+            "county": deets.get("county", ""),
+            "judicial_district": deets.get("judicial_district", ""),
+            "deposition_date": self._date_var.get().strip(),
+            "start_time": "",
+            "end_time": "",
+            "witness_name": witness_name,
+            "witness_credentials": "",
+            "plaintiff_name": plaintiff_name,
+            "defendant_names": defendant_names,
+            "reporter_name": str(court_reporter.get("name", "")).strip(),
+            "reporter_csr": str(court_reporter.get("csr_number", "")).strip(),
+            "attorneys": [],
+        }
+
+    def _run_clean_format_job(self) -> None:
+        try:
+            from clean_format.docx_writer import write_deposition_docx
+            from clean_format.formatter import format_transcript
+
+            raw_path = self._last_transcript_path
+            if not raw_path or not os.path.isfile(raw_path):
+                raise FileNotFoundError("Deepgram transcript file not found.")
+
+            raw_text = Path(raw_path).read_text(encoding="utf-8")
+            case_meta = self._build_clean_format_case_meta()
+            formatted_text = format_transcript(raw_text, case_meta)
+            witness_last = case_meta["witness_name"].split()[-1] if case_meta["witness_name"] else "Witness"
+            output_dir = Path(self._current_case_path or self._last_output_dir or Path(raw_path).parent)
+            output_path = output_dir / f"{witness_last}_Deposition_{case_meta['deposition_date']}.docx"
+            write_deposition_docx(case_meta, formatted_text, output_path)
+            self.after(0, self._on_clean_format_success, str(output_path))
+        except Exception as exc:
+            logger.exception("[TranscribeTab] clean_format failed")
+            self.after(0, self._on_clean_format_failure, str(exc))
+
+    def _on_clean_format_success(self, output_path: str) -> None:
+        self._append_transcript_log(f"Transcript written to: {output_path}")
+        self._set_transcript_status(f"Transcript written to: {output_path}", "#44FF44")
+        if messagebox.askyesno("Formatting complete", f"Transcript written to:\n{output_path}\n\nOpen folder?"):
+            _open_folder(str(Path(output_path).parent))
+
+    def _on_clean_format_failure(self, error_msg: str) -> None:
+        self._append_transcript_log(f"Formatting failed: {error_msg}")
+        self._set_transcript_status("Formatting failed", "#DD4444")
 
     # ── Speaker Label Methods ────────────────────────────────────────────────
 
