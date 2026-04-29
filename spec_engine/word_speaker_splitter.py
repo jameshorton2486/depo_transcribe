@@ -43,9 +43,14 @@ def split_mixed_speaker_utterances(blocks: List[Block]) -> List[Block]:
                 # passes. Duplicating them on every split fragment inflates
                 # correction counts and logs.
                 new_meta.pop("corrections", None)
+
             new_block = Block(
-                text=" ".join((w.text or "").strip() for w in run_words if (w.text or "").strip()),
-                raw_text=" ".join((w.text or "").strip() for w in run_words if (w.text or "").strip()),
+                text=" ".join(
+                    (w.text or "").strip() for w in run_words if (w.text or "").strip()
+                ),
+                raw_text=" ".join(
+                    (w.text or "").strip() for w in run_words if (w.text or "").strip()
+                ),
                 speaker_id=speaker if speaker is not None else block.speaker_id,
                 speaker_name=block.speaker_name,
                 speaker_role=block.speaker_role,
