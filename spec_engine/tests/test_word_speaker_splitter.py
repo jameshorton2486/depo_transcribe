@@ -33,3 +33,19 @@ def test_split_mixed_speaker_utterances_keeps_block_without_word_speakers():
 
     assert len(result) == 1
     assert result[0] is block
+
+
+def test_splitter_does_not_duplicate_block_level_corrections_across_fragments():
+    block = Block(
+        text="Question Yes",
+        raw_text="Question Yes",
+        speaker_id=1,
+        words=[Word(text="Question", speaker=1), Word(text="Yes", speaker=0)],
+        meta={"corrections": [{"pattern": "example"}]},
+    )
+
+    result = split_mixed_speaker_utterances([block])
+
+    assert len(result) == 2
+    assert result[0].meta.get("corrections") == [{"pattern": "example"}]
+    assert "corrections" not in result[1].meta
