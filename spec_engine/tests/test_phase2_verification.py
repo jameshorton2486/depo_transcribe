@@ -337,6 +337,193 @@ def test_fix_qa_structure_splits_answer_question_answer_chain():
     assert result[2].speaker_id == 1
 
 
+def test_fix_qa_structure_splits_answer_prefixed_question():
+    """
+    Step 3 / Case 1 final fragment: a QUESTION block whose first sentence is
+    actually a witness reply ("I will. ...?"). split_answer_prefixed_questions
+    should peel the answer off the front and leave the question.
+    """
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MS. MALONEY"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=2,
+        speaker_name="MS. MALONEY",
+        speaker_role="EXAMINING_ATTORNEY",
+        block_type=BlockType.QUESTION,
+        text="I will. Um, would you please state your full legal name for the record?",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [BlockType.ANSWER, BlockType.QUESTION]
+    assert result[0].text == "I will."
+    assert result[0].speaker_id == 1
+    assert result[1].text == "Um, would you please state your full legal name for the record?"
+    assert result[1].speaker_id == 2
+
+
+def test_fix_qa_structure_case1_full_chain_multi_pass_with_answer_prefixed_q():
+    """
+    Case 1 from the bleed trace: a single Q block contains three Q/A turns,
+    the last of which leaves a witness reply ("I will.") fused to the next
+    examiner question. After the patch:
+      - 1st split_inline_answers peels off "Yes, I do."
+      - 2nd split_inline_answers peels off "Yes. I will." (option-d keeps both
+        sentences in the answer)
+      - split_answer_prefixed_questions is not needed here because the prior
+        pass already produced a clean Q tail.
+    Expected shape: Q, A, Q, A, Q.
+    """
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MS. MALONEY"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=2,
+        speaker_name="MS. MALONEY",
+        speaker_role="EXAMINING_ATTORNEY",
+        block_type=BlockType.QUESTION,
+        text=(
+            "my name is Michelle Maloney, I represent Hannah Kressman in this case. "
+            "You understand that? Yes, I do. Okay. And Hannah goes by her maiden "
+            "name now, Hannah Kuipers. If I refer to her as miss K. K. Will you "
+            "understand who I'm talking about? Yes. I will. Um, would you please "
+            "state your full legal name for the record?"
+        ),
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    types = [b.block_type for b in result]
+    assert types == [
+        BlockType.QUESTION, BlockType.ANSWER,
+        BlockType.QUESTION, BlockType.ANSWER,
+        BlockType.QUESTION,
+    ]
+    # Speaker round-trips correctly: examiner / witness / examiner / witness / examiner
+    assert [b.speaker_id for b in result] == [2, 1, 2, 1, 2]
+    # Multi-sentence answer kept together by option-d
+    assert result[3].text == "Yes.  I will."
+
+
+def test_fix_qa_structure_splits_witness_answer_with_transition_tail():
+    """
+    Case 4 from the bleed trace. A misdiarized witness ANSWER block contains
+    a multi-sentence reply followed by a truncated examiner transition
+    ("Okay. What about"). Option-d picks the latest answer-compatible
+    boundary; the relaxed split_inline_questions_from_answers gate accepts
+    transition-led continuations and emits them as COLLOQUY (the truncated
+    fragment is not a complete question).
+    """
+    cfg = JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MS. MALONEY"},
+        witness_id=1,
+        examining_attorney_id=2,
+    )
+    block = Block(
+        speaker_id=1,
+        speaker_name="THE WITNESS",
+        speaker_role="WITNESS",
+        block_type=BlockType.ANSWER,
+        text="Yes. I can access it. Okay. What about",
+        raw_text="",
+    )
+
+    result = fix_qa_structure([block], job_config=cfg)
+
+    assert [b.block_type for b in result] == [BlockType.ANSWER, BlockType.COLLOQUY]
+    assert result[0].text == "Yes.  I can access it."
+    assert result[0].speaker_id == 1
+    assert result[1].text == "Okay.  What about"
+    assert result[1].speaker_id == 2
+
+
+def test_classify_blocks_examining_attorney_short_answer_after_question_is_rescued():
+    """
+    Step 1 regression: the previous guard `speaker_id != examining_attorney_id`
+    in classifier._attorney_label_answer prevented short answers misdiarized
+    onto the examining attorney from being re-attributed. After the patch,
+    a 1-word "Yes." attributed to the examining attorney following a Q block
+    is reclassified as ANSWER.
+    """
+    blocks = [
+        Block(
+            speaker_id=2,
+            text="Are you a member of the Society for Maternal and Fetal Medicine?",
+            raw_text="",
+            speaker_role="EXAMINING_ATTORNEY",
+            speaker_name="MS. MALONEY",
+        ),
+        Block(
+            speaker_id=2,
+            text="No.",
+            raw_text="",
+            speaker_role="EXAMINING_ATTORNEY",
+            speaker_name="MS. MALONEY",
+        ),
+    ]
+
+    results = classify_blocks(blocks, job_config=JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MS. MALONEY"},
+        witness_id=1,
+        examining_attorney_id=2,
+        speaker_map_verified=True,
+    ))
+
+    assert results[0].block_type == BlockType.QUESTION
+    assert results[1].block_type == BlockType.ANSWER
+
+
+def test_classify_blocks_examining_attorney_non_answer_prefix_not_rescued():
+    """
+    Step 1 guardrail: the rescue path triggers only when
+    _looks_like_answer_after_question returns True, which requires the text
+    to start with an answer-token prefix (yes/no/right/correct/I do/etc.) or
+    generic answer-start ("it's", "I'm", "my", ...). A Maloney transition
+    that does NOT start with one of those — e.g. "Now let's move on." —
+    must NOT be reclassified as an answer.
+
+    This is the actual remaining guard after Step 1. Long examining-attorney
+    transitions that DO start with an answer-token prefix (e.g.
+    "Right. So tell me ...") are intentionally rescued under the trade-off
+    the user accepted; the AI Pass 2 review is responsible for catching
+    those false positives.
+    """
+    blocks = [
+        Block(
+            speaker_id=2,
+            text="Did anything else happen that morning?",
+            raw_text="",
+            speaker_role="EXAMINING_ATTORNEY",
+            speaker_name="MS. MALONEY",
+        ),
+        Block(
+            speaker_id=2,
+            text="Now let's move on to October second.",
+            raw_text="",
+            speaker_role="EXAMINING_ATTORNEY",
+            speaker_name="MS. MALONEY",
+        ),
+    ]
+
+    results = classify_blocks(blocks, job_config=JobConfig(
+        speaker_map={1: "THE WITNESS", 2: "MS. MALONEY"},
+        witness_id=1,
+        examining_attorney_id=2,
+        speaker_map_verified=True,
+    ))
+
+    assert results[0].block_type == BlockType.QUESTION
+    # "Now ..." doesn't start with any answer-token prefix → rescue blocked.
+    assert results[1].block_type != BlockType.ANSWER
+
+
 def test_classify_blocks_witness_mislabel_question_becomes_question():
     blocks = [
         Block(

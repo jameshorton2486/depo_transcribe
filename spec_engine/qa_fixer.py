@@ -14,6 +14,7 @@ __all__ = [
     "fix_qa_structure",
     "split_inline_answers",
     "split_inline_questions_from_answers",
+    "split_answer_prefixed_questions",
 ]
 
 _log = logging.getLogger("spec_engine.qa_fixer")
@@ -45,6 +46,23 @@ ANSWER_TOKENS = (
     "i remember", "i recall", "i don't recall", "i don't remember",
 )
 
+# Broader answer-token prefixes used by `split_answer_prefixed_questions`
+# to detect QUESTION blocks whose first sentence is a misattributed witness
+# reply ("I will. Would you state your name?"). Includes ANSWER_TOKENS plus
+# the modal-verb / first-person reply forms common in deposition testimony.
+# Kept separate from ANSWER_TOKENS so the existing inline-answer splitters
+# stay tight (those run earlier and feed Q-tail material into this stage).
+ANSWER_PREFIX_TOKENS = ANSWER_TOKENS + (
+    "i will", "i won't", "i will not",
+    "i would", "i wouldn't", "i would not",
+    "i could", "i couldn't", "i could not",
+    "i can", "i can't", "i cannot",
+    "i was", "i wasn't", "i was not",
+    "i'm", "i am", "i'm not", "i am not",
+    "i have", "i have not", "i haven't",
+    "i think", "i believe",
+)
+
 # Period-suffixed entries were dead code — _merge_orphaned_continuations
 # strips '.,!?' before the set intersection, so "correct." can never match.
 STANDALONE_ANSWER_WORDS = frozenset({
@@ -63,6 +81,30 @@ _FILLER_ONLY_RE = re.compile(
 
 QUESTION_WORDS = ("who", "what", "when", "where", "why", "how", "did", "do", "does", "is", "are", "can", "could", "would", "will", "were", "was", "have", "has", "had")
 IMPERATIVE_QUESTION_STARTERS = ("state", "tell", "describe", "explain", "identify", "name")
+# Sentence-leading tokens that almost always signal a speaker shift inside an
+# otherwise answer-led remainder. Used by _continues_answer to pick the latest
+# answer-compatible boundary in `_extract_answer_and_continuation` (option d).
+# Mirrors COLLOQUY_STARTERS (which `_looks_like_generic_answer_fragment` already
+# uses to disqualify colloquy-led text from being treated as an answer
+# fragment) and adds a few examiner-question lead-ins.
+_TRANSITION_STARTERS = (
+    # Mirrors COLLOQUY_STARTERS — kept inline because COLLOQUY_STARTERS is
+    # defined later in this module.
+    "okay",
+    "all right",
+    "alright",
+    "now ",
+    "then ",
+    "just ",
+    "let me",
+    "let's",
+    "let us",
+    # Examiner-side question lead-ins.
+    "so ",
+    "and so",
+    "and then,",
+    "what about",
+)
 QUESTION_LEAD_PHRASES = (
     "please state",
     "would you please",
@@ -199,7 +241,41 @@ def _looks_like_generic_answer_fragment(text: str) -> bool:
     return normalized[0].isupper()
 
 
+def _continues_answer(sentence: str) -> bool:
+    """
+    Decide whether a sentence inside a remainder still reads as part of the
+    witness answer (rather than a speaker shift back to the examiner).
+
+    Used to pick the LATEST answer-compatible sentence boundary in
+    `_extract_answer_and_continuation` so multi-sentence answers like
+    "Yes. I can access it." are not prematurely truncated to "Yes." when the
+    actual bleed boundary is later in the block.
+    """
+    s = (sentence or "").strip()
+    if not s:
+        return False
+    if s.endswith("?"):
+        return False
+    lowered = s.lower()
+    if any(lowered.startswith(w + " ") for w in QUESTION_WORDS):
+        return False
+    if lowered.startswith(_TRANSITION_STARTERS):
+        return False
+    return True
+
+
 def _extract_answer_and_continuation(remainder: str) -> tuple[str, str | None] | None:
+    """
+    Pull a witness-answer prefix off the front of `remainder`, returning
+    (answer_text, continuation_text_or_None).
+
+    Iterates sentence boundaries and selects the LATEST cumulative prefix
+    where every sentence after the first still continues the answer (option d
+    in the qa-fixer trace). This handles cases like
+    "Yes. I can access it. Okay. What about" — the bleed is at "Okay.", not
+    after the first period — so the answer becomes "Yes. I can access it."
+    and the continuation becomes "Okay. What about".
+    """
     text = (remainder or "").strip()
     if not text:
         return None
@@ -208,15 +284,22 @@ def _extract_answer_and_continuation(remainder: str) -> tuple[str, str | None] |
     if not lowered.startswith(ANSWER_TOKENS):
         return None
 
-    parts = SENTENCE_END_RE.split(text, maxsplit=1)
+    parts = SENTENCE_END_RE.split(text)
     if len(parts) == 1:
         return parts[0].strip(), None
 
-    answer_text = parts[0].strip()
-    continuation = parts[1].strip()
+    last_answer_idx = 0
+    for i in range(1, len(parts)):
+        if _continues_answer(parts[i]):
+            last_answer_idx = i
+        else:
+            break
+
+    answer_text = "  ".join(p.strip() for p in parts[: last_answer_idx + 1] if p.strip())
+    continuation_text = "  ".join(p.strip() for p in parts[last_answer_idx + 1 :] if p.strip())
     if not answer_text:
         return None
-    return answer_text, (continuation or None)
+    return answer_text, (continuation_text or None)
 
 
 def _is_reporter_block(block: Block) -> bool:
@@ -364,9 +447,26 @@ def split_inline_questions_from_answers(blocks: List[Block], job_config: Any = N
             continue
 
         a_part, continuation = extracted
-        if not continuation or not _looks_like_question_text(continuation):
+        if not continuation:
             new_blocks.append(block)
             continue
+
+        # Continuation may be a complete question (emit as Q) OR a truncated
+        # examiner-transition fragment ("Okay. What about", "So tell me...")
+        # that doesn't end with '?' but reliably signals a speaker shift.
+        # Per the option-d trace, relying on _looks_like_question_text alone
+        # leaves bleed cases like "Yes. I can access it. Okay. What about"
+        # unsplit. Fall back to a transition-starter check and emit as
+        # COLLOQUY in that case — mirrors the COLLOQUY fallback already used
+        # by split_inline_answers (qa_fixer.py:409-413).
+        continuation_lower = continuation.lower()
+        is_question = _looks_like_question_text(continuation)
+        is_transition = continuation_lower.startswith(_TRANSITION_STARTERS)
+        if not (is_question or is_transition):
+            new_blocks.append(block)
+            continue
+
+        followup_type = BlockType.QUESTION if is_question else BlockType.COLLOQUY
 
         examiner_id, examiner_name = _examiner_identity(job_config, block)
         a_block = Block(
@@ -384,13 +484,95 @@ def split_inline_questions_from_answers(blocks: List[Block], job_config: Any = N
             text=continuation,
             speaker_id=examiner_id,
             speaker_name=examiner_name,
-            block_type=BlockType.QUESTION,
+            block_type=followup_type,
             words=[],
             meta={
                 **block.meta,
-                "split_followup_question": True,
+                "split_followup_question": followup_type == BlockType.QUESTION,
+                "split_followup_continuation": followup_type == BlockType.COLLOQUY,
                 "split_followup_question_from_answer": True,
             },
+        )
+        new_blocks.extend([a_block, q_block])
+
+    return new_blocks
+
+
+def split_answer_prefixed_questions(blocks: List[Block], job_config: Any = None) -> List[Block]:
+    """
+    Split a QUESTION block whose first sentence(s) are a misattributed witness
+    answer (e.g. "I will. Would you state your name?").
+
+    Mirror image of `split_inline_questions_from_answers`: it handles blocks
+    classified as QUESTION (because they end with '?') even though they
+    actually begin with a witness reply that bled in from the previous turn.
+
+    Uses ANSWER_PREFIX_TOKENS (broader than ANSWER_TOKENS) and the same
+    option-d cumulative-prefix logic as `_extract_answer_and_continuation`,
+    so multi-sentence answers like "Yes. I will." are kept together when the
+    actual question begins later in the block.
+    """
+    new_blocks: List[Block] = []
+
+    for block in blocks:
+        if block.block_type != BlockType.QUESTION:
+            new_blocks.append(block)
+            continue
+
+        text = (block.text or "").strip()
+        if not text:
+            new_blocks.append(block)
+            continue
+        lowered = text.lower()
+        if not lowered.startswith(ANSWER_PREFIX_TOKENS):
+            new_blocks.append(block)
+            continue
+
+        parts = SENTENCE_END_RE.split(text)
+        if len(parts) < 2:
+            new_blocks.append(block)
+            continue
+
+        last_answer_idx = 0
+        for i in range(1, len(parts)):
+            if _continues_answer(parts[i]):
+                last_answer_idx = i
+            else:
+                break
+
+        if last_answer_idx >= len(parts) - 1:
+            # Nothing left for the question — leave block alone.
+            new_blocks.append(block)
+            continue
+
+        a_text = "  ".join(p.strip() for p in parts[: last_answer_idx + 1] if p.strip())
+        q_text = "  ".join(p.strip() for p in parts[last_answer_idx + 1 :] if p.strip())
+        if not a_text or not q_text:
+            new_blocks.append(block)
+            continue
+        if not _looks_like_question_text(q_text):
+            new_blocks.append(block)
+            continue
+
+        witness_id, witness_name = _witness_identity(job_config, block)
+        a_block = Block(
+            raw_text=block.raw_text,
+            text=a_text,
+            speaker_id=witness_id,
+            speaker_name=witness_name,
+            block_type=BlockType.ANSWER,
+            words=[],
+            meta={**block.meta, "split_from_answer_prefixed_question": True},
+        )
+        q_block = Block(
+            raw_text=block.raw_text,
+            text=q_text,
+            speaker_id=block.speaker_id,
+            speaker_name=block.speaker_name,
+            speaker_role=block.speaker_role,
+            block_type=BlockType.QUESTION,
+            words=list(block.words),
+            meta={**block.meta, "split_from_answer_prefixed_question_q": True},
         )
         new_blocks.extend([a_block, q_block])
 
@@ -525,6 +707,10 @@ def fix_qa_structure(blocks: List[Block], job_config: Any = None) -> List[Block]
     before = len(blocks)
     blocks = split_inline_answers(blocks, job_config=job_config)
     _log.debug("[QA_FIXER] after 2nd inline-answer split - %d->%d", before, len(blocks))
+
+    before = len(blocks)
+    blocks = split_answer_prefixed_questions(blocks, job_config=job_config)
+    _log.debug("[QA_FIXER] after answer-prefixed-Q split - %d->%d", before, len(blocks))
 
     before = len(blocks)
     blocks = _merge_orphaned_continuations(blocks)

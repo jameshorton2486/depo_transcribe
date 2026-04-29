@@ -378,8 +378,20 @@ def _looks_like_answer_after_question(text: str, speaker_label_upper: str = "") 
     if OBJECTION_START_RE.match(normalized):
         return False
 
+    # Word-boundary-aware match: bare `startswith(starter)` was too loose —
+    # `"now ".startswith("no")` is True, which previously caused
+    # `"Now let's move on..."` to be rescued as an answer once Step 1
+    # broadened the rescue to examining-attorney blocks. Require the
+    # character after `starter` to be a non-letter (or end of string) so
+    # `"no"` matches `"No."`/`"No, sir"`/`"no sir"` but not `"Now"`/`"Note"`.
+    def _starter_matches(s: str) -> bool:
+        if not lowered.startswith(s):
+            return False
+        nxt = len(s)
+        return nxt == len(lowered) or not lowered[nxt].isalpha()
+
     for starter in EMBEDDED_ANSWER_STARTERS:
-        if lowered.startswith(starter):
+        if _starter_matches(starter):
             return True
 
     generic_answer_starts = (
@@ -401,7 +413,7 @@ def _looks_like_answer_after_question(text: str, speaker_label_upper: str = "") 
     is_attorney_label = any(marker in (speaker_label_upper or "") for marker in ATTORNEY_LABEL_MARKERS)
     if is_attorney_label:
         return len(normalized.split()) <= MAX_ATTORNEY_LABEL_ANSWER_WORDS and any(
-            lowered.startswith(starter) for starter in EMBEDDED_ANSWER_STARTERS
+            _starter_matches(starter) for starter in EMBEDDED_ANSWER_STARTERS
         )
 
     return len(normalized.split()) <= MAX_GENERIC_ANSWER_WORDS
@@ -499,9 +511,16 @@ def classify_blocks(blocks: list[Block], job_config: JobConfig | dict | None = N
                 _is_examiner
                 and any(lower.startswith(word + " ") for word in IMPERATIVE_QUESTION_STARTERS)
             )
+            # Rescue applies to ANY attorney-labeled block that immediately
+            # follows a question and reads like an answer. The earlier
+            # `speaker_id != examining_attorney_id` guard prevented Maloney-style
+            # examining-attorney blocks from being re-attributed when Deepgram
+            # diarization mis-bundled the witness's reply onto the attorney.
+            # The downstream guards inside `_looks_like_answer_after_question`
+            # (≤MAX_ATTORNEY_LABEL_ANSWER_WORDS words AND a known answer-token
+            # prefix for attorney labels) keep this conservative.
             _attorney_label_answer = (
                 previous_type == BlockType.QUESTION
-                and block.speaker_id != examining_attorney_id
                 and _looks_like_answer_after_question(text, role)
             )
             if _attorney_label_answer:
