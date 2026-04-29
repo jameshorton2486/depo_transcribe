@@ -1172,3 +1172,104 @@ modified rule, or AI prompt change — follows this process permanently.
 
 **Total to stable baseline: approximately 10–15 hours of focused work.**
 After that, the formal process in Track 2 keeps it stable indefinitely.
+
+---
+
+## PHASE U — Utterance-Native Pipeline Hardening (New)
+
+**What:** Shift transcript processing from reconstructed text blocks to Deepgram utterances as the primary data model.
+
+**Why:** Current flow (`Deepgram JSON -> flatten -> block reconstruction`) discards semantic turn boundaries and contributes to speaker drift, broken Q/A turns, and reporter takeover errors.
+
+**Scope guard:** Keep this phase inside `spec_engine/` + related tests first (single-layer rule). Do not modify UI or exporter behavior until phase exit gates pass.
+
+### Step U1 — Add an Utterance Integrity Layer (no semantic rewrites)
+
+**Goal:** Preserve every Deepgram utterance boundary and metadata exactly.
+
+- Introduce an utterance-native object (or `Block` wrapper fields) with:
+  - `text`, `speaker_id`, `start`, `end`, `confidence`, optional `word_span`
+- Update `spec_engine/block_builder.py` to map `results.utterances[]` directly to blocks.
+- Disable block splitting/merging in this stage (lock boundaries).
+- Carry original utterance index for traceability in corrections and logs.
+
+**Acceptance checks:**
+- utterance count in output blocks equals input utterance count
+- each block start/end matches source utterance start/end exactly
+- compile + targeted tests pass
+
+### Step U2 — Speaker Stability Guardrail
+
+**Goal:** Prevent high-frequency false speaker flips while preserving true transitions.
+
+- Anchor speaker by utterance-level speaker ID (no new word-level inference).
+- Add a conservative transition guard in speaker mapping/classification:
+  - if speaker changes across a very short gap and confidence is high, mark as drift-suspect
+  - emit a flag/trace entry instead of silently reassigning labels
+- Add explicit detector for reporter takeover patterns.
+
+**Acceptance checks:**
+- new tests for short-gap false flips
+- reporter takeover scenario produces drift flag
+- no regression in existing speaker label invariants
+
+### Step U3 — Utterance-Aware Q/A Turn Modeling
+
+**Goal:** Build Q/A from utterance turns, not regex over flattened text.
+
+- Update Q/A fixer logic to operate on contiguous utterance turns.
+- Prefer mapping `Attorney utterance -> next Witness utterance` as canonical pairing.
+- Keep deterministic fallback path for malformed diarization.
+
+**Acceptance checks:**
+- add turn-based fixture tests (cross-exam + colloquy mixed)
+- reduced orphan-Q/orphan-A rate in baseline comparison cases
+
+### Step U4 — Timing Intelligence for Legal Signals
+
+**Goal:** Use utterance timing for hesitation, overlap, and interruption signals.
+
+- Compute inter-utterance gap and overlap metrics.
+- Mark:
+  - hesitation windows (configurable threshold)
+  - interruptions/overlaps
+  - objection timing windows
+- Keep these as metadata/flags; do not rewrite testimony text.
+
+**Acceptance checks:**
+- tests for positive overlap and near-zero response gap
+- timing annotations persist through processing/export path metadata
+
+### Step U5 — Adaptive `utt_split` Strategy (Transcription-time)
+
+**Goal:** Improve segmentation quality across deposition speaking styles.
+
+- Add a safe strategy in `pipeline/transcriber.py` that selects `utt_split` from bounded presets based on measured speech cadence.
+- Keep legal-safe defaults and allow hard override via config.
+- Log selected profile per transcript/chunk.
+
+**Acceptance checks:**
+- unit tests for profile selection logic
+- transcriber tests confirm legal-safe flags remain enforced
+
+### Step U6 — Confidence-Guided Review Routing
+
+**Goal:** Target human review where risk is highest.
+
+- Flag low-confidence utterances (threshold configurable, default 0.85).
+- Expose review markers for downstream UI/highlight consumption.
+- Avoid full-transcript manual review by emitting focused spans.
+
+**Acceptance checks:**
+- tests verify low-confidence utterances are flagged deterministically
+- no mutation of transcript text from confidence routing
+
+### Phase U Exit Gate
+
+- [ ] Utterance boundaries preserved end-to-end for pass-1 pipeline
+- [ ] Speaker drift detector active with tests
+- [ ] Turn-based Q/A logic verified on fixtures
+- [ ] Timing + confidence metadata emitted without altering transcript text
+- [ ] `py_compile` on touched modules
+- [ ] full test suite run with no new failures
+
