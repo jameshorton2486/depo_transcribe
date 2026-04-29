@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,10 @@ MONTH_ABBR = {
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
 
 _DATE_FORMATS = ("%m/%d/%Y", "%B %d, %Y")
+# NOD intake commonly emits "April 9, 2026 at 8:00 a.m." — only year/month
+# matter for the folder path, so drop everything from " at <time>" onward
+# before parsing. Case-insensitive; allows trailing time/period text to vary.
+_DATE_TIME_SUFFIX_RE = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
 
 
 def build_case_path(
@@ -29,10 +34,11 @@ def build_case_path(
     deposition_date: str | None = None,
 ) -> str:
     if deposition_date:
+        normalized = _DATE_TIME_SUFFIX_RE.sub("", deposition_date).strip()
         dt = None
         for fmt in _DATE_FORMATS:
             try:
-                dt = datetime.strptime(deposition_date, fmt)
+                dt = datetime.strptime(normalized, fmt)
                 break
             except ValueError:
                 continue
