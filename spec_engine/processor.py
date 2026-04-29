@@ -18,6 +18,7 @@ from .nod_corrections import apply_nod_corrections
 from .objections import extract_objections
 from .paragraph_splitter import split_block_text
 from .preamble_rules import apply_preamble_rules
+from .word_speaker_splitter import split_mixed_speaker_utterances
 from .qa_fixer import fix_qa_structure
 from .speaker_mapper import map_speakers
 from .speaker_intelligence import enforce_qa_sequence, infer_speaker_roles
@@ -82,6 +83,7 @@ def process_blocks(
     blocks = apply_nod_corrections(blocks, job_config)
     blocks = apply_preamble_rules(blocks)
     blocks = generate_scopist_flags(blocks)
+    blocks = split_mixed_speaker_utterances(blocks)
 
     if _log:
         _log.snapshot("02_blocks_corrected", blocks)
