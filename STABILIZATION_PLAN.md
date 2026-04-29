@@ -1172,3 +1172,165 @@ modified rule, or AI prompt change — follows this process permanently.
 
 **Total to stable baseline: approximately 10–15 hours of focused work.**
 After that, the formal process in Track 2 keeps it stable indefinitely.
+
+---
+
+## PHASE U — Utterance-Native Pipeline Hardening
+
+**What:** Harden the current block pipeline so Deepgram utterances remain the
+primary structural truth all the way through pass-1 processing.
+
+**Why:** The current repository does **not** flatten raw Deepgram JSON before
+building blocks. `spec_engine/block_builder.py` already maps
+`results.utterances[]` directly into `Block` objects. The real instability
+appears later, when downstream stages reshape those utterance-native blocks:
+
+- `speaker_mapper.py`
+- `speaker_intelligence.py`
+- `classifier.py`
+- `qa_fixer.py`
+- `processor.split_blocks_into_paragraphs()`
+- `objections.py`
+
+This phase therefore targets **post-block-builder mutation**, not the
+utterance import step itself.
+
+**Scope guard:**
+- U1–U4 stay inside `spec_engine/` plus tests
+- U5 touches `pipeline/transcriber.py` only after the `spec_engine` stages are
+  instrumented and measurable
+- Do not modify UI/exporter behavior until the exit gates pass
+
+### Step U1 — Preserve Utterance Provenance End-to-End
+
+**Goal:** Keep every block traceable back to its source utterance so later
+stages can be audited instead of guessed at.
+
+- Keep `build_blocks_from_deepgram()` as the entry point; do **not** replace it
+  with a new parallel object model yet.
+- Extend block metadata to carry utterance provenance explicitly:
+  - `utterance_index`
+  - `utterance_start`
+  - `utterance_end`
+  - `utterance_confidence`
+  - optional `source_word_count`
+- Add a run-log snapshot that records:
+  - raw utterance count
+  - block count after block_builder
+  - block count after each subsequent structural stage
+
+**Acceptance checks:**
+- block count after `build_blocks_from_deepgram()` equals input utterance count
+- each block retains exact source `start`/`end` values in metadata
+- targeted tests verify provenance survives corrections and classification
+
+### Step U2 — Add a Boundary Mutation Audit Layer
+
+**Goal:** Identify exactly where utterance-native turns are being merged,
+split, or reassigned incorrectly.
+
+- Add deterministic audit logging around these stages:
+  - speaker mapping
+  - Q/A fixing
+  - paragraph splitting
+  - objection extraction
+- For each stage, log:
+  - input block count
+  - output block count
+  - blocks whose text changed
+  - blocks whose speaker assignment changed
+- Treat unreviewed speaker reassignment as suspicious when:
+  - the utterance gap is short
+  - the prior speaker resumes immediately
+  - the changed turn is a short witness response (`Yes.`, `No.`, `Okay.`)
+
+**Acceptance checks:**
+- new tests cover “short answer swallowed into surrounding attorney turn”
+- new tests cover “reporter takeover” false-positive scenario
+- drift-suspect transitions are flagged, not silently normalized away
+
+### Step U3 — Turn-Safe Q/A Structure
+
+**Goal:** Make Q/A fixing respect utterance turns before any paragraph-level
+splitting occurs.
+
+- Update `qa_fixer.py` so its first responsibility is turn preservation:
+  - short single-turn witness answers stay isolated
+  - attorney follow-up text does not get attached backward across a witness turn
+- Do not use regex alone as the primary turn detector when utterance metadata
+  already shows a speaker boundary.
+- Move any paragraph splitting logic **after** turn-safe Q/A decisions and keep
+  a tested escape hatch for malformed diarization.
+
+**Acceptance checks:**
+- fixture reproduces:
+  - `Yes.` staying with witness
+  - `And is is this portion accurate?` staying with attorney
+  - `No. It's not always complete.` staying with witness
+- reduced orphan-Q / orphan-A regressions on existing comparison cases
+
+### Step U4 — Timing Intelligence Without Text Mutation
+
+**Goal:** Use utterance timing to support legal review without rewriting the
+transcript text.
+
+- Compute and preserve:
+  - inter-utterance gap
+  - overlap duration
+  - interruption markers
+  - hesitation windows
+- Store these as metadata / flags only
+- Never rewrite testimony text from timing analysis
+
+**Acceptance checks:**
+- tests for positive overlap and near-zero response gaps
+- timing metadata survives pass-1 processing
+- no transcript text mutation caused by timing routing
+
+### Step U5 — Deposition-Safe `utt_split` Tuning
+
+**Goal:** Tune transcription-time utterance splitting for legal turn-taking
+without reintroducing text-structure drift.
+
+**Important:** Do this **after** U1–U4. Do not change `utt_split` blind.
+
+- Add bounded presets in `pipeline/transcriber.py`
+  - rapid cross-exam
+  - standard deposition
+  - slower expert testimony
+- Start with a conservative legal default and log which profile was used
+- Keep hard override capability in config
+
+**Initial direction from current evidence:**
+- `paragraphs=true` caused harmful turn coalescing in deposition Q/A
+- tighter `utt_split` values help preserve short witness responses
+- therefore any future tuning must be validated against real-case turn fixtures
+
+**Acceptance checks:**
+- unit tests verify profile selection and enforced request params
+- real-case comparison confirms improved short-turn separation
+- no regression in keyterm transmission or utterance availability
+
+### Step U6 — Confidence-Guided Review Routing
+
+**Goal:** Route human attention to risky utterances instead of reviewing entire
+transcripts manually.
+
+- Flag low-confidence utterances deterministically
+- Preserve the flag as metadata for downstream UI/highlight consumption
+- Keep confidence routing separate from text correction logic
+
+**Acceptance checks:**
+- tests verify low-confidence utterances are flagged consistently
+- no mutation of transcript text from confidence routing
+
+### Phase U Exit Gate
+
+- [ ] Every pass-1 block can be traced to a source utterance
+- [ ] Boundary mutation audit identifies where speaker/turn drift occurs
+- [ ] Short witness-answer fixtures pass without turn swallowing
+- [ ] Reporter takeover scenario is flagged, not silently reassigned
+- [ ] Timing and confidence metadata persist without changing transcript text
+- [ ] `py_compile` on every touched module
+- [ ] targeted tests green before any full-suite run
+- [ ] full suite run with no new failures

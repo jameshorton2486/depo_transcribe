@@ -65,11 +65,11 @@ REQUEST_DEBUG_PREFIX = "DEEPGRAM PARAMS:"
 REQUIRED_DEEPGRAM_FLAGS = {
     "utterances": "true",
     "diarize": "true",
-    "paragraphs": "true",
+    "paragraphs": "false",
     "punctuate": "true",
     "smart_format": "true",
     "numerals": "true",
-    "utt_split": "0.8",
+    "utt_split": "0.5",
 }
 
 # Transient HTTP failures that should trigger a retry. 401/403 are excluded
@@ -447,6 +447,7 @@ def _transcribe_direct(
     # - filler_words stays on for verbatim compliance (uh/um are legal record)
     # - utterances=True is required — correction_runner checks for this key
     # - utt_split controls silence length before Deepgram starts a new utterance
+    #   and is intentionally tighter for deposition Q/A turn boundaries
     # - preserve the current return contract; expose extra debug context without
     #   changing downstream behavior
     normalized_keyterms = [
@@ -459,9 +460,9 @@ def _transcribe_direct(
         "smart_format": True,
         "diarize":      True,
         "punctuate":    True,
-        "paragraphs":   True,
+        "paragraphs":   False,
         "utterances":   True,
-        "utt_split":    "0.8",
+        "utt_split":    "0.5",
         "filler_words": True,
         "numerals":     True,
     })

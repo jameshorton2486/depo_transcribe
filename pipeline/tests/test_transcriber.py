@@ -56,7 +56,7 @@ def test_transcribe_chunk_sends_default_utt_split_to_deepgram(monkeypatch, tmp_p
 
     params = parse_qs(urlparse(captured["url"]).query)
 
-    assert params["utt_split"] == ["0.8"]
+    assert params["utt_split"] == ["0.5"]
 
 
 def test_transcribe_chunk_uses_requested_defaults(monkeypatch, tmp_path):
@@ -107,15 +107,15 @@ def test_transcribe_chunk_uses_requested_defaults(monkeypatch, tmp_path):
 
     assert params["model"] == ["nova-3"]
     assert params["punctuate"] == ["true"]
-    assert params["paragraphs"] == ["true"]
+    assert params["paragraphs"] == ["false"]
     assert params["diarize"] == ["true"]
     assert params["utterances"] == ["true"]
-    assert params["utt_split"] == ["0.8"]
+    assert params["utt_split"] == ["0.5"]
     assert params["filler_words"] == ["true"]
     assert params["smart_format"] == ["true"]
     assert params["numerals"] == ["true"]
     assert "diarize=True" not in captured["url"]
-    assert "paragraphs=true" in captured["url"]
+    assert "paragraphs=false" in captured["url"]
 
 
 def test_transcribe_chunk_includes_keyterms_in_request(monkeypatch, tmp_path):
@@ -206,10 +206,10 @@ def test_enforce_required_deepgram_flags_overrides_invalid_values():
 
     assert params["utterances"] == "true"
     assert params["diarize"] == "true"
-    assert params["paragraphs"] == "true"
+    assert params["paragraphs"] == "false"
     assert params["smart_format"] == "true"
     assert params["numerals"] == "true"
-    assert params["utt_split"] == "0.8"
+    assert params["utt_split"] == "0.5"
 
 
 def test_transcribe_chunk_logs_params_and_utterance_count(monkeypatch, tmp_path, capsys):

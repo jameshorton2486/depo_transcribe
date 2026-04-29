@@ -516,7 +516,7 @@ Replacing content corrupts the file on save (prior regression — do not repeat)
 3. `_save_transcript()` saves `_canonical_text`, not raw textbox
 4. Rule order in `clean_block()` — 14 rules — MUST NOT change
 5. Character replacement — MUST shift all subsequent word map offsets
-6. `smart_format` / `numerals` / `paragraphs` stay ON; `filler_words` stays ON; `utt_split=0.8` is sent with `utterances=true` (see §19)
+6. `smart_format` / `numerals` stay ON; `paragraphs` stays OFF; `filler_words` stays ON; `utt_split=0.5` is sent with `utterances=true` (see §19)
 
 ---
 
@@ -684,9 +684,8 @@ Exceptions — keep as numerals:
 The flags below are the intentional production values. They are
 enforced by `enforce_required_deepgram_flags()` in
 `pipeline/transcriber.py` and pinned by
-`test_transcribe_chunk_uses_legal_safe_defaults` in
-`pipeline/tests/test_transcriber.py`. Several are explicitly OFF —
-read the rationale before "fixing" them.
+`test_transcribe_chunk_uses_requested_defaults` in
+`pipeline/tests/test_transcriber.py`.
 
 ```python
 model        = "nova-3"   # or "nova-3-medical"
@@ -695,22 +694,25 @@ smart_format = True       # ON — Deepgram may normalize dates/currency upstrea
                           #      Downstream corrections must tolerate preformatted
                           #      values rather than assuming spoken-number input.
 punctuate    = True
-paragraphs   = True       # ON — Deepgram may segment utterance text into
-                          #      paragraph-friendly units before downstream
-                          #      block building and formatting.
+paragraphs   = False      # OFF — enabling Deepgram paragraph segmentation
+                          #       proved harmful for short deposition Q/A turns.
+                          #       Pass-1 processing should receive utterances
+                          #       without upstream paragraph coalescing.
 diarize      = True
 utterances   = True       # required — correction_runner reads this key
 filler_words = True       # verbatim compliance — uh/um are legal record
 numerals     = True       # ON — Deepgram may emit digits upstream. Deterministic
                           #      correction rules must tolerate numeral-first input.
 keyterms     = [...]      # up to 100, from NOD PDF / reporter notes
-utt_split    = 0.8        # split utterances after 0.8s of silence
+utt_split    = 0.5        # tighter split for deposition back-and-forth turns
 ```
 
 **Comparing app output to Deepgram Playground:** The application now
-matches the Playground-style defaults for `smart_format`, `paragraphs`,
-and `numerals`, while also sending `utterances=true`, `diarize=true`,
-`filler_words=true`, and `utt_split=0.8`. Remaining transcript
+matches the Playground-style defaults for `smart_format` and
+`numerals`, while intentionally keeping `paragraphs=false` and sending
+`utterances=true`, `diarize=true`, `filler_words=true`, and
+`utt_split=0.5` to better preserve short deposition turn boundaries.
+Remaining transcript
 differences should now be investigated primarily through keyterms,
 speaker diarization quality, and downstream correction behavior rather
 than those formatting flags.
