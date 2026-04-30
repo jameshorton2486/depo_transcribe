@@ -82,6 +82,14 @@ CARD_INNER_PADY = 10
 TOOLBAR_BTN_W = 160
 TOOLBAR_BTN_H = 32
 
+# ── Typography + control sizing tokens (UI consistency baseline) ───────────
+# Keep primary action labels aligned with utility actions (e.g., Browse) so
+# the UI reads as one system instead of mixed emphasis by font size alone.
+BTN_FONT_SIZE = 13
+BTN_FONT_WEIGHT = "bold"
+BTN_HEIGHT_STANDARD = 32
+TEXTBOX_HEIGHT_STANDARD = 32
+
 
 # ── Surface tokens ───────────────────────────────────────────────────────────
 # Names for the three dark surface levels used by tabs. Existing widgets

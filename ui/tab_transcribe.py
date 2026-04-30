@@ -25,6 +25,9 @@ from ui._components import (
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
     BTN_UTILITY_BLUE_HOVER,
+    BTN_FONT_SIZE,
+    BTN_FONT_WEIGHT,
+    BTN_HEIGHT_STANDARD,
     CARD_BORDER_COLOR,
     CARD_BORDER_WIDTH,
     CARD_GAP_PY,
@@ -888,8 +891,8 @@ class TranscribeTab(ctk.CTkFrame):
         self._create_btn = ctk.CTkButton(
             footer,
             text="CREATE TRANSCRIPT",
-            height=32,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            height=BTN_HEIGHT_STANDARD,
+            font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
             fg_color=BTN_PRIMARY_AMBER,
             hover_color=BTN_PRIMARY_AMBER_HOVER,
             command=self.start_transcription,
@@ -916,46 +919,60 @@ class TranscribeTab(ctk.CTkFrame):
         )
         file_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
-        file_row = ctk.CTkFrame(file_card, fg_color="transparent")
-        file_row.pack(fill="x", padx=CARD_INNER_PADX, pady=_COMPACT_CARD_PADY)
-
         ctk.CTkLabel(
-            file_row,
-            text="Audio / Video File",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="white",
-            width=130,
+            file_card,
+            text="AUDIO / VIDEO FILE",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#7F93AE",
             anchor="w",
-        ).pack(side="left")
+        ).pack(fill="x", padx=CARD_INNER_PADX, pady=(8, 2))
+
+        file_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        file_row.pack(fill="x", padx=CARD_INNER_PADX, pady=(0, 0))
 
         self._file_entry = ctk.CTkEntry(
             file_row,
-            placeholder_text="No file selected — MP3 · MP4 · WAV · M4A · MOV · MKV · FLAC",
+            placeholder_text="No file selected",
             state="disabled",
+            height=38,
         )
-        self._file_entry.pack(side="left", fill="x", expand=True, padx=(6, 8))
+        self._file_entry.pack(fill="x", expand=True)
+
+        ctk.CTkLabel(
+            file_card,
+            text="MP3 · MP4 · WAV · M4A · MOV · MKV · FLAC",
+            font=ctk.CTkFont(size=11),
+            text_color="#6F829C",
+            anchor="w",
+        ).pack(fill="x", padx=CARD_INNER_PADX, pady=(6, 6))
+
+        browse_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        browse_row.pack(fill="x", padx=CARD_INNER_PADX, pady=(0, _COMPACT_CARD_PADY))
 
         ctk.CTkButton(
-            file_row,
-            text="Browse…",
-            width=80,
+            browse_row,
+            text="Browse",
             fg_color=BTN_UTILITY_BLUE,
             hover_color="#0F3E8A",
             text_color="white",
+            height=BTN_HEIGHT_STANDARD,
+            font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
             command=self._browse_file,
-        ).pack(side="right")
+        ).pack(side="left", fill="x", expand=True)
 
         # Multi-file button — opens the CombineAudioDialog. The single-file
         # Browse flow above is unchanged; multi-file is opt-in.
         ctk.CTkButton(
-            file_row,
+            browse_row,
             text="Multiple Files…",
-            width=130,
+            width=150,
             fg_color=BTN_UTILITY_BLUE,
             hover_color="#0F3E8A",
             text_color="white",
+            height=BTN_HEIGHT_STANDARD,
+            font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
             command=self._open_combine_dialog,
-        ).pack(side="right", padx=(0, 6))
+        ).pack(side="left", padx=(8, 0))
 
         # The "Existing Transcript" loader lives on the Transcript tab now
         # (Load Case button). This tab is purely for creating new transcripts;
@@ -976,7 +993,7 @@ class TranscribeTab(ctk.CTkFrame):
         # Model - label inline with combo, single line
         ctk.CTkLabel(
             settings_row,
-            text="Model:",
+            text="MODEL",
             font=ctk.CTkFont(size=13, weight="bold"),
         ).pack(side="left", padx=(0, 6))
         self._model_var = ctk.StringVar(value="nova-3")
@@ -992,7 +1009,7 @@ class TranscribeTab(ctk.CTkFrame):
         # Processing Mode - label inline with combo on the same line
         ctk.CTkLabel(
             settings_row,
-            text="Processing Mode:",
+            text="PROCESSING MODE",
             font=ctk.CTkFont(size=13, weight="bold"),
         ).pack(side="left", padx=(0, 6))
         self._quality_var = ctk.StringVar(value="ENHANCED (fair audio)")
@@ -1017,6 +1034,27 @@ class TranscribeTab(ctk.CTkFrame):
             text_color="gray",
         )
         self._audio_tier_label.pack(side="left")
+
+        self._processing_eta_label = ctk.CTkLabel(
+            settings_card,
+            text="ⓘ Estimated processing time: ~4m 30s",
+            font=ctk.CTkFont(size=11),
+            text_color="#B8CBFF",
+            anchor="w",
+            fg_color="#1A2C66",
+            corner_radius=8,
+            height=32,
+        )
+        self._processing_eta_label.pack(fill="x", padx=CARD_INNER_PADX, pady=(0, 6))
+
+        self._processing_mode_hint = ctk.CTkLabel(
+            settings_card,
+            text="ENHANCED processing",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#E1BC2D",
+            anchor="w",
+        )
+        self._processing_mode_hint.pack(fill="x", padx=CARD_INNER_PADX, pady=(0, _COMPACT_CARD_PADY))
 
         # ── SECTION 2b: Case Information ─────────────────────────────────────
         case_card = ctk.CTkFrame(
@@ -1217,14 +1255,14 @@ class TranscribeTab(ctk.CTkFrame):
             self._speaker_card,
             "SPEAKER LABELS \u2014 Rename before saving",
             font_size=13,
-        ).pack(anchor="w", padx=12, pady=(10, 0))
+        ).pack(anchor="w", padx=CARD_INNER_PADX, pady=(10, 0))
 
         ctk.CTkLabel(
             self._speaker_card,
             text="Replace generic labels with correct names throughout the transcript",
             font=ctk.CTkFont(size=13),
             text_color="gray",
-        ).pack(anchor="w", padx=12, pady=(0, 6))
+        ).pack(anchor="w", padx=CARD_INNER_PADX, pady=(0, 6))
 
         self._speaker_hint_label = ctk.CTkLabel(
             self._speaker_card,
@@ -1240,19 +1278,19 @@ class TranscribeTab(ctk.CTkFrame):
         self._speaker_rows_frame = ctk.CTkFrame(
             self._speaker_card, fg_color="transparent"
         )
-        self._speaker_rows_frame.pack(fill="x", padx=12)
+        self._speaker_rows_frame.pack(fill="x", padx=CARD_INNER_PADX)
 
         self._apply_save_btn = ctk.CTkButton(
             self._speaker_card,
             text="\u2713  Apply Speaker Labels",
-            height=32,
-            font=ctk.CTkFont(size=13, weight="bold"),
+            height=BTN_HEIGHT_STANDARD,
+            font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
             fg_color=BTN_SAFE_GREEN,
             hover_color=BTN_SAFE_GREEN_HOVER,
             text_color="white",
             command=self._apply_and_save_labels,
         )
-        self._apply_save_btn.pack(anchor="e", padx=12, pady=(8, 10))
+        self._apply_save_btn.pack(anchor="e", padx=CARD_INNER_PADX, pady=(8, 10))
 
         # Pack the action footer LAST so it sits beneath the last content
         # card. side='top' here (not 'bottom') is what removes the empty
