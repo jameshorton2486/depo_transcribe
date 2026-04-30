@@ -207,8 +207,12 @@ def make_section_header(
 
     Returns the outer frame so the caller can position it.
     """
-    row = ctk.CTkFrame(parent, fg_color="transparent")
-    # 3px-wide colored strip; corner_radius=0 keeps it crisp.
+    # Fix the row's height to the label's natural line so the bar (a CTkFrame
+    # whose default height is 200) cannot inflate the whole header band.
+    # pack_propagate(False) blocks children from re-sizing the row.
+    row_height = font_size + 8
+    row = ctk.CTkFrame(parent, fg_color="transparent", height=row_height)
+    row.pack_propagate(False)
     bar = ctk.CTkFrame(row, width=3, fg_color=accent, corner_radius=0)
     bar.pack(side="left", padx=(0, 6), pady=2, fill="y")
     ctk.CTkLabel(
