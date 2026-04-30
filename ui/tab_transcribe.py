@@ -2798,6 +2798,35 @@ class TranscribeTab(ctk.CTkFrame):
         if result.get("success"):
             self._formatted_docx_path = result.get("docx_path")
             self._last_transcript_path = self._formatted_docx_path
+
+            # Verify the file actually landed on disk before claiming
+            # success. NTFS can silently write into an alternate data
+            # stream when a filename contains illegal chars (notably ':').
+            # The writer sanitizes now, but defense in depth: never tell
+            # the reporter their deposition is ready when it isn't there.
+            reported_path = self._formatted_docx_path
+            if not reported_path or not Path(reported_path).is_file():
+                path_text = str(reported_path) if reported_path else "(no path returned)"
+                logger.error(
+                    "[TranscribeTab] clean_format reported success but file not found at: %s",
+                    path_text,
+                )
+                self._append_transcript_log(
+                    f"ERROR: document not found at reported path: {path_text}"
+                )
+                self._status_progress.set(0)
+                self._set_transcript_status(
+                    f"Document write failed — file not found at {path_text}",
+                    "#FF4444",
+                )
+                messagebox.showerror(
+                    "Document Write Failed",
+                    "The transcription completed but no document was found at:\n\n"
+                    f"{path_text}\n\n"
+                    "Check the run log for details.",
+                )
+                return
+
             self._append_transcript_log(f"Deposition document written to: {self._formatted_docx_path}")
             self._status_progress.set(1)
             self._set_transcript_status(
