@@ -964,6 +964,7 @@ class TranscribeTab(ctk.CTkFrame):
         body.grid_columnconfigure(1, weight=3, uniform="cols")
         body.grid_columnconfigure(2, weight=3, uniform="cols")
         body.grid_rowconfigure(0, weight=1)
+        body.grid_rowconfigure(1, weight=0)
 
         # ── Column 1: Source Media ─────────────────────────────────────────────
         source_card = _make_card(body)
@@ -1374,9 +1375,9 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_transcript_btn.grid(row=1, column=1, sticky="ew", padx=(4, 0))
 
-        # ── Speaker labels card (gridded into row 2 only after a run) ──────────
-        # Created here but not gridded; _populate_speaker_rows places it.
-        self._speaker_card = _make_card(self)
+        # ── Speaker labels card (gridded into body row 1 only after a run) ─────
+        # Created here but not gridded; _show_speaker_section places it.
+        self._speaker_card = _make_card(body)
         make_section_header(
             self._speaker_card,
             "☷ Speaker Labels — Rename before saving",
@@ -2913,7 +2914,13 @@ class TranscribeTab(ctk.CTkFrame):
                         command=lambda e=entry, value=label: self._set_speaker_entry_value(e, value),
                     ).pack(side="left", padx=(0, 6))
 
-        self._speaker_card.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, _SECTION_GAP_Y))
+        self._speaker_card.grid(
+            row=1,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(0, _SECTION_GAP_Y),
+        )
 
     @staticmethod
     def _set_speaker_entry_value(entry: ctk.CTkEntry, value: str):
