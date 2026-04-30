@@ -922,7 +922,7 @@ class TranscribeTab(ctk.CTkFrame):
         ctk.CTkLabel(
             file_card,
             text="AUDIO / VIDEO FILE",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
             text_color="#7F93AE",
             anchor="w",
         ).pack(fill="x", padx=CARD_INNER_PADX, pady=(8, 2))
