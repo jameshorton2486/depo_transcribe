@@ -935,7 +935,7 @@ class TranscribeTab(ctk.CTkFrame):
             file_row,
             placeholder_text="No file selected",
             state="disabled",
-            height=38,
+            height=TEXTBOX_HEIGHT_STANDARD,
         )
         self._file_entry.pack(fill="x", expand=True)
 
