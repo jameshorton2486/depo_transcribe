@@ -14,12 +14,15 @@ jobs/*.pkl
 work_files/*.json
 work_files/transcripts/
 *.log
+.coverage
 .pytest_cache/
 .pytest_tmp/
 .idea/
 .claude/
 *.bak
+*.backup
 tmp_app_window*.png
+transcribe_ui_check*.png
 
 .pytest_tmp*/
 .pytest_tmp_*/
@@ -37,4 +40,3 @@ CONSOLIDATION_PROMPT.md.pdf
 training_corpus/*
 !training_corpus/README.md
 !training_corpus/.gitkeep
-
