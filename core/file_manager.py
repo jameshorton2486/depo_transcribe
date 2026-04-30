@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,18 @@ MONTH_ABBR = {
 
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
 
-_DATE_FORMATS = ("%m/%d/%Y", "%B %d, %Y")
+_DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y")
+
+# Intake-produced strings often append a start time after the date
+# ("April 9, 2026 at 8:00 a.m."). Strip that suffix before strptime so
+# the strict formats above have a chance to match instead of falling
+# through to today's date.
+_TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
+
+
+def _normalize_deposition_date(value: str) -> str:
+    """Strip a trailing ' at HH:MM ...' suffix and surrounding whitespace."""
+    return _TRAILING_AT_SUFFIX.sub("", value or "").strip()
 
 
 def build_case_path(
@@ -29,10 +41,11 @@ def build_case_path(
     deposition_date: str | None = None,
 ) -> str:
     if deposition_date:
+        candidate = _normalize_deposition_date(deposition_date)
         dt = None
         for fmt in _DATE_FORMATS:
             try:
-                dt = datetime.strptime(deposition_date, fmt)
+                dt = datetime.strptime(candidate, fmt)
                 break
             except ValueError:
                 continue
