@@ -253,7 +253,7 @@ def _extract_structured_entities(text: str) -> list[str]:
 
 def extract_keyterms_from_text(text: str) -> list[str]:
     """
-    Extract candidate keyterms from reporter notes text.
+    Extract candidate keyterms from source-document text.
 
     Uses structured regex extraction first, then supplements with quoted
     phrases, legal all-caps terms, and proper noun phrases.
@@ -282,7 +282,7 @@ def merge_keyterms(
     limit: int = MAX_KEYTERMS,
 ) -> tuple[list[str], list[str], list[str]]:
     """
-    Merge primary PDF/manual terms with optional reporter notes.
+    Merge primary intake/PDF terms with optional supplementary source-doc terms.
 
     Returns:
         final_terms, clean_primary_terms, reporter_terms_used

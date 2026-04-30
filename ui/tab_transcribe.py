@@ -19,8 +19,6 @@ import customtkinter as ctk
 
 from ui._components import (
     AUDIO_VIDEO_EXTENSIONS,
-    BTN_PRIMARY_AMBER,
-    BTN_PRIMARY_AMBER_HOVER,
     BTN_SAFE_GREEN,
     BTN_SAFE_GREEN_HOVER,
     BTN_UTILITY_BLUE,
@@ -52,6 +50,11 @@ _ENTRY_BORDER = "#1E3A5F"
 _HEADER_BG = "#1E3A5F"
 _AMBER = "#B8860B"
 _AMBER_DARK = "#2A1A00"
+_PRIMARY_ACTION_BLUE = "#1E6EEB"
+_PRIMARY_ACTION_BLUE_HOVER = "#1858B8"
+_LABEL_TEXT_COLOR = "#8CA0B3"
+_PRIMARY_ACTION_TEXT = "START TRANSCRIPTION"
+_SOURCE_DOC_SUFFIXES = {".pdf", ".docx", ".txt"}
 
 
 def _normalize_ui_speaker_map(raw: dict | None) -> dict[int, str]:
@@ -860,11 +863,12 @@ class TranscribeTab(ctk.CTkFrame):
         self._saved_speaker_map: dict[int, str] = {}
         self._extracted_case_data: dict = {}
         self._ufm_fields: dict = {}
-        self._reporter_notes_text: str = ""
+        self._source_docs_text: str = ""
+        self._source_docs_keyterms: list[str] = []
         self._pdf_keyterms: list[str] = []
         self._confirmed_spellings: dict = {}
         self._last_pdf_path: str | None = None
-        self._last_reporter_notes_path: str | None = None
+        self._source_doc_paths: list[str] = []
         self._pdf_already_loaded = False
         self._current_case_path: str | None = None
         self._formatted_docx_path: str | None = None
@@ -878,7 +882,9 @@ class TranscribeTab(ctk.CTkFrame):
     # ── UI Construction ──────────────────────────────────────────────────────
 
     def _build_ui(self):
-        # ── Amber action footer — CREATE TRANSCRIPT (defined now, packed
+        label_font = ctk.CTkFont(size=11, weight="bold")
+
+        # ── Primary action footer — start transcription (defined now, packed
         #     at the end of _build_ui so it sits immediately under the
         #     last content card with no empty area above it). ──────────────
         footer = ctk.CTkFrame(self, fg_color="transparent", height=32)
@@ -886,11 +892,11 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._create_btn = ctk.CTkButton(
             footer,
-            text="CREATE TRANSCRIPT",
-            height=32,
-            font=ctk.CTkFont(size=14, weight="bold"),
-            fg_color=BTN_PRIMARY_AMBER,
-            hover_color=BTN_PRIMARY_AMBER_HOVER,
+            text=_PRIMARY_ACTION_TEXT,
+            height=40,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color=_PRIMARY_ACTION_BLUE,
+            hover_color=_PRIMARY_ACTION_BLUE_HOVER,
             command=self.start_transcription,
         )
         self._create_btn.pack(fill="both", expand=True)
@@ -915,14 +921,20 @@ class TranscribeTab(ctk.CTkFrame):
         )
         file_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
+        make_section_header(
+            file_card,
+            "1. SOURCE MEDIA",
+            font_size=13,
+        ).pack(anchor="w", padx=12, pady=(10, 0))
+
         file_row = ctk.CTkFrame(file_card, fg_color="transparent")
         file_row.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
         ctk.CTkLabel(
             file_row,
-            text="Audio / Video File",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="white",
+            text="AUDIO / VIDEO FILE",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
             width=130,
             anchor="w",
         ).pack(side="left")
@@ -969,14 +981,21 @@ class TranscribeTab(ctk.CTkFrame):
         )
         settings_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
+        make_section_header(
+            settings_card,
+            "2. ENGINE CONFIG",
+            font_size=13,
+        ).pack(anchor="w", padx=12, pady=(10, 0))
+
         settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
         settings_row.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
         # Model - label inline with combo, single line
         ctk.CTkLabel(
             settings_row,
-            text="Model:",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            text="MODEL",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
         ).pack(side="left", padx=(0, 6))
         self._model_var = ctk.StringVar(value="nova-3")
         self._model_combo = ctk.CTkComboBox(
@@ -991,8 +1010,9 @@ class TranscribeTab(ctk.CTkFrame):
         # Processing Mode - label inline with combo on the same line
         ctk.CTkLabel(
             settings_row,
-            text="Processing Mode:",
-            font=ctk.CTkFont(size=13, weight="bold"),
+            text="PROCESSING MODE",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
         ).pack(side="left", padx=(0, 6))
         self._quality_var = ctk.StringVar(value="ENHANCED (fair audio)")
         self._quality_combo = ctk.CTkComboBox(
@@ -1025,13 +1045,24 @@ class TranscribeTab(ctk.CTkFrame):
         )
         case_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
+        make_section_header(
+            case_card,
+            "3. DEPOSITION DETAILS",
+            font_size=13,
+        ).pack(anchor="w", padx=12, pady=(10, 0))
+
         case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
         case_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
         case_inner.columnconfigure((0, 1, 2, 3), weight=1)
 
         base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
         base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 2))
-        ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(
+            base_frame,
+            text="BASE SAVE FOLDER",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+        ).pack(anchor="w")
         base_row = ctk.CTkFrame(base_frame, fg_color="transparent")
         base_row.pack(fill="x", pady=(2, 0))
         self._base_dir_var = ctk.StringVar(value=_DEFAULT_BASE_DIR)
@@ -1048,7 +1079,12 @@ class TranscribeTab(ctk.CTkFrame):
         cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 2))
         cause_lbl_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
         cause_lbl_row.pack(fill="x")
-        ctk.CTkLabel(cause_lbl_row, text="Cause Number", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkLabel(
+            cause_lbl_row,
+            text="CAUSE NUMBER",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+        ).pack(side="left")
         self._cause_badge = ctk.CTkLabel(cause_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
         self._cause_badge.pack(side="left", padx=(4, 0))
         self._cause_var = ctk.StringVar()
@@ -1059,7 +1095,12 @@ class TranscribeTab(ctk.CTkFrame):
         name_frame.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=(0, 2))
         name_lbl_row = ctk.CTkFrame(name_frame, fg_color="transparent")
         name_lbl_row.pack(fill="x")
-        ctk.CTkLabel(name_lbl_row, text="Last Name", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkLabel(
+            name_lbl_row,
+            text="LAST NAME",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+        ).pack(side="left")
         self._witness_badge = ctk.CTkLabel(name_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
         self._witness_badge.pack(side="left", padx=(4, 0))
         self._lastname_var = ctk.StringVar()
@@ -1068,7 +1109,12 @@ class TranscribeTab(ctk.CTkFrame):
 
         first_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
         first_frame.grid(row=1, column=2, sticky="ew", padx=(0, 6), pady=(0, 2))
-        ctk.CTkLabel(first_frame, text="First Name", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(
+            first_frame,
+            text="FIRST NAME",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+        ).pack(anchor="w")
         self._firstname_var = ctk.StringVar()
         ctk.CTkEntry(first_frame, textvariable=self._firstname_var, placeholder_text="e.g. Matthew").pack(fill="x", pady=(2, 0))
         self._firstname_var.trace_add("write", lambda *_: self._update_path_preview())
@@ -1077,7 +1123,12 @@ class TranscribeTab(ctk.CTkFrame):
         date_frame.grid(row=1, column=3, sticky="ew", pady=(0, 2))
         date_lbl_row = ctk.CTkFrame(date_frame, fg_color="transparent")
         date_lbl_row.pack(fill="x")
-        ctk.CTkLabel(date_lbl_row, text="Deposition Date", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        ctk.CTkLabel(
+            date_lbl_row,
+            text="DEPOSITION DATE",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+        ).pack(side="left")
         self._date_badge = ctk.CTkLabel(date_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
         self._date_badge.pack(side="left", padx=(4, 0))
         self._date_var = ctk.StringVar()
@@ -1116,6 +1167,12 @@ class TranscribeTab(ctk.CTkFrame):
         )
         source_docs_card.pack(fill="x", pady=(0, CARD_GAP_PY))
 
+        make_section_header(
+            source_docs_card,
+            "SUPPORTING DOCUMENTS",
+            font_size=13,
+        ).pack(anchor="w", padx=12, pady=(10, 0))
+
         kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
         kt_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
 
@@ -1148,12 +1205,12 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._upload_reporter_notes_btn = ctk.CTkButton(
             toolbar_left,
-            text="\U0001f4dd  Reporter Notes",
+            text="\U0001f4dd  NOD and Notes",
             width=TOOLBAR_BTN_W,
             height=TOOLBAR_BTN_H,
             fg_color=BTN_UTILITY_BLUE,
             hover_color="#0F3E8A",
-            command=self._upload_reporter_notes,
+            command=self._upload_nod_and_notes,
         )
         self._upload_reporter_notes_btn.pack(side="left", padx=(0, 6))
 
@@ -1182,9 +1239,6 @@ class TranscribeTab(ctk.CTkFrame):
         toolbar_right = ctk.CTkFrame(toolbar, fg_color="transparent")
         toolbar_right.pack(side="right", anchor="e")
 
-        # Pack right-to-left so the visual order is:
-        # [status]   [Review & Edit]
-        # Re-Scan moved next to the "Will save to:" preview in case_card.
         self._review_btn = ctk.CTkButton(
             toolbar_right,
             text="\U0001f4cb Review & Edit",
@@ -1195,12 +1249,40 @@ class TranscribeTab(ctk.CTkFrame):
             state="disabled",
             command=self._open_review_dialog,
         )
-        self._review_btn.pack(side="right", padx=(6, 0))
+        self._review_btn.pack(side="right")
+
+        self._status_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        self._status_card.pack(fill="x", pady=(0, CARD_GAP_PY))
+
+        status_row = ctk.CTkFrame(self._status_card, fg_color="transparent")
+        status_row.pack(fill="x", padx=CARD_INNER_PADX, pady=CARD_INNER_PADY)
+
+        ctk.CTkLabel(
+            status_row,
+            text="STATUS",
+            font=label_font,
+            text_color=_LABEL_TEXT_COLOR,
+            width=70,
+            anchor="w",
+        ).pack(side="left", padx=(0, 10))
+
+        self._status_progress = ctk.CTkProgressBar(status_row, width=220)
+        self._status_progress.pack(side="left", padx=(0, 10))
+        self._status_progress.set(0)
 
         self._extract_status_label = ctk.CTkLabel(
-            toolbar_right, text="Ready", font=ctk.CTkFont(size=12), text_color="gray",
+            status_row,
+            text="Ready",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+            anchor="w",
+            justify="left",
         )
-        self._extract_status_label.pack(side="right")
+        self._extract_status_label.pack(side="left", fill="x", expand=True)
 
         self._run_log_card = ctk.CTkFrame(
             container,
@@ -1300,15 +1382,18 @@ class TranscribeTab(ctk.CTkFrame):
         self._set_transcript_status(text, color)
 
     def set_transcription_running(self):
+        self._status_progress.set(0.05)
         self._set_transcript_status("Transcribing audio...", "white")
 
     def set_transcription_complete(self, transcript_path: str, folder_path: str):
         self._last_transcript_path = transcript_path
         self._current_txt_path = transcript_path
         self._current_case_path = folder_path
+        self._status_progress.set(0.85)
         self._set_transcript_status("Deepgram transcript complete", "#44FF44")
 
     def set_transcription_failed(self, error_msg: str):
+        self._status_progress.set(0)
         self._set_transcript_status(f"Transcription failed: {error_msg}", "#FF4444")
 
     def load_transcript(self, filepath: str):
@@ -1375,13 +1460,14 @@ class TranscribeTab(ctk.CTkFrame):
     def _reset_case_state(self):
         """Reset auto-detected case data when switching to a new case."""
         self._pdf_already_loaded = False
-        self._reporter_notes_text = ""
+        self._source_docs_text = ""
+        self._source_docs_keyterms = []
         self._pdf_keyterms = []
         self._confirmed_spellings = {}
         self._speaker_map_suggestion = {}
         self._saved_speaker_map = {}
         self._last_pdf_path = None
-        self._last_reporter_notes_path = None
+        self._source_doc_paths = []
         self._extracted_case_data = {}
         self._current_case_path = None
         self._last_transcript_path = None
@@ -1395,9 +1481,9 @@ class TranscribeTab(ctk.CTkFrame):
             state="normal",
         )
         # Open Output Folder + Open Transcript are pickers now — always enabled.
-        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+        self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
         self._upload_reporter_notes_btn.configure(
-            text="\U0001f4dd  Reporter Notes",
+            text="\U0001f4dd  NOD and Notes",
             fg_color=BTN_UTILITY_BLUE,
         )
         self._set_case_files_panel_expanded(True)
@@ -1433,9 +1519,11 @@ class TranscribeTab(ctk.CTkFrame):
             self._set_create_buttons(state="disabled", text="CORRECTION MODE — Transcription Disabled")
 
     def _force_rescan(self):
-        """Force re-detection of PDF and reporter notes from source_docs."""
+        """Force re-detection of source documents from source_docs."""
         self._pdf_already_loaded = False
-        self._reporter_notes_text = ""
+        self._source_docs_text = ""
+        self._source_docs_keyterms = []
+        self._source_doc_paths = []
         self._pdf_keyterms = []
         self._extracted_case_data = {}
         self._review_btn.configure(state="disabled")
@@ -1444,7 +1532,7 @@ class TranscribeTab(ctk.CTkFrame):
             fg_color=BTN_UTILITY_BLUE,
         )
         self._upload_reporter_notes_btn.configure(
-            text="\U0001f4dd  Reporter Notes",
+            text="\U0001f4dd  NOD and Notes",
             fg_color=BTN_UTILITY_BLUE,
         )
         self._extract_status_label.configure(
@@ -1485,10 +1573,10 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _auto_detect_source_docs(self):
         """
-        Detect PDF and reporter notes from the resolved case folder.
+        Detect source documents from the resolved case folder.
         Only runs when the case folder exists on disk.
         """
-        from core.pdf_extractor import find_case_pdf, find_reporter_notes
+        from core.pdf_extractor import find_case_pdf
         from core.job_config_manager import load_job_config
 
         base_path = self._get_current_save_path()
@@ -1525,16 +1613,17 @@ class TranscribeTab(ctk.CTkFrame):
             else:
                 logger.info("[Auto-Detect] No PDF found in source_docs.")
 
-        if not self._reporter_notes_text:
-            notes_path = find_reporter_notes(str(base_path))
-            if notes_path:
+        if not self._source_docs_text:
+            source_doc_paths = self._list_supported_source_docs(str(base_path))
+            non_pdf_paths = [path for path in source_doc_paths if Path(path).suffix.lower() != ".pdf"]
+            if non_pdf_paths:
                 try:
-                    self._load_reporter_notes(notes_path, auto_detected=True)
-                    logger.info("[Auto-Detect] Reporter notes found: %s", notes_path)
+                    self._load_source_documents(source_doc_paths, auto_detected=True)
+                    logger.info("[Auto-Detect] Source documents found: %s", source_doc_paths)
                 except Exception as exc:
-                    logger.warning("[Auto-Detect] Could not read reporter notes: %s", exc)
+                    logger.warning("[Auto-Detect] Could not load source documents: %s", exc)
             else:
-                logger.info("[Auto-Detect] No reporter notes found in source_docs.")
+                logger.info("[Auto-Detect] No non-PDF source documents found in source_docs.")
 
     def _build_case_data_from_ufm_fields(self, ufm_fields: dict, witness_fallback: str = "") -> dict:
         """Convert flat saved UFM fields back into the intake-shaped data the review dialog expects."""
@@ -1749,6 +1838,57 @@ class TranscribeTab(ctk.CTkFrame):
             shutil.copy2(source_path, dest)
         return dest
 
+    @staticmethod
+    def _is_supported_source_doc(path: str | Path) -> bool:
+        return Path(path).suffix.lower() in _SOURCE_DOC_SUFFIXES
+
+    def _list_supported_source_docs(self, case_root: str) -> list[str]:
+        source_docs = Path(case_root) / "source_docs"
+        if not source_docs.is_dir():
+            return []
+
+        excluded_txt = {
+            "transcript.txt",
+            "transcript_corrected.txt",
+            "deepgram_raw_transcript.txt",
+        }
+
+        paths: list[Path] = []
+        for path in source_docs.iterdir():
+            if not path.is_file():
+                continue
+            if path.suffix.lower() not in _SOURCE_DOC_SUFFIXES:
+                continue
+            if path.suffix.lower() == ".txt" and path.name.lower() in excluded_txt:
+                continue
+            paths.append(path)
+
+        return [str(path) for path in sorted(paths, key=lambda item: item.stat().st_mtime, reverse=True)]
+
+    @staticmethod
+    def _summarize_loaded_filenames(file_paths: list[str], prefix: str = "Loaded") -> str:
+        names = [Path(path).name for path in file_paths]
+        text = f"{prefix} {len(names)} file(s): {', '.join(names)}"
+        max_len = 110
+        if len(text) <= max_len:
+            return text
+
+        truncated = text[: max_len - 3].rstrip(", ")
+        return f"{truncated}..."
+
+    def _sync_source_docs_to_case_folder(self) -> None:
+        if not self._source_doc_paths:
+            return
+
+        synced_paths: list[str] = []
+        for path in self._source_doc_paths:
+            try:
+                synced_paths.append(self._persist_source_doc(path))
+            except Exception as exc:
+                logger.warning("[SourceDocs] Could not persist source document %s: %s", path, exc)
+                synced_paths.append(path)
+        self._source_doc_paths = synced_paths
+
     def _open_output_folder(self):
         """
         Folder picker for the BASE save folder. Per-case folders are
@@ -1866,6 +2006,7 @@ class TranscribeTab(ctk.CTkFrame):
         from core.job_config_manager import load_job_config
         job_config_data = load_job_config(folder)
         self._apply_saved_transcription_settings(job_config_data)
+        self._auto_detect_source_docs()
 
         logger.info("[LoadProject] Project loaded from: %s", folder)
 
@@ -1982,7 +2123,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._loaded_transcript_path = None
         self._loaded_case_folder = None
 
-        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+        self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
 
         self._reset_case_state()
 
@@ -2086,35 +2227,7 @@ class TranscribeTab(ctk.CTkFrame):
         intake_result = results.get("intake_result")
         self._pdf_keyterms = list(results.get("keyterms", []) or [])
         if intake_result:
-            deponent_name = ""
-            if intake_result.deponents:
-                deponent_name = str(intake_result.deponents[0].get("name", "")).strip()
-            self._extracted_case_data = {
-                "deposition_details": {
-                    "cause_number": intake_result.cause_number or "",
-                    "witness": deponent_name,
-                    "date": intake_result.deposition_date or "",
-                    "court": intake_result.court or "",
-                    "court_caption": intake_result.court or "",
-                    "case_style": intake_result.case_style or "",
-                    "method": intake_result.deposition_method or "",
-                    "ordered_by": intake_result.ordered_by or "",
-                    "amendment": intake_result.amendment or "",
-                },
-                "ordering_attorney": dict(intake_result.ordering_attorney or {}),
-                "filing_attorney": dict(intake_result.filing_attorney or {}),
-                "copy_attorneys": list(intake_result.copy_attorneys or []),
-                "all_attorneys": [],
-                "court_reporter": {
-                    "name": intake_result.reporter_name or "",
-                    "csr_number": intake_result.reporter_csr or "",
-                    "agency": intake_result.reporter_firm or "",
-                },
-                "discrepancies": [],
-            }
-            self._populate_case_fields(self._extracted_case_data)
-            self._review_btn.configure(state="normal")
-            self._confirmed_spellings = dict(intake_result.confirmed_spellings)
+            self._apply_intake_result_to_ui(intake_result)
             self._extract_status_label.configure(
                 text="Case data extracted",
                 text_color="#44FF44",
@@ -2129,17 +2242,7 @@ class TranscribeTab(ctk.CTkFrame):
                             self._last_pdf_path = persisted_pdf
                     except Exception as exc:
                         logger.warning("[SourceDocs] Could not persist PDF after extraction: %s", exc)
-                from core.job_config_manager import merge_and_save
-                from core.ufm_field_mapper import map_intake_to_ufm
-                ufm_fields = map_intake_to_ufm(self._extracted_case_data)
-                merge_and_save(
-                    self._current_case_path,
-                    ufm_fields=ufm_fields,
-                    confirmed_spellings=dict(intake_result.confirmed_spellings),
-                    deepgram_keyterms=self._pdf_keyterms or None,
-                    speaker_map_suggestion=dict(intake_result.speaker_map_suggestion or {}),
-                    intake_entity_counts=dict(intake_result.entity_counts or {}),
-                )
+                self._save_intake_result_to_job_config(intake_result)
                 logger.info("[UI] Saved %d deepgram_keyterms to job_config", len(self._pdf_keyterms))
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
 
@@ -2155,47 +2258,195 @@ class TranscribeTab(ctk.CTkFrame):
         self._auto_detect_source_docs()
         IntakeReviewDialog(self, self._extracted_case_data)
 
-    def _load_reporter_notes(self, filepath: str, auto_detected: bool = False):
-        saved_path = filepath if auto_detected else self._persist_source_doc(filepath, preferred_name="reporter_notes.txt")
-        with open(saved_path, "r", encoding="utf-8") as handle:
-            self._reporter_notes_text = handle.read()
-        self._last_reporter_notes_path = saved_path
+    def _set_source_doc_status(self, file_paths: list[str], keyterm_count: int | None = None, color: str = "#44FF44"):
+        count = len(file_paths)
+        if keyterm_count is None:
+            text = self._summarize_loaded_filenames(file_paths)
+        else:
+            text = f"{count} document(s) loaded — {keyterm_count} keyterms extracted"
+        self._extract_status_label.configure(text=text, text_color=color)
 
-        btn_text = "Notes Auto-Detected" if auto_detected else "Notes Loaded"
+    def _apply_intake_result_to_ui(self, intake_result) -> None:
+        deponent_name = ""
+        if intake_result.deponents:
+            deponent_name = str(intake_result.deponents[0].get("name", "")).strip()
+
+        self._extracted_case_data = {
+            "deposition_details": {
+                "cause_number": intake_result.cause_number or "",
+                "witness": deponent_name,
+                "date": intake_result.deposition_date or "",
+                "court": intake_result.court or "",
+                "court_caption": intake_result.court or "",
+                "case_style": intake_result.case_style or "",
+                "method": intake_result.deposition_method or "",
+                "ordered_by": intake_result.ordered_by or "",
+                "amendment": intake_result.amendment or "",
+            },
+            "ordering_attorney": dict(intake_result.ordering_attorney or {}),
+            "filing_attorney": dict(intake_result.filing_attorney or {}),
+            "copy_attorneys": list(intake_result.copy_attorneys or []),
+            "all_attorneys": [],
+            "court_reporter": {
+                "name": intake_result.reporter_name or "",
+                "csr_number": intake_result.reporter_csr or "",
+                "agency": intake_result.reporter_firm or "",
+            },
+            "discrepancies": [],
+        }
+        self._populate_case_fields(self._extracted_case_data)
+        self._review_btn.configure(state="normal")
+        self._confirmed_spellings = dict(intake_result.confirmed_spellings or {})
+        self._speaker_map_suggestion = dict(intake_result.speaker_map_suggestion or {})
+        self._pdf_keyterms = self._build_keyterms_from_intake(intake_result)
+
+    def _save_intake_result_to_job_config(self, intake_result) -> None:
+        if not self._current_case_path:
+            return
+
+        self._create_case_folders_now()
+        self._sync_source_docs_to_case_folder()
+
+        from core.job_config_manager import merge_and_save
+        from core.ufm_field_mapper import map_intake_to_ufm
+
+        ufm_fields = map_intake_to_ufm(self._extracted_case_data)
+        merge_and_save(
+            self._current_case_path,
+            ufm_fields=ufm_fields,
+            confirmed_spellings=dict(intake_result.confirmed_spellings or {}),
+            deepgram_keyterms=self._pdf_keyterms or None,
+            speaker_map_suggestion=dict(intake_result.speaker_map_suggestion or {}),
+            intake_entity_counts=dict(intake_result.entity_counts or {}),
+        )
+
+    def _apply_source_docs_results(
+        self,
+        file_paths: list[str],
+        combined_text: str,
+        intake_result,
+        keyterms: list[str],
+        auto_detected: bool = False,
+    ) -> None:
+        self._source_doc_paths = list(file_paths)
+        self._source_docs_text = combined_text
+        self._source_docs_keyterms = list(keyterms or [])
+
         self._upload_reporter_notes_btn.configure(
-            text=btn_text,
+            text="Docs Auto-Detected" if auto_detected else "Docs Loaded",
             fg_color="#2A6F3A",
+            state="normal",
+        )
+
+        if intake_result:
+            self._apply_intake_result_to_ui(intake_result)
+            self._save_intake_result_to_job_config(intake_result)
+
+        self._set_source_doc_status(file_paths, keyterm_count=len(self._source_docs_keyterms))
+        self._append_transcript_log(
+            f"{'Auto-detected' if auto_detected else 'Loaded'} source documents: "
+            + ", ".join(Path(path).name for path in file_paths)
+        )
+
+    def _on_source_docs_load_failed(self, error_msg: str) -> None:
+        self._source_docs_text = ""
+        self._source_docs_keyterms = []
+        self._source_doc_paths = []
+        self._upload_reporter_notes_btn.configure(
+            text="Load Failed",
+            fg_color="#8B0000",
+            state="normal",
         )
         self._extract_status_label.configure(
-            text=(
-                f"Reporter notes {'auto-detected' if auto_detected else 'loaded'}: "
-                f"{os.path.basename(saved_path)}"
-            ),
-            text_color="#44FF44",
+            text=f"Source document load failed: {error_msg}",
+            text_color="#FF4444",
         )
 
-        self._append_transcript_log(
-            f"{'Auto-detected' if auto_detected else 'Loaded'} reporter notes: {saved_path}"
-        )
+    def _load_source_documents(self, file_paths: list[str], auto_detected: bool = False):
+        supported_paths: list[str] = []
+        for path in file_paths:
+            if not self._is_supported_source_doc(path):
+                logger.warning("[SourceDocs] Unsupported file skipped: %s", path)
+                continue
+            try:
+                saved_path = str(path) if auto_detected else self._persist_source_doc(str(path))
+            except Exception as exc:
+                logger.warning("[SourceDocs] Could not persist %s: %s", path, exc)
+                saved_path = str(path)
+            supported_paths.append(saved_path)
 
-    def _upload_reporter_notes(self):
-        """Open file dialog to select court reporter notes text file."""
-        filepath = filedialog.askopenfilename(
-            title="Select Court Reporter Notes",
-            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
+        deduped_paths = list(dict.fromkeys(supported_paths))
+        if not deduped_paths:
+            return
+
+        self._source_doc_paths = deduped_paths
+        self._set_source_doc_status(deduped_paths)
+        self._upload_reporter_notes_btn.configure(state="disabled", text="Processing…")
+
+        def _run():
+            from core.intake_parser import parse_intake_document
+            from core.keyterm_extractor import extract_keyterms_from_text
+            from core.source_docs_extractor import extract_text_from_files
+
+            try:
+                combined_text = extract_text_from_files([Path(path) for path in deduped_paths])
+                intake_result = None
+                if combined_text.strip():
+                    intake_result = parse_intake_document(
+                        "",
+                        progress_callback=lambda msg: self.after(0, self._append_transcript_log, msg),
+                        extracted_text=combined_text,
+                    )
+                keyterms = extract_keyterms_from_text(combined_text)
+                self.after(
+                    0,
+                    self._apply_source_docs_results,
+                    deduped_paths,
+                    combined_text,
+                    intake_result,
+                    keyterms,
+                    auto_detected,
+                )
+            except Exception as exc:
+                logger.exception("[SourceDocs] Source document load failed")
+                self.after(0, self._on_source_docs_load_failed, str(exc))
+
+        def _start_worker():
+            self._extract_status_label.configure(
+                text=f"{len(deduped_paths)} document(s) loaded — extracting keyterms...",
+                text_color="white",
+            )
+            threading.Thread(target=_run, daemon=True).start()
+
+        self.after(250, _start_worker)
+
+    def _upload_nod_and_notes(self):
+        """Open a multi-select dialog for NOD and supporting notes documents."""
+        filepaths = filedialog.askopenfilenames(
+            title="Select NOD and Notes",
+            filetypes=[
+                ("Supported documents", "*.pdf *.docx *.txt"),
+                ("PDF files", "*.pdf"),
+                ("Word documents", "*.docx"),
+                ("Text files", "*.txt"),
+                ("All files", "*.*"),
+            ],
         )
-        if not filepath:
+        if not filepaths:
             return
 
         try:
-            self._load_reporter_notes(filepath, auto_detected=False)
+            self._load_source_documents(list(filepaths), auto_detected=False)
         except Exception as exc:
-            self._reporter_notes_text = ""
+            self._source_docs_text = ""
+            self._source_docs_keyterms = []
+            self._source_doc_paths = []
             self._upload_reporter_notes_btn.configure(
                 text="Load Failed",
                 fg_color="#8B0000",
+                state="normal",
             )
-            messagebox.showerror("Reporter Notes Error", str(exc))
+            messagebox.showerror("NOD and Notes Error", str(exc))
 
     # ── Transcription Flow ───────────────────────────────────────────────────
 
@@ -2277,16 +2528,16 @@ class TranscribeTab(ctk.CTkFrame):
         except Exception as exc:
             logger.exception("[TranscribeTab] start_transcription failed")
             self._running = False
-            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            self._status_progress.set(0)
+            self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
             messagebox.showerror("Transcription Error", str(exc))
 
     def _run_job(self):
         from core.job_runner import run_transcription_job
-        from core.keyterm_extractor import extract_keyterms_from_text, merge_keyterms
+        from core.keyterm_extractor import merge_keyterms
 
         self._create_case_folders_now()
-        reporter_terms = extract_keyterms_from_text(self._reporter_notes_text or "")
-        final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, reporter_terms)
+        final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, self._source_docs_keyterms)
         if final_keyterms:
             self._append_transcript_log(f"Using {len(final_keyterms)} Deepgram keyterms")
 
@@ -2319,6 +2570,8 @@ class TranscribeTab(ctk.CTkFrame):
         self.after(0, self._finish, result)
 
     def _update_progress(self, percent: float, message: str):
+        normalized = percent / 100 if percent > 1 else percent
+        self._status_progress.set(max(0, min(normalized, 0.85)))
         self._set_transcript_status(message, "white")
 
     def _finish(self, result: dict):
@@ -2330,7 +2583,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._transcript_text = result.get("transcript_text", "")
             self._last_output_dir = result.get("output_dir", "")
             # Open Output Folder + Open Transcript are pickers — already enabled.
-            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
             self._open_folder_btn.configure(state="normal")
             self._open_transcript_btn.configure(state="normal")
 
@@ -2360,7 +2613,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._start_clean_format(result)
         else:
             error_msg = result.get("error", "Unknown error")
-            self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+            self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
             self._audio_tier_label.configure(text="", text_color="gray")
             self.set_transcription_failed(error_msg)
             messagebox.showerror("Transcription Failed", error_msg)
@@ -2398,6 +2651,7 @@ class TranscribeTab(ctk.CTkFrame):
         return build_case_meta_from_ufm(ufm_fields)
 
     def _start_clean_format(self, result: dict) -> None:
+        self._status_progress.set(0.92)
         self._set_transcript_status("Formatting transcript...", "white")
         self._append_transcript_log("Formatting transcript...")
         self._set_create_buttons(state="disabled", text="Formatting...")
@@ -2436,11 +2690,12 @@ class TranscribeTab(ctk.CTkFrame):
             self.after(0, self._on_clean_format_done, {"success": False, "error": str(exc)})
 
     def _on_clean_format_done(self, result: dict) -> None:
-        self._set_create_buttons(state="normal", text="CREATE TRANSCRIPT")
+        self._set_create_buttons(state="normal", text=_PRIMARY_ACTION_TEXT)
 
         if result.get("success"):
             self._formatted_docx_path = result.get("docx_path")
             self._append_transcript_log(f"Transcript written to: {self._formatted_docx_path}")
+            self._status_progress.set(1)
             self._set_transcript_status(
                 f"Transcript written to: {self._formatted_docx_path}",
                 "#44FF44",
@@ -2453,6 +2708,7 @@ class TranscribeTab(ctk.CTkFrame):
                 os.startfile(folder)
         else:
             error_msg = result.get("error", "Unknown error")
+            self._status_progress.set(0)
             self._append_transcript_log(f"Formatting failed: {error_msg}")
             self._set_transcript_status(f"Formatting failed: {error_msg}", "#FF4444")
 
