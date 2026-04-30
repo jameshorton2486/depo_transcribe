@@ -1292,7 +1292,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._run_log_card.pack(fill="both", expand=True, pady=(0, 6))
         self._run_log = ctk.CTkTextbox(
             self._run_log_card,
-            wrap="word",
+            wrap="char",
             fg_color=_INPUT_BG,
             border_width=0,
             text_color=TEXT_PRIMARY,
@@ -1381,7 +1381,7 @@ class TranscribeTab(ctk.CTkFrame):
             self._speaker_card,
             "☷ Speaker Labels — Rename before saving",
             font_size=14,
-        ).pack(anchor="w", padx=12, pady=(6, 2))
+        ).pack(fill="x", padx=12, pady=(6, 2))
         ctk.CTkLabel(
             self._speaker_card,
             text="Replace generic labels with correct names throughout the transcript",
