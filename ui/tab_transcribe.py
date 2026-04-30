@@ -1044,7 +1044,7 @@ class TranscribeTab(ctk.CTkFrame):
             anchor="w",
             fg_color="#1A2C66",
             corner_radius=8,
-            height=32,
+            height=BTN_HEIGHT_STANDARD,
         )
         self._processing_eta_label.pack(fill="x", padx=CARD_INNER_PADX, pady=(0, 6))
 
