@@ -954,7 +954,7 @@ class TranscribeTab(ctk.CTkFrame):
             browse_row,
             text="Browse",
             fg_color=BTN_UTILITY_BLUE,
-            hover_color="#0F3E8A",
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             text_color="white",
             height=BTN_HEIGHT_STANDARD,
             font=ctk.CTkFont(size=BTN_FONT_SIZE, weight=BTN_FONT_WEIGHT),
