@@ -507,6 +507,12 @@ def _transcribe_direct(
     for attempt in range(1, MAX_RETRIES + 1):
         t0 = time.time()
         try:
+            timeout = httpx.Timeout(
+                connect=DEEPGRAM_CONNECTION_TIMEOUT,
+                read=DEEPGRAM_READ_TIMEOUT,
+                write=DEEPGRAM_WRITE_TIMEOUT,
+                pool=None,
+            )
             resp = httpx.post(
                 url,
                 content=buffer,
@@ -514,12 +520,7 @@ def _transcribe_direct(
                     "Authorization": f"Token {api_key}",
                     "Content-Type":  "audio/*",
                 },
-                timeout=httpx.Timeout(
-                    timeout=DEEPGRAM_READ_TIMEOUT,
-                    connect=DEEPGRAM_CONNECTION_TIMEOUT,
-                    read=DEEPGRAM_READ_TIMEOUT,
-                    write=DEEPGRAM_WRITE_TIMEOUT,
-                ),
+                timeout=timeout,
             )
             if resp.status_code != 200:
                 logger.error("Deepgram returned status %s: %s", resp.status_code, resp.text[:1024])
@@ -624,6 +625,19 @@ def _transcribe_direct(
             last_exc = exc
             elapsed = time.time() - t0
             status = getattr(getattr(exc, "response", None), "status_code", None)
+            if isinstance(exc, httpx.WriteTimeout):
+                size_mb = len(buffer) / (1024 * 1024)
+                remaining_attempts = MAX_RETRIES - attempt
+                logger.warning(
+                    "Deepgram WriteTimeout on chunk %s (%.1f MB) - attempt %d/%d, remaining=%d, write_timeout=%ds, retrying in %ds",
+                    chunk_name,
+                    size_mb,
+                    attempt,
+                    MAX_RETRIES,
+                    remaining_attempts,
+                    DEEPGRAM_WRITE_TIMEOUT,
+                    RETRY_DELAY_SECONDS,
+                )
             logger.error(
                 "Direct attempt %s/%s FAILED chunk=%s elapsed=%.2fs "
                 "status=%s error=%s",

@@ -27,7 +27,7 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 DEEPGRAM_MODEL = "nova-3"
 
 # Deepgram upload timeout settings
-DEEPGRAM_CONNECTION_TIMEOUT = 60      # seconds to establish connection
+DEEPGRAM_CONNECTION_TIMEOUT = 30      # seconds to establish connection
 DEEPGRAM_READ_TIMEOUT = 600           # seconds to wait for response
 DEEPGRAM_WRITE_TIMEOUT = 600          # seconds to complete upload
 DEEPGRAM_CHUNK_SIZE_LIMIT_MB = 200    # warn if chunk exceeds this
@@ -41,28 +41,8 @@ TARGET_SAMPLE_RATE = 24000
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
 # Maximum duration per audio chunk in seconds.
-# 3600 = 1 hour. Files shorter than this are sent as a single chunk.
-#
-# WHY 3600 (raised from 600 in 2026-04):
-# Deepgram assigns its own speaker IDs per call. When a deposition was
-# split into multiple chunks, pipeline/assembler.py's _build_speaker_remap
-# tried to reconcile chunk-local speaker IDs by temporal overlap inside
-# the 20-second CHUNK_OVERLAP_SECONDS window. That heuristic fails when
-# a speaker doesn't actually speak during the overlap window — their
-# chunk-local ID has no anchor and can collide with a different
-# global speaker downstream. The visible symptom was the witness's
-# audio being labeled as opposing counsel (Symptom A).
-#
-# Single-call Deepgram gets consistent speaker IDs throughout, which
-# is what the Playground does. Raising the chunk limit lets typical
-# depositions (under 1 hour of recorded audio) skip chunking entirely.
-# Deepgram's pre-recorded API limit is 2 GB / 10 hours; we are well
-# under both at 1 hour of 24 kHz mono PCM (~172 MB).
-#
-# Multi-hour depositions still chunk, but with 6x fewer chunk
-# boundaries — same cross-chunk-merge risk per boundary, fewer
-# boundaries.
-CHUNK_DURATION_SECONDS = 3600
+# 600 = 10 minutes per chunk.
+CHUNK_DURATION_SECONDS = 600
 
 # Overlap between adjacent chunks in seconds.
 # Prevents words at chunk boundaries from being dropped.

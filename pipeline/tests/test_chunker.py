@@ -74,3 +74,25 @@ def test_chunk_audio_rejects_near_empty_chunk(monkeypatch, tmp_path):
         assert False, "Expected RuntimeError for invalid tiny chunk"
     except RuntimeError as exc:
         assert "too small to be valid" in str(exc) or "duration probe failed" in str(exc)
+
+def test_chunker_uses_10_minute_default(monkeypatch, tmp_path):
+    audio_path = tmp_path / "hour.wav"
+    audio_path.write_bytes(b"audio")
+
+    monkeypatch.setattr(chunker, "TEMP_DIR", str(tmp_path))
+
+    def fake_run(cmd, capture_output=False, text=False):
+        if cmd[0] == "ffprobe":
+            return SimpleNamespace(returncode=0, stdout="620.0\n", stderr="")
+        Path(cmd[-1]).write_bytes(b"x" * 8192)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(chunker.subprocess, "run", fake_run)
+
+    chunks = chunker.chunk_audio(str(audio_path), total_duration=3600.0)
+
+    assert chunker.CHUNK_DURATION_SECONDS == 600
+    assert len(chunks) == 6
+    assert all(c.duration_seconds <= chunker.CHUNK_DURATION_SECONDS + chunker.CHUNK_OVERLAP_SECONDS for c in chunks)
+    assert all(c.duration_seconds == 620 for c in chunks[:-1])
+    assert chunks[-1].duration_seconds == 600
