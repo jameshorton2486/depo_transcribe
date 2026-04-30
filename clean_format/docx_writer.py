@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,29 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
+
+
+# Windows-illegal filename characters plus ASCII control bytes. NTFS
+# silently treats `:` as an alternate-data-stream separator, so a bad
+# filename can succeed at write time but be unreachable to Word.
+_ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]|[\x00-\x1f]')
+_WHITESPACE_RUN = re.compile(r'\s+')
+_TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
+
+
+def sanitize_filename_component(value: str) -> str:
+    """
+    Strip Windows-illegal characters from a filename component.
+
+    Removes <>:"/\\|?* and ASCII control bytes, collapses whitespace runs,
+    strips leading/trailing dots and spaces. Falls back to "document" when
+    the input is empty or sanitizes to nothing — bare-suffix filenames
+    (e.g. ".docx") are illegal on Windows.
+    """
+    cleaned = _ILLEGAL_FILENAME_CHARS.sub("", value or "")
+    cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
+    cleaned = cleaned.strip(". ")
+    return cleaned or "document"
 
 
 def _set_cell_border(cell: Any) -> None:
@@ -62,12 +86,16 @@ def _left_paragraph(document: Document, text: str = "", *, bold: bool = False) -
 
 
 def _format_date_for_filename(raw_date: str) -> str:
+    # Intake often appends a start time after the date ("April 9, 2026 at
+    # 8:00 a.m."). Strip that suffix before strptime so the strict formats
+    # below have a chance to match.
+    candidate = _TRAILING_AT_SUFFIX.sub("", raw_date or "").strip()
     for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y"):
         try:
-            return datetime.strptime(raw_date, fmt).strftime("%Y-%m-%d")
+            return datetime.strptime(candidate, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
-    return raw_date.replace("/", "-").replace(",", "")
+    return (candidate or raw_date).replace("/", "-").replace(",", "")
 
 
 def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
@@ -217,7 +245,17 @@ def write_deposition_docx(
 ) -> str:
     witness_last = (case_meta.get("witness_name", "Witness").split() or ["Witness"])[-1]
     date_part = _format_date_for_filename(str(case_meta.get("deposition_date", "")))
-    path = Path(output_path) if output_path else Path(f"{witness_last}_Deposition_{date_part}.docx")
+    if output_path:
+        path = Path(output_path)
+    else:
+        path = Path(f"{witness_last}_Deposition_{date_part}.docx")
+    # Last-line defense: sanitize the filename stem regardless of whether
+    # output_path was passed. Callers that pre-build a path (UI, CLI) miss
+    # the helper above, and a `:` in the name silently writes into an ADS
+    # rather than a real file Word can open.
+    suffix = path.suffix or ".docx"
+    sanitized_stem = sanitize_filename_component(path.stem)
+    path = path.with_name(f"{sanitized_stem}{suffix}")
     path.parent.mkdir(parents=True, exist_ok=True)
     document = build_deposition_document(formatted_text, case_meta)
     document.save(path)
