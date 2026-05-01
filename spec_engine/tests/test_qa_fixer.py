@@ -24,3 +24,15 @@ def test_orphan_answer_raises():
     )
     with pytest.raises(ValueError, match="orphan answers"):
         enforce_structure(classified)
+
+
+def test_short_followup_after_question_is_coerced_to_answer():
+    classified = classify_blocks(
+        [
+            {"speaker": "speaker 1", "text": "\tQ.\tDid you go there?", "type": "paragraph"},
+            {"speaker": "speaker 2", "text": "Yes.", "type": "paragraph"},
+        ]
+    )
+    fixed = enforce_structure(classified)
+    assert fixed[0].type == "question"
+    assert fixed[1].type == "answer"

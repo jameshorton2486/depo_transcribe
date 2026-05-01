@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from .models import TranscriptBlock
 
 _TRAILING_PUNCT_RE = re.compile(r"[:.;,\s]+$")
 _MULTISPACE_RE = re.compile(r"\s+")
+ROLE_ATTORNEY = "ATTORNEY"
+ROLE_WITNESS = "WITNESS"
+ROLE_COURT_REPORTER = "COURT_REPORTER"
+ROLE_VIDEOGRAPHER = "VIDEOGRAPHER"
+ROLE_UNKNOWN = "UNKNOWN"
 
 
 def normalize_speaker_label(label: str) -> str:
@@ -36,8 +42,65 @@ def normalize_directive_text(text: str) -> str:
     return f"BY {examiner}:" if examiner else "BY UNKNOWN:"
 
 
+def detect_speaker_role(block: TranscriptBlock) -> str:
+    text = str(block.text or "").strip().lower()
+    speaker = str(block.speaker or "").strip().upper().rstrip(":")
+
+    if speaker == "COURT REPORTER":
+        return ROLE_COURT_REPORTER
+
+    if speaker == "VIDEOGRAPHER":
+        return ROLE_VIDEOGRAPHER
+
+    if text.startswith(("yes", "no", "i do", "i did", "i don't")):
+        return ROLE_WITNESS
+
+    if text.endswith("?"):
+        return ROLE_ATTORNEY
+
+    return ROLE_UNKNOWN
+
+
+def smooth_speaker_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
+    smoothed = list(blocks)
+
+    for index in range(1, len(smoothed) - 1):
+        previous = smoothed[index - 1]
+        current = smoothed[index]
+        following = smoothed[index + 1]
+
+        if current.speaker != previous.speaker and previous.speaker == following.speaker:
+            if len(str(current.text or "").split()) < 6:
+                smoothed[index] = TranscriptBlock(
+                    speaker=previous.speaker,
+                    text=current.text,
+                    type=current.type,
+                    source_type=current.source_type,
+                    examiner=current.examiner,
+                )
+
+    return smoothed
+
+
+def enforce_role_consistency(blocks: list[TranscriptBlock]) -> list[str]:
+    roles: list[str] = []
+    last_role: str | None = None
+
+    for block in blocks:
+        role = detect_speaker_role(block)
+        if role == ROLE_UNKNOWN and last_role:
+            role = last_role
+        roles.append(role)
+        last_role = role
+
+    return roles
+
+
 def normalize_speakers(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
     """Normalize speaker and examiner formatting only."""
+    blocks = smooth_speaker_sequence(blocks)
+    _roles = enforce_role_consistency(blocks)
+
     normalized: list[TranscriptBlock] = []
     for block in blocks:
         speaker = normalize_speaker_label(block.speaker)
@@ -55,4 +118,3 @@ def normalize_speakers(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
             )
         )
     return normalized
-
