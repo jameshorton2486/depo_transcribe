@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from docx import Document
 
-from clean_format.docx_writer import build_deposition_document, write_deposition_docx
+from clean_format.docx_writer import (
+    _parse_blocks,
+    build_deposition_document,
+    safe_save,
+    sanitize_filename_component,
+    write_deposition_docx,
+)
 
 
 def _case_meta() -> dict:
@@ -47,3 +53,73 @@ def test_write_deposition_docx_writes_file(tmp_path):
     saved_path = write_deposition_docx("LABEL:\tToday's date is April 9, 2026.", _case_meta(), output_path)
     assert output_path.exists()
     assert saved_path.endswith("sample.docx")
+
+
+def test_parse_blocks_merges_consecutive_same_speaker_into_one_paragraph():
+    formatted_text = (
+        "VIDEOGRAPHER:\tToday's date is 04/09/2026.\n\n"
+        "VIDEOGRAPHER:\tThe time is 08:12 AM.\n\n"
+        "VIDEOGRAPHER:\tThis is the beginning of the video deposition.\n\n"
+        "VIDEOGRAPHER:\tWill the court reporter please swear in the witness?"
+    )
+
+    blocks = _parse_blocks(formatted_text)
+
+    assert blocks == [
+        {
+            "kind": "speaker",
+            "label": "VIDEOGRAPHER:",
+            "text": (
+                "Today's date is 04/09/2026.  The time is 08:12 AM.  "
+                "This is the beginning of the video deposition.  "
+                "Will the court reporter please swear in the witness?"
+            ),
+        }
+    ]
+
+
+def test_write_proceedings_uses_two_spaces_after_speaker_colon_and_sentences():
+    document = build_deposition_document(
+        (
+            "VIDEOGRAPHER:\tToday's date is 04/09/2026.\n\n"
+            "VIDEOGRAPHER:\tThe time is 08:12 AM."
+        ),
+        _case_meta(),
+    )
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    assert "VIDEOGRAPHER:  Today's date is 04/09/2026.  The time is 08:12 AM." in text
+
+
+def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
+    document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
+    qa_paragraph = next(paragraph for paragraph in document.paragraphs if paragraph.text.startswith("Q.\t"))
+    tab_positions = [tab.position for tab in qa_paragraph.paragraph_format.tab_stops]
+    assert 228600 in tab_positions
+    assert 571500 in tab_positions
+    assert 914400 in tab_positions
+
+
+def test_sanitize_filename_component_replaces_spaces_and_punctuation():
+    assert sanitize_filename_component("CARAM Deposition April 9, 2026 at 800 a.m.") == (
+        "CARAM Deposition April 9, 2026 at 800 a.m"
+    )
+
+
+def test_safe_save_retries_permission_error(monkeypatch, tmp_path):
+    document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
+    target_path = tmp_path / "retry.docx"
+    attempts = {"count": 0}
+    original_save = document.save
+
+    def flaky_save(path):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise PermissionError("locked")
+        return original_save(path)
+
+    monkeypatch.setattr(document, "save", flaky_save)
+
+    safe_save(document, target_path, delay_seconds=0)
+
+    assert attempts["count"] == 3
+    assert target_path.exists()

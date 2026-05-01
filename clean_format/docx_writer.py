@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from docx.shared import Inches, Pt
 _ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]|[\x00-\x1f]')
 _WHITESPACE_RUN = re.compile(r'\s+')
 _TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
+_SENTENCE_SPACE_RE = re.compile(r"([.!?])\s+")
 
 
 def sanitize_filename_component(value: str) -> str:
@@ -35,6 +37,20 @@ def sanitize_filename_component(value: str) -> str:
     cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
     cleaned = cleaned.strip(". ")
     return cleaned or "document"
+
+
+def safe_save(document: Document, path: Path, *, retries: int = 3, delay_seconds: float = 1.0) -> None:
+    """Retry transient Word lock failures before surfacing a clean error."""
+    for attempt in range(retries):
+        try:
+            document.save(path)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                break
+            time.sleep(delay_seconds)
+
+    raise PermissionError(f"File is open or locked:\n{path}")
 
 
 def _set_cell_border(cell: Any) -> None:
@@ -98,6 +114,10 @@ def _format_date_for_filename(raw_date: str) -> str:
     return (candidate or raw_date).replace("/", "-").replace(",", "")
 
 
+def _double_space_sentences(text: str) -> str:
+    return _SENTENCE_SPACE_RE.sub(r"\1  ", (text or "").strip())
+
+
 def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
     blocks: list[dict[str, str]] = []
     for block in (formatted_text or "").split("\n\n"):
@@ -116,7 +136,27 @@ def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
             blocks.append({"kind": "header", "label": line, "text": ""})
         else:
             blocks.append({"kind": "speaker", "label": "", "text": line})
-    return blocks
+    return _merge_consecutive_speaker_blocks(blocks)
+
+
+def _merge_consecutive_speaker_blocks(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+    merged: list[dict[str, str]] = []
+    for block in blocks:
+        if (
+            merged
+            and block["kind"] == "speaker"
+            and merged[-1]["kind"] == "speaker"
+            and block["label"]
+            and block["label"] == merged[-1]["label"]
+        ):
+            prior_text = merged[-1]["text"].rstrip()
+            current_text = block["text"].lstrip()
+            merged[-1]["text"] = _double_space_sentences(f"{prior_text} {current_text}")
+            continue
+        if block["kind"] == "speaker" and block["text"]:
+            block = {**block, "text": _double_space_sentences(block["text"])}
+        merged.append(block)
+    return merged
 
 
 def _write_caption_table(document: Document, case_meta: dict[str, Any]) -> None:
@@ -196,16 +236,17 @@ def _write_proceedings(document: Document, formatted_text: str, case_meta: dict[
         paragraph.paragraph_format.space_after = Pt(0)
         paragraph.paragraph_format.left_indent = Inches(0)
         paragraph.paragraph_format.first_line_indent = Inches(0)
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.5))
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.25))
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.625))
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.0))
 
         if block["kind"] == "qa":
             paragraph.add_run(f"{block['label']}\t{block['text']}")
         elif block["kind"] == "speaker":
             if block["label"]:
-                paragraph.add_run(f"{block['label']}\t{block['text']}")
+                paragraph.add_run(f"{block['label']}  {block['text']}")
             else:
-                paragraph.add_run(block["text"])
+                paragraph.add_run(_double_space_sentences(block["text"]))
         else:
             run = paragraph.add_run(block["label"])
             run.bold = True
@@ -258,5 +299,5 @@ def write_deposition_docx(
     path = path.with_name(f"{sanitized_stem}{suffix}")
     path.parent.mkdir(parents=True, exist_ok=True)
     document = build_deposition_document(formatted_text, case_meta)
-    document.save(path)
+    safe_save(document, path)
     return str(path)

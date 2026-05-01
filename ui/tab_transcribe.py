@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -216,6 +217,7 @@ def _build_ui_quickfill_labels(suggestion: dict[str, Any] | None) -> list[str]:
 
 
 _SPEAKER_LINE_RE = re.compile(r"(^|\n)(Speaker\s+(\d+)):\s*", re.MULTILINE)
+_SENTENCE_SPACING_RE = re.compile(r"([.!?])\s+")
 
 
 def _apply_speaker_labels_to_text(text: str, speaker_map: dict[int, str]) -> str:
@@ -228,6 +230,88 @@ def _apply_speaker_labels_to_text(text: str, speaker_map: dict[int, str]) -> str
         return f"{prefix}{replacement}: "
 
     return _SPEAKER_LINE_RE.sub(_replace, text or "")
+
+
+def _normalize_preview_sentence_spacing(text: str) -> str:
+    return _SENTENCE_SPACING_RE.sub(r"\1  ", " ".join((text or "").split()).strip())
+
+
+def _format_transcript_for_txt(formatted_text: str) -> str:
+    """
+    Reformat clean-format output into a UFM-style plain-text view for Notepad
+    and the in-app preview without introducing a second transcript pipeline.
+    """
+    blocks: list[dict[str, str]] = []
+    for raw_block in (formatted_text or "").split("\n\n"):
+        lines = [line.rstrip() for line in raw_block.splitlines() if line.strip()]
+        if not lines:
+            continue
+        line = lines[0]
+        if line.startswith("Q.\t"):
+            blocks.append({"type": "question", "speaker": "", "text": line[3:].strip()})
+        elif line.startswith("A.\t"):
+            blocks.append({"type": "answer", "speaker": "", "text": line[3:].strip()})
+        elif ":\t" in line:
+            label, text = line.split(":\t", 1)
+            blocks.append({"type": "speaker", "speaker": label.strip().upper(), "text": text.strip()})
+        elif line.endswith(":"):
+            blocks.append({"type": "directive", "speaker": "", "text": line.strip().upper()})
+        else:
+            blocks.append({"type": "speaker", "speaker": "", "text": line.strip()})
+
+    lines: list[str] = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
+        block_type = block["type"]
+        text = _normalize_preview_sentence_spacing(block["text"])
+
+        if block_type == "question":
+            lines.append(f"\tQ.\t{text}")
+            index += 1
+            continue
+
+        if block_type == "answer":
+            lines.append(f"\tA.\t{text}")
+            lines.append("")
+            index += 1
+            continue
+
+        if block_type == "directive":
+            lines.append("")
+            lines.append(block["text"])
+            lines.append("")
+            index += 1
+            continue
+
+        speaker = block["speaker"]
+        if speaker:
+            lines.append(f"    {speaker}:")
+            while index < len(blocks):
+                current = blocks[index]
+                if current["type"] != "speaker" or current["speaker"] != speaker:
+                    break
+                lines.append(f"        {_normalize_preview_sentence_spacing(current['text'])}")
+                index += 1
+            lines.append("")
+            continue
+
+        lines.append(text)
+        index += 1
+
+    return "\n".join(lines).strip()
+
+
+def _save_transcript_as_txt(transcript_text: str, docx_path: str) -> str:
+    """Save transcript text next to the generated DOCX using a .txt suffix."""
+    txt_path = str(Path(docx_path).with_suffix(".txt"))
+    Path(txt_path).write_text(_format_transcript_for_txt(transcript_text), encoding="utf-8")
+    return txt_path
+
+
+def _open_in_notepad(txt_path: str) -> None:
+    """Open a text file explicitly in Windows Notepad."""
+    subprocess.Popen(["notepad.exe", txt_path])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -888,6 +972,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._loaded_transcript_path: str | None = None
         self._loaded_case_folder: str | None = None
         self._case_files_expanded: bool = True
+        self._intake_processing: bool = False
 
         self._build_ui()
 
@@ -1375,6 +1460,40 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_transcript_btn.grid(row=1, column=1, sticky="ew", padx=(4, 0))
 
+        preview_label = ctk.CTkLabel(
+            run_body,
+            text="TRANSCRIPT PREVIEW",
+            font=label_font,
+            text_color=TEXT_MUTED,
+            anchor="w",
+        )
+        preview_label.pack(fill="x", pady=(6, 2))
+
+        self._preview_card = ctk.CTkFrame(
+            run_body,
+            fg_color=_INPUT_BG,
+            border_color=_INPUT_BORDER,
+            border_width=1,
+            corner_radius=8,
+            height=180,
+        )
+        self._preview_card.pack(fill="x", pady=(0, 6))
+        self._preview_card.pack_propagate(False)
+        self._preview_text = ctk.CTkTextbox(
+            self._preview_card,
+            wrap="word",
+            fg_color=_INPUT_BG,
+            border_width=0,
+            text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family="Consolas", size=11),
+        )
+        self._preview_text.pack(fill="both", expand=True, padx=6, pady=6)
+        self._preview_text.tag_config("qa", foreground="#67E8F9")
+        self._preview_text.tag_config("speaker", foreground="#FBBF24")
+        self._preview_text.tag_config("directive", foreground="#A78BFA")
+        self._preview_text.insert("1.0", "Transcript preview will appear here after formatting.")
+        self._preview_text.configure(state="disabled")
+
         # ── Speaker labels card (gridded into body row 1 only after a run) ─────
         # Created here but not gridded; _show_speaker_section places it.
         self._speaker_card = _make_card(body)
@@ -1481,6 +1600,33 @@ class TranscribeTab(ctk.CTkFrame):
         self._last_transcript_path = filepath
         self._current_txt_path = filepath
         self._append_transcript_log(f"Transcript available: {filepath}")
+
+    def _set_preview_text(self, text: str) -> None:
+        self._preview_text.configure(state="normal")
+        self._preview_text.delete("1.0", "end")
+        for line in str(text or "").splitlines():
+            tag = None
+            stripped = line.strip()
+            if line.startswith("\tQ.\t") or line.startswith("\tA.\t"):
+                tag = "qa"
+            elif stripped.startswith("BY ") and stripped.endswith(":"):
+                tag = "directive"
+            elif line.startswith("    ") and stripped.endswith(":"):
+                tag = "speaker"
+
+            if tag:
+                self._preview_text.insert("end", line, tag)
+            else:
+                self._preview_text.insert("end", line)
+            self._preview_text.insert("end", "\n")
+        self._preview_text.see("1.0")
+        self._preview_text.configure(state="disabled")
+
+    def _show_transcript_preview(self, formatted_text: str) -> None:
+        preview_text = _format_transcript_for_txt(formatted_text)
+        if not preview_text:
+            preview_text = "Transcript preview is empty."
+        self._set_preview_text(preview_text)
 
     def _get_preferred_document_path(self) -> str | None:
         """Return the formatted deposition document when one is available."""
@@ -1589,6 +1735,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._set_case_files_panel_expanded(True)
         for badge in (self._cause_badge, self._witness_badge, self._date_badge):
             badge.configure(text="")
+        self._set_preview_text("Transcript preview will appear here after formatting.")
 
     def _apply_saved_transcription_settings(self, config_data: dict | None):
         """Restore persisted transcription settings from job_config.json."""
@@ -2251,6 +2398,7 @@ class TranscribeTab(ctk.CTkFrame):
 
             saved_pdf_path = self._persist_source_doc(filepath)
             self._last_pdf_path = saved_pdf_path
+            self._intake_processing = True
             self._upload_pdf_btn.configure(state="disabled", text="Processing\u2026")
             self._extract_status_label.configure(text="Extracting case info\u2026", text_color="white")
 
@@ -2265,6 +2413,7 @@ class TranscribeTab(ctk.CTkFrame):
 
             threading.Thread(target=_run, daemon=True).start()
         except Exception as exc:
+            self._intake_processing = False
             logger.exception("[TranscribeTab] PDF upload failed")
             messagebox.showerror("PDF Load Error", str(exc))
 
@@ -2286,6 +2435,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         scanned = results.get("scanned", False)
         if scanned:
+            self._intake_processing = False
             self._extract_status_label.configure(
                 text="This appears to be a scanned PDF. Please enter fields manually.",
                 text_color="#CCAA44",
@@ -2349,6 +2499,7 @@ class TranscribeTab(ctk.CTkFrame):
                 self._save_intake_result_to_job_config(intake_result)
                 logger.info("[UI] Saved %d deepgram_keyterms to job_config", len(self._pdf_keyterms))
                 logger.info("[UI] job_config.json saved: %s", self._current_case_path)
+        self._intake_processing = False
 
         sources = [cause_src, witness_src, date_src]
         filled = sum(1 for s in sources if s != "failed")
@@ -2435,6 +2586,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._source_doc_paths = list(file_paths)
         self._source_docs_text = combined_text
         self._source_docs_keyterms = list(keyterms or [])
+        self._intake_processing = False
 
         self._upload_reporter_notes_btn.configure(
             text="Docs Auto-Detected" if auto_detected else "Docs Loaded",
@@ -2456,6 +2608,7 @@ class TranscribeTab(ctk.CTkFrame):
         self._source_docs_text = ""
         self._source_docs_keyterms = []
         self._source_doc_paths = []
+        self._intake_processing = False
         self._upload_reporter_notes_btn.configure(
             text="Load Failed",
             fg_color="#8B0000",
@@ -2485,6 +2638,7 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._source_doc_paths = deduped_paths
         self._set_source_doc_status(deduped_paths)
+        self._intake_processing = True
         self._upload_reporter_notes_btn.configure(state="disabled", text="Processing…")
 
         def _run():
@@ -2557,6 +2711,9 @@ class TranscribeTab(ctk.CTkFrame):
     def start_transcription(self):
         """Public entry point called by TranscriptTab."""
         try:
+            if self._running:
+                return
+
             if self._correction_mode:
                 messagebox.showinfo(
                     "Correction Mode Active",
@@ -2575,6 +2732,14 @@ class TranscribeTab(ctk.CTkFrame):
                 return
 
             self._auto_detect_source_docs()
+
+            if self._intake_processing:
+                messagebox.showinfo(
+                    "Intake Still Processing",
+                    "NOD / notes intake is still being processed.\n"
+                    "Wait for extraction to finish before starting transcription.",
+                )
+                return
 
             # Validate required filing fields
             cause = self._cause_var.get().strip()
@@ -2642,6 +2807,16 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._create_case_folders_now()
         final_keyterms, _, _ = merge_keyterms(self._pdf_keyterms, self._source_docs_keyterms)
+        intake_spellings_count = len(self._confirmed_spellings or {})
+        intake_keyterms_count = len(final_keyterms or [])
+        print(f"INTAKE SPELLINGS: {intake_spellings_count}")
+        print(f"INTAKE KEYTERMS: {intake_keyterms_count}")
+        self._append_transcript_log(f"INTAKE SPELLINGS: {intake_spellings_count}")
+        self._append_transcript_log(f"INTAKE KEYTERMS: {intake_keyterms_count}")
+        if not intake_spellings_count:
+            self._append_transcript_log(
+                "WARNING: Intake spellings are empty; name corrections will not run for this case."
+            )
         if final_keyterms:
             self._append_transcript_log(f"Using {len(final_keyterms)} Deepgram keyterms")
 
@@ -2788,7 +2963,11 @@ class TranscribeTab(ctk.CTkFrame):
             docx_path = case_dir / f"{witness_last}_Deposition_{date_part}.docx"
             saved_path = write_deposition_docx(formatted_text, case_meta, docx_path)
 
-            self.after(0, self._on_clean_format_done, {"success": True, "docx_path": saved_path})
+            self.after(
+                0,
+                self._on_clean_format_done,
+                {"success": True, "docx_path": saved_path, "formatted_text": formatted_text},
+            )
         except Exception as exc:
             logger.exception("[TranscribeTab] clean_format failed")
             self.after(0, self._on_clean_format_done, {"success": False, "error": str(exc)})
@@ -2799,6 +2978,8 @@ class TranscribeTab(ctk.CTkFrame):
         if result.get("success"):
             self._formatted_docx_path = result.get("docx_path")
             self._last_transcript_path = self._formatted_docx_path
+            formatted_text = str(result.get("formatted_text") or "")
+            self._show_transcript_preview(formatted_text)
 
             # Verify the file actually landed on disk before claiming
             # success. NTFS can silently write into an alternate data
@@ -2834,11 +3015,22 @@ class TranscribeTab(ctk.CTkFrame):
                 f"Deposition document written to: {self._formatted_docx_path}",
                 "#44FF44",
             )
-            if messagebox.askyesno(
+            choice = messagebox.askyesnocancel(
                 "Document Ready",
-                f"Deposition document written to:\n{self._formatted_docx_path}\n\nOpen the document?",
-            ):
+                "Deposition document written to:\n\n"
+                f"{self._formatted_docx_path}\n\n"
+                "Yes = Open in Word\n"
+                "No = Open in Notepad\n"
+                "Cancel = Do nothing",
+            )
+            if choice is True:
                 os.startfile(self._formatted_docx_path)
+            elif choice is False:
+                try:
+                    txt_path = _save_transcript_as_txt(formatted_text, self._formatted_docx_path)
+                    _open_in_notepad(txt_path)
+                except Exception as exc:
+                    messagebox.showerror("Open Transcript Failed", str(exc))
         else:
             error_msg = result.get("error", "Unknown error")
             self._status_progress.set(0)

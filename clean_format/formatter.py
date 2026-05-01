@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,17 @@ except ImportError:  # pragma: no cover - exercised only when dependency missing
 
 CHUNK_CHAR_LIMIT = 80_000
 MAX_TOKENS = 8192
+_SENTENCE_DOUBLE_SPACE_RE = re.compile(r"([.?])\s+(?=\S)")
+_LEADING_ZERO_TIME_RE = re.compile(r"\b0([1-9]):(\d{2}\s*[ap]\.m\.)", re.IGNORECASE)
+_DOCTOR_NAME_RE = re.compile(r"\bDoctor\s+(?=[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)")
+_MISS_NAME_RE = re.compile(r"\bMiss Kuipers\b")
+_EM_DASH_RE = re.compile(r"\s*[—–]\s*")
+_SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
+_LABEL_LINE_RE = re.compile(r"^(?P<label>[A-Z][A-Z .'-]+):\t(?P<text>.*)$")
+_DUNNELL_RE = re.compile(
+    r"^((THE\s+)?VIDEOGRAPHER):\t(?P<text>Billy Dunnell here on behalf of .*)$",
+    re.IGNORECASE,
+)
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -116,6 +128,79 @@ def _response_text(response: Any) -> str:
     return output
 
 
+def _normalize_body_text(text: str) -> str:
+    text = _DOCTOR_NAME_RE.sub("Dr. ", text)
+    text = _MISS_NAME_RE.sub("Ms. Kuipers", text)
+    text = _LEADING_ZERO_TIME_RE.sub(r"\1:\2", text)
+    text = _EM_DASH_RE.sub(" -- ", text)
+    text = _SPACED_DOUBLE_HYPHEN_RE.sub(" -- ", text)
+    for short_title, token in {
+        "Dr. ": "__TITLE_DR__",
+        "Mr. ": "__TITLE_MR__",
+        "Ms. ": "__TITLE_MS__",
+        "Mrs. ": "__TITLE_MRS__",
+    }.items():
+        text = text.replace(short_title, token)
+    text = _SENTENCE_DOUBLE_SPACE_RE.sub(r"\1  ", text)
+    for token, short_title in {
+        "__TITLE_DR__": "Dr. ",
+        "__TITLE_MR__": "Mr. ",
+        "__TITLE_MS__": "Ms. ",
+        "__TITLE_MRS__": "Mrs. ",
+    }.items():
+        text = text.replace(token, short_title)
+    return text
+
+
+def _postprocess_formatted_text(formatted_text: str) -> str:
+    lines: list[str] = []
+    for raw_line in (formatted_text or "").splitlines():
+        line = raw_line.rstrip()
+        if not line:
+            lines.append("")
+            continue
+
+        dunnell_match = _DUNNELL_RE.match(line)
+        if dunnell_match:
+            lines.append(f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}")
+            continue
+
+        if line.startswith("COURT REPORTER:\t"):
+            lines.append("THE REPORTER:\t" + _normalize_body_text(line[len("COURT REPORTER:\t") :]))
+            continue
+
+        if line.startswith("VIDEOGRAPHER:\t"):
+            lines.append("THE VIDEOGRAPHER:\t" + _normalize_body_text(line[len("VIDEOGRAPHER:\t") :]))
+            continue
+
+        if line == "COURT REPORTER:":
+            lines.append("THE REPORTER:")
+            continue
+
+        if line == "VIDEOGRAPHER:":
+            lines.append("THE VIDEOGRAPHER:")
+            continue
+
+        if line.startswith("Q.\t"):
+            lines.append("Q.\t" + _normalize_body_text(line[3:]))
+            continue
+
+        if line.startswith("A.\t"):
+            lines.append("A.\t" + _normalize_body_text(line[3:]))
+            continue
+
+        label_match = _LABEL_LINE_RE.match(line)
+        if label_match:
+            label = label_match.group("label").strip()
+            text = _normalize_body_text(label_match.group("text"))
+            lines.append(f"{label}:\t{text}")
+            continue
+
+        lines.append(_normalize_body_text(line))
+
+    return "\n".join(lines).strip()
+
+
 def _build_client(client: Any | None = None) -> Any:
     if client is not None:
         return client
@@ -155,7 +240,7 @@ def format_transcript(
                 }
             ],
         )
-        rendered_chunks.append(_response_text(response))
+        rendered_chunks.append(_postprocess_formatted_text(_response_text(response)))
 
     return "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
 

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from clean_format.formatter import build_user_message, format_transcript, split_transcript
+from clean_format.formatter import (
+    _postprocess_formatted_text,
+    build_user_message,
+    format_transcript,
+    split_transcript,
+)
 
 
 class _FakeMessages:
@@ -37,3 +42,29 @@ def test_format_transcript_includes_case_meta_in_user_message():
 def test_build_user_message_labels_chunk_position():
     message = build_user_message("Speaker 0: hello", {"cause_number": "DC-25-13430"}, 2, 4)
     assert "Transcript chunk 2 of 4" in message
+
+
+def test_postprocess_formatted_text_applies_label_and_title_rules():
+    text = (
+        "COURT REPORTER:\tDoctor Bianca Caram is here.\n"
+        "VIDEOGRAPHER:\tBilly Dunnell here on behalf of Doctor Karam.\n"
+        "VIDEOGRAPHER:\tThe time is 08:12 a.m.\n"
+        "Q.\tDid Doctor Brittany Anders speak with Miss Kuipers?"
+    )
+
+    result = _postprocess_formatted_text(text)
+
+    assert "THE REPORTER:\tDr. Bianca Caram is here." in result
+    assert "MR. DUNNELL:\tBilly Dunnell here on behalf of Dr. Karam." in result
+    assert "THE VIDEOGRAPHER:\tThe time is 8:12 a.m." in result
+    assert "Q.\tDid Dr. Brittany Anders speak with Ms. Kuipers?" in result
+
+
+def test_postprocess_formatted_text_uses_two_spaces_after_sentence_endings():
+    result = _postprocess_formatted_text("A.\tYes. no? maybe.")
+    assert result == "A.\tYes.  no?  maybe."
+
+
+def test_postprocess_formatted_text_normalizes_interruption_dashes():
+    result = _postprocess_formatted_text("Q.\tOkay — if you need a break - let me know.")
+    assert result == "Q.\tOkay -- if you need a break - let me know."
