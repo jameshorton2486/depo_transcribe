@@ -1,82 +1,213 @@
-"""Final output formatting for deterministic transcript blocks."""
-
 from __future__ import annotations
 
 import re
+from typing import List
 
-from .models import TranscriptBlock
 
+# ---------------------------------------
+# CONSTANTS
+# ---------------------------------------
+
+INDENT = "    "
+DOUBLE_SPACE = "\n\n"
 _LEADING_QA_RE = re.compile(r"^\s*[QA]\.\s*")
+_SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
 
 
-def _double_space_after_punctuation(text: str) -> str:
+# ---------------------------------------
+# SAFE UTILITIES
+# ---------------------------------------
+
+def normalize_time(text: str) -> str:
+    """
+    Convert time formats:
+    08:12 AM  8:12 a.m.
+    """
+    text = re.sub(r"\b0?(\d{1,2}:\d{2})\s*AM\b", r"\1 a.m.", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b0?(\d{1,2}:\d{2})\s*PM\b", r"\1 p.m.", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b([ap]\.m\.)\.", r"\1", text, flags=re.IGNORECASE)
+    return text
+
+
+def double_space_after_punctuation(text: str) -> str:
     return re.sub(r"([.!?])\s+", r"\1  ", str(text or "").strip())
 
 
-def _align_continuation(text: str, prefix: str) -> str:
-    parts = [part.strip() for part in str(text or "").splitlines()]
-    if not parts:
-        return prefix
-    first = f"{prefix}{parts[0]}"
-    if len(parts) == 1:
-        return first
-    continuation = "\n".join(f"\t\t{part}" for part in parts[1:] if part)
-    return f"{first}\n{continuation}" if continuation else first
+def normalize_speaker(speaker: str | None) -> str:
+    """
+    Normalize speaker label to uppercase with colon.
+    """
+    if not speaker:
+        return ""
+
+    speaker = speaker.strip().upper()
+
+    if not speaker.endswith(":"):
+        speaker += ":"
+
+    return speaker
 
 
-def _qa_text(text: str, marker: str) -> str:
-    stripped = _LEADING_QA_RE.sub("", str(text or "").strip(), count=1)
-    return _align_continuation(_double_space_after_punctuation(stripped), f"\t{marker}\t")
+# ---------------------------------------
+# Q/A FORMATTING
+# ---------------------------------------
+
+def format_qa(block) -> str:
+    """
+    Strict UFM Q/A formatting.
+    """
+    text = _LEADING_QA_RE.sub("", block.text.strip(), count=1)
+    text = normalize_time(double_space_after_punctuation(text))
+
+    if block.type == "question":
+        return f"\tQ.\t{text}"
+
+    if block.type == "answer":
+        return f"\tA.\t{text}"
+
+    return text
 
 
-def _speaker_body_text(text: str) -> str:
-    return "\n".join(
-        f"\t{_double_space_after_punctuation(line.strip())}"
-        for line in str(text or "").splitlines()
-        if line.strip()
-    )
+# ---------------------------------------
+# COLLOQUY FORMATTING (GROUPED)
+# ---------------------------------------
+
+def format_colloquy(blocks: List, start_index: int):
+    """
+    Group consecutive same-speaker colloquy into one block.
+    """
+    speaker = normalize_speaker(blocks[start_index].speaker)
+
+    lines = [f"{INDENT}{speaker}"]
+
+    i = start_index
+
+    while i < len(blocks):
+        block = blocks[i]
+
+        if block.type != "colloquy":
+            break
+
+        if normalize_speaker(block.speaker) != speaker:
+            break
+
+        text = normalize_time(double_space_after_punctuation(block.text.strip()))
+        lines.append(f"{INDENT*2}{text}")
+
+        i += 1
+
+    return "\n".join(lines), i
 
 
-def _directive_line(block: TranscriptBlock) -> str:
-    examiner = block.examiner or block.text.rstrip(":").removeprefix("BY ").strip()
-    return f"BY {examiner}:"
+# ---------------------------------------
+# DIRECTIVE FORMATTING
+# ---------------------------------------
+
+def format_directive(block) -> str:
+    """
+    Format directives like:
+    BY MS. MALONEY:
+    """
+    text = block.text.strip().upper()
+    return f"\n{text}\n"
 
 
-def emit_blocks(blocks: list[TranscriptBlock]) -> str:
-    """Render classified blocks into strict final transcript text."""
-    output: list[str] = []
-    index = 0
-    while index < len(blocks):
-        block = blocks[index]
+def _split_sentences(text: str) -> list[str]:
+    return [part.strip() for part in _SENTENCE_RE.findall(str(text or "").strip()) if part.strip()]
 
-        if block.type == "question":
-            output.append(_qa_text(block.text, "Q."))
-            index += 1
+
+def split_blocks_into_paragraphs(blocks: List) -> List:
+    split = []
+
+    for block in blocks:
+        if getattr(block, "type", None) != "answer":
+            split.append(block)
             continue
 
-        if block.type == "answer":
-            output.append(_qa_text(block.text, "A."))
-            index += 1
+        content = _LEADING_QA_RE.sub("", block.text.strip(), count=1)
+        sentences = _split_sentences(content)
+        if len(sentences) <= 2:
+            split.append(block)
             continue
 
+        for index in range(0, len(sentences), 2):
+            split.append(
+                type(block)(
+                    speaker=block.speaker,
+                    text=" ".join(sentences[index : index + 2]).strip(),
+                    type=block.type,
+                    source_type=block.source_type,
+                    examiner=block.examiner,
+                )
+            )
+
+    return split
+
+
+# ---------------------------------------
+# MAIN EMITTER
+# ---------------------------------------
+
+def format_blocks_to_text(blocks: List) -> str:
+    """
+    Final UFM-compliant output generator.
+    """
+
+    blocks = split_blocks_into_paragraphs(blocks)
+    output = []
+    i = 0
+
+    while i < len(blocks):
+        block = blocks[i]
+
+        # -----------------------------------
+        # Q/A
+        # -----------------------------------
+        if block.type in ("question", "answer"):
+            if block.type == "answer" and output and output[-1] != "":
+                output.append("")
+            output.append(format_qa(block))
+
+            # Add spacing after A (Q/A pair separation)
+            if block.type == "answer":
+                output.append("")  # blank line
+
+            i += 1
+            continue
+
+        # -----------------------------------
+        # DIRECTIVE
+        # -----------------------------------
         if block.type == "directive":
-            output.append(_directive_line(block))
-            index += 1
+            output.append(format_directive(block))
+            i += 1
             continue
 
-        speaker = block.speaker
-        grouped_lines = [block.text]
-        index += 1
-        while index < len(blocks):
-            candidate = blocks[index]
-            if candidate.type not in {"colloquy", "oath"}:
-                break
-            if candidate.speaker != speaker:
-                break
-            grouped_lines.append(candidate.text)
-            index += 1
+        # -----------------------------------
+        # COLLOQUY
+        # -----------------------------------
+        if block.type == "colloquy":
+            formatted, new_i = format_colloquy(blocks, i)
+            output.append(formatted)
+            output.append("")  # spacing after speaker block
+            i = new_i
+            continue
 
-        body = _speaker_body_text("\n".join(grouped_lines))
-        output.append(f"{speaker}\n{body}" if body else speaker)
+        # -----------------------------------
+        # FALLBACK
+        # -----------------------------------
+        text = normalize_time(double_space_after_punctuation(block.text.strip()))
+        output.append(text)
+        i += 1
 
-    return "\n\n".join(part for part in output if part.strip()).strip()
+    # Clean extra whitespace
+    final_text = "\n".join(output)
+
+    # Remove triple newlines
+    final_text = re.sub(r"\n{3,}", "\n\n", final_text)
+
+    return final_text.strip("\n")
+
+
+def emit_blocks(blocks: List) -> str:
+    return format_blocks_to_text(blocks)

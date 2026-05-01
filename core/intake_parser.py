@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from app_logging import get_logger
 from core.config import AI_MODEL, MAX_KEYTERMS
+from core.file_manager import normalize_deposition_date
 
 logger = get_logger(__name__)
 
@@ -742,7 +743,10 @@ def parse_intake_document(
         cause_number=_coerce_str(data.get("cause_number")),
         court=_coerce_str(data.get("court")),
         case_style=_coerce_str(data.get("case_style")),
-        deposition_date=_coerce_str(data.get("deposition_date")),
+        deposition_date=(
+            normalize_deposition_date(_coerce_str(data.get("deposition_date")) or "")
+            or None
+        ),
         deposition_method=_coerce_str(data.get("deposition_method")),
         subpoena_duces_tecum=bool(data.get("subpoena_duces_tecum", False)),
         read_and_sign=bool(data.get("read_and_sign", False)),

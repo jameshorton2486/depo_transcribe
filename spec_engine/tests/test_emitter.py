@@ -27,4 +27,29 @@ def test_emitter_groups_consecutive_colloquy_under_one_label():
         ]
     )
     rendered = emit_blocks(normalize_speakers(enforce_structure(classified)))
-    assert rendered == "VIDEOGRAPHER:\n\tToday's date is April 9, 2026.\n\tThe time is 8:12 a.m."
+    assert rendered == "    VIDEOGRAPHER:\n        Today's date is April 9, 2026.\n        The time is 8:12 a.m."
+
+
+def test_emitter_normalizes_time_format_in_colloquy():
+    classified = classify_blocks(
+        [
+            {"speaker": "videographer", "text": "The time is 08:12 AM.", "type": "paragraph"},
+        ]
+    )
+    rendered = emit_blocks(normalize_speakers(enforce_structure(classified)))
+    assert "8:12 a.m." in rendered
+
+
+def test_emitter_splits_long_answer_into_paragraphs():
+    classified = classify_blocks(
+        [
+            {"speaker": "speaker 1", "text": "\tQ.\tTell me what happened.", "type": "paragraph"},
+            {
+                "speaker": "speaker 2",
+                "text": "\tA.\tI walked in. I sat down. I signed the paper.",
+                "type": "paragraph",
+            },
+        ]
+    )
+    rendered = emit_blocks(normalize_speakers(enforce_structure(classified)))
+    assert rendered.count("\tA.\t") == 2

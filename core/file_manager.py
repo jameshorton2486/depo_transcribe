@@ -28,7 +28,7 @@ _DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y")
 _TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
 
 
-def _normalize_deposition_date(value: str) -> str:
+def normalize_deposition_date(value: str) -> str:
     """Strip a trailing ' at HH:MM ...' suffix and surrounding whitespace."""
     return _TRAILING_AT_SUFFIX.sub("", value or "").strip()
 
@@ -41,7 +41,7 @@ def build_case_path(
     deposition_date: str | None = None,
 ) -> str:
     if deposition_date:
-        candidate = _normalize_deposition_date(deposition_date)
+        candidate = normalize_deposition_date(deposition_date)
         dt = None
         for fmt in _DATE_FORMATS:
             try:

@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from core.file_manager import (
-    _normalize_deposition_date,
+    normalize_deposition_date,
     build_case_path,
     create_case_folders,
     verify_case_folders,
@@ -46,22 +46,22 @@ def test_build_case_path_accepts_iso_date():
     assert path.endswith(expected)
 
 
-def test_normalize_deposition_date_strips_at_suffix():
-    assert _normalize_deposition_date("April 9, 2026 at 8:00 a.m.") == "April 9, 2026"
+def testnormalize_deposition_date_strips_at_suffix():
+    assert normalize_deposition_date("April 9, 2026 at 8:00 a.m.") == "April 9, 2026"
 
 
-def test_normalize_deposition_date_strips_at_with_alternative_time_form():
-    assert _normalize_deposition_date("4/9/2026 at noon") == "4/9/2026"
+def testnormalize_deposition_date_strips_at_with_alternative_time_form():
+    assert normalize_deposition_date("4/9/2026 at noon") == "4/9/2026"
 
 
-def test_normalize_deposition_date_passes_through_clean_input():
-    assert _normalize_deposition_date("April 9, 2026") == "April 9, 2026"
-    assert _normalize_deposition_date("2026-04-09") == "2026-04-09"
+def testnormalize_deposition_date_passes_through_clean_input():
+    assert normalize_deposition_date("April 9, 2026") == "April 9, 2026"
+    assert normalize_deposition_date("2026-04-09") == "2026-04-09"
 
 
-def test_normalize_deposition_date_handles_empty_and_none_safe():
-    assert _normalize_deposition_date("") == ""
-    assert _normalize_deposition_date(None) == ""  # type: ignore[arg-type]
+def testnormalize_deposition_date_handles_empty_and_none_safe():
+    assert normalize_deposition_date("") == ""
+    assert normalize_deposition_date(None) == ""  # type: ignore[arg-type]
 
 
 def test_create_case_folders_creates_required_subfolders(tmp_path):

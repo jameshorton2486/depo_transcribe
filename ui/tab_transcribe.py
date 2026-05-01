@@ -49,6 +49,7 @@ _ENTRY_BORDER = "#1E3A5F"
 _HEADER_BG = "#1E3A5F"
 _AMBER = "#B8860B"
 _AMBER_DARK = "#2A1A00"
+<<<<<<< HEAD
 _LABEL_TEXT_COLOR = "#8CA0B3"
 _PRIMARY_ACTION_TEXT = "START TRANSCRIPTION"
 _SOURCE_DOC_SUFFIXES = {".pdf", ".docx", ".txt"}
@@ -68,6 +69,10 @@ _EMERALD = "#10B981"
 _REVIEW_BG = "#1D4ED8"
 _REVIEW_HOVER = "#2563EB"
 _INFO_CHIP_BG = "#172554"
+=======
+_COMPACT_CARD_PADY = 8
+_COMPACT_ROW_GAP = 4
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
 
 
 def _normalize_ui_speaker_map(raw: dict | None) -> dict[int, str]:
@@ -1055,6 +1060,7 @@ class TranscribeTab(ctk.CTkFrame):
         source_card = _make_card(body)
         source_card.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
 
+<<<<<<< HEAD
         make_section_header(
             source_card,
             "► 1. Source Media",
@@ -1063,6 +1069,10 @@ class TranscribeTab(ctk.CTkFrame):
 
         source_body = ctk.CTkFrame(source_card, fg_color="transparent")
         source_body.pack(fill="both", expand=True, padx=14, pady=(0, 6))
+=======
+        file_row = ctk.CTkFrame(file_card, fg_color="transparent")
+        file_row.pack(fill="x", padx=CARD_INNER_PADX, pady=_COMPACT_CARD_PADY)
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
 
         ctk.CTkLabel(
             source_body,
@@ -1080,6 +1090,48 @@ class TranscribeTab(ctk.CTkFrame):
         _style_entry(self._file_entry)
         self._file_entry.pack(fill="x", pady=(0, 4))
 
+<<<<<<< HEAD
+=======
+        ctk.CTkButton(
+            file_row,
+            text="Browse…",
+            width=80,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            text_color="white",
+            command=self._browse_file,
+        ).pack(side="right")
+
+        # Multi-file button — opens the CombineAudioDialog. The single-file
+        # Browse flow above is unchanged; multi-file is opt-in.
+        ctk.CTkButton(
+            file_row,
+            text="Multiple Files…",
+            width=130,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            text_color="white",
+            command=self._open_combine_dialog,
+        ).pack(side="right", padx=(0, 6))
+
+        # The "Existing Transcript" loader lives on the Transcript tab now
+        # (Load Case button). This tab is purely for creating new transcripts;
+        # populating case metadata + NOD PDF still flows through this tab via
+        # the public load_case_folder() method, called from Tab 2.
+
+        # ── SECTION 2: Settings Row - Model + Processing Mode inline ────────
+        settings_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        settings_card.pack(fill="x", pady=(0, CARD_GAP_PY))
+
+        settings_row = ctk.CTkFrame(settings_card, fg_color="transparent")
+        settings_row.pack(fill="x", padx=CARD_INNER_PADX, pady=_COMPACT_CARD_PADY)
+
+        # Model - label inline with combo, single line
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
         ctk.CTkLabel(
             source_body,
             text="MP3 · MP4 · WAV · M4A · MOV · MKV · FLAC",
@@ -1202,7 +1254,11 @@ class TranscribeTab(ctk.CTkFrame):
             values=["nova-3", "nova-3-medical"],
             variable=self._model_var,
             state="readonly",
+<<<<<<< HEAD
             height=30,
+=======
+            width=136,
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
         )
         _style_combo(self._model_combo)
         self._model_combo.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
@@ -1217,7 +1273,11 @@ class TranscribeTab(ctk.CTkFrame):
             ],
             variable=self._quality_var,
             state="readonly",
+<<<<<<< HEAD
             height=30,
+=======
+            width=190,
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
         )
         _style_combo(self._quality_combo)
         self._quality_combo.grid(row=1, column=1, sticky="ew", pady=(0, 4))
@@ -1242,6 +1302,7 @@ class TranscribeTab(ctk.CTkFrame):
             row=3, column=0, columnspan=2, sticky="ew", pady=(2, 0)
         )
 
+<<<<<<< HEAD
         details_card = _make_card(columns_row)
         details_card.grid(row=1, column=0, sticky="nsew")
 
@@ -1252,6 +1313,77 @@ class TranscribeTab(ctk.CTkFrame):
             "▣ 3. Deposition Details",
             font_size=14,
         ).pack(side="left", anchor="w")
+=======
+        case_inner = ctk.CTkFrame(case_card, fg_color="transparent")
+        case_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=_COMPACT_CARD_PADY)
+        case_inner.columnconfigure((0, 1, 2, 3), weight=1)
+
+        base_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        base_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, _COMPACT_ROW_GAP))
+        ctk.CTkLabel(base_frame, text="Base Save Folder", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        base_row = ctk.CTkFrame(base_frame, fg_color="transparent")
+        base_row.pack(fill="x", pady=(1, 0))
+        self._base_dir_var = ctk.StringVar(value=_DEFAULT_BASE_DIR)
+        self._base_dir_entry = ctk.CTkEntry(base_row, textvariable=self._base_dir_var)
+        self._base_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self._base_dir_var.trace_add("write", lambda *_: self._update_path_preview())
+        ctk.CTkButton(
+            base_row, text="Browse…", width=80,
+            fg_color=BTN_UTILITY_BLUE, hover_color="#0F3E8A",
+            command=self._browse_base_dir,
+        ).pack(side="right")
+
+        cause_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        cause_frame.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(0, _COMPACT_ROW_GAP))
+        cause_lbl_row = ctk.CTkFrame(cause_frame, fg_color="transparent")
+        cause_lbl_row.pack(fill="x")
+        ctk.CTkLabel(cause_lbl_row, text="Cause Number", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        self._cause_badge = ctk.CTkLabel(cause_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
+        self._cause_badge.pack(side="left", padx=(4, 0))
+        self._cause_var = ctk.StringVar()
+        ctk.CTkEntry(cause_frame, textvariable=self._cause_var, placeholder_text="e.g. 2025CI19595").pack(fill="x", pady=(1, 0))
+        self._cause_var.trace_add("write", self._on_cause_changed)
+
+        name_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        name_frame.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=(0, _COMPACT_ROW_GAP))
+        name_lbl_row = ctk.CTkFrame(name_frame, fg_color="transparent")
+        name_lbl_row.pack(fill="x")
+        ctk.CTkLabel(name_lbl_row, text="Last Name", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        self._witness_badge = ctk.CTkLabel(name_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
+        self._witness_badge.pack(side="left", padx=(4, 0))
+        self._lastname_var = ctk.StringVar()
+        ctk.CTkEntry(name_frame, textvariable=self._lastname_var, placeholder_text="e.g. Coger").pack(fill="x", pady=(1, 0))
+        self._lastname_var.trace_add("write", self._on_lastname_changed)
+
+        first_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        first_frame.grid(row=1, column=2, sticky="ew", padx=(0, 6), pady=(0, _COMPACT_ROW_GAP))
+        ctk.CTkLabel(first_frame, text="First Name", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+        self._firstname_var = ctk.StringVar()
+        ctk.CTkEntry(first_frame, textvariable=self._firstname_var, placeholder_text="e.g. Matthew").pack(fill="x", pady=(1, 0))
+        self._firstname_var.trace_add("write", lambda *_: self._update_path_preview())
+
+        date_frame = ctk.CTkFrame(case_inner, fg_color="transparent")
+        date_frame.grid(row=1, column=3, sticky="ew", pady=(0, _COMPACT_ROW_GAP))
+        date_lbl_row = ctk.CTkFrame(date_frame, fg_color="transparent")
+        date_lbl_row.pack(fill="x")
+        ctk.CTkLabel(date_lbl_row, text="Deposition Date", font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        self._date_badge = ctk.CTkLabel(date_lbl_row, text="", font=ctk.CTkFont(size=13), width=0)
+        self._date_badge.pack(side="left", padx=(4, 0))
+        self._date_var = ctk.StringVar()
+        ctk.CTkEntry(date_frame, textvariable=self._date_var, placeholder_text="From NOD PDF").pack(fill="x", pady=(2, 0))
+        self._date_var.trace_add("write", lambda *_: self._update_path_preview())
+
+        # Save-path preview shares its row with Re-Scan. The label expands to
+        # fill the available width; Re-Scan stays anchored on the right.
+        save_row = ctk.CTkFrame(case_card, fg_color="transparent")
+        save_row.pack(fill="x", padx=6, pady=(0, _COMPACT_ROW_GAP))
+
+        self._path_preview_label = ctk.CTkLabel(
+            save_row, text="", font=ctk.CTkFont(size=13),
+            text_color="gray", wraplength=680, anchor="w", justify="left",
+        )
+        self._path_preview_label.pack(side="left", expand=True, fill="x")
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
 
         self._rescan_btn = ctk.CTkButton(
             details_header,
@@ -1326,9 +1458,115 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._update_path_preview()
 
+<<<<<<< HEAD
         # ── Column 3: Run (start / progress / log / utilities) ─────────────────
         run_card = _make_card(body)
         run_card.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
+=======
+        # ── 5. Case Files / Output ───────────────────────────────────────────
+        source_docs_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        source_docs_card.pack(fill="x", pady=(0, CARD_GAP_PY))
+
+        kt_inner = ctk.CTkFrame(source_docs_card, fg_color="transparent")
+        kt_inner.pack(fill="x", padx=CARD_INNER_PADX, pady=_COMPACT_CARD_PADY)
+
+        # ── Single inline toolbar: Upload / Notes / Folder / Transcript on
+        #     the left, Re-Scan / Review & Edit / status on the right. ──────
+        # Hidden containers from the previous accordion layout are kept as
+        # no-op shims so that _set_case_files_panel_expanded and
+        # _toggle_case_files_panel (which still get called from the upload
+        # handlers) do not trip on missing attributes.
+        self._case_files_header = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        self._case_files_body = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        self._case_files_toggle_btn = None
+
+        toolbar = ctk.CTkFrame(kt_inner, fg_color="transparent")
+        toolbar.pack(fill="x", pady=(0, _COMPACT_ROW_GAP))
+
+        toolbar_left = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_left.pack(side="left", anchor="w")
+
+        self._upload_pdf_btn = ctk.CTkButton(
+            toolbar_left,
+            text="\U0001f4c4  Upload NOD / PDF",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            command=self._handle_pdf_upload,
+        )
+        self._upload_pdf_btn.pack(side="left", padx=(0, 6))
+
+        self._upload_reporter_notes_btn = ctk.CTkButton(
+            toolbar_left,
+            text="\U0001f4dd  Reporter Notes",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            command=self._upload_reporter_notes,
+        )
+        self._upload_reporter_notes_btn.pack(side="left", padx=(0, 6))
+
+        self._open_folder_btn = ctk.CTkButton(
+            toolbar_left,
+            text="Open Output Folder",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            command=self._open_output_folder,
+        )
+        self._open_folder_btn.pack(side="left", padx=(0, 6))
+
+        self._open_transcript_btn = ctk.CTkButton(
+            toolbar_left,
+            text="Open Transcript",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color="#0F3E8A",
+            command=self._open_transcript,
+        )
+        self._open_transcript_btn.pack(side="left")
+
+        toolbar_right = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_right.pack(side="right", anchor="e")
+
+        # Pack right-to-left so the visual order is:
+        # [status]   [Review & Edit]
+        # Re-Scan moved next to the "Will save to:" preview in case_card.
+        self._review_btn = ctk.CTkButton(
+            toolbar_right,
+            text="\U0001f4cb Review & Edit",
+            width=TOOLBAR_BTN_W,
+            height=TOOLBAR_BTN_H,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            state="disabled",
+            command=self._open_review_dialog,
+        )
+        self._review_btn.pack(side="right", padx=(6, 0))
+
+        # Hidden status label. The widget is kept so the ~15 .configure()
+        # callers around the file remain valid no-ops. Visible feedback for
+        # extraction / load events now goes through the Transcript-tab log
+        # panel (_append_transcript_log) and messagebox dialogs.
+        self._extract_status_label = ctk.CTkLabel(
+            toolbar_right, text="", font=ctk.CTkFont(size=12),
+        )
+        # ── Speaker Labels (hidden until transcript completes) ──────────────
+        self._speaker_card = ctk.CTkFrame(
+            container,
+            border_width=CARD_BORDER_WIDTH,
+            border_color=CARD_BORDER_COLOR,
+        )
+        # Not packed yet — shown by _show_speaker_section() after transcription
+>>>>>>> 8291fd3b519f2e281e6ee462c815505c1a51b01e
 
         make_section_header(
             run_card,
