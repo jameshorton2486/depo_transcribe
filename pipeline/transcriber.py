@@ -444,7 +444,7 @@ def _transcribe_direct(
         raise ValueError("DEEPGRAM_API_KEY is not set.")
 
     # Deepgram request defaults:
-    # - filler_words stays on for verbatim compliance (uh/um are legal record)
+    # - filler_words stays off to match Playground transcript defaults
     # - utterances=True is required — correction_runner checks for this key
     # - utt_split controls silence length before Deepgram starts a new utterance
     #   and is intentionally tighter for deposition Q/A turn boundaries
@@ -462,8 +462,8 @@ def _transcribe_direct(
         "punctuate":    True,
         "paragraphs":   False,
         "utterances":   True,
-        "utt_split":    "0.5",
-        "filler_words": True,
+        "utt_split":    "0.8",
+        "filler_words": False,
         "numerals":     True,
     })
     params = enforce_required_deepgram_flags(params)
