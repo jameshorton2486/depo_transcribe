@@ -507,9 +507,11 @@ def _transcribe_direct(
     #   and is intentionally tighter for deposition Q/A turn boundaries
     # - preserve the current return contract; expose extra debug context without
     #   changing downstream behavior
+    from config import DEEPGRAM_MAX_KEYTERMS
+
     normalized_keyterms = [
         str(term).strip() for term in (keyterms or []) if str(term).strip()
-    ]
+    ][:DEEPGRAM_MAX_KEYTERMS]
 
     params = normalize_params(
         {

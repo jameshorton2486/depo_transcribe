@@ -32,6 +32,12 @@ DEEPGRAM_READ_TIMEOUT = 600  # seconds to wait for response
 DEEPGRAM_WRITE_TIMEOUT = 600  # seconds to complete upload
 DEEPGRAM_CHUNK_SIZE_LIMIT_MB = 200  # warn if chunk exceeds this
 
+# Deepgram Nova-3 keyterm parameter limit per request. Distinct from
+# core.config.MAX_KEYTERMS (which caps intake extraction); this is the
+# cap applied at the API boundary to avoid 400 Bad Request from too
+# many keyterm entries in a single Deepgram call.
+DEEPGRAM_MAX_KEYTERMS = 30
+
 # ── Audio normalization ───────────────────────────────────────────────────────
 # Output sample rate after FFmpeg normalization.
 # 24 kHz preserves the 4–8 kHz consonant band critical for legal speech
