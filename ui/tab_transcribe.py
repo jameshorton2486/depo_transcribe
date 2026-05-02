@@ -349,6 +349,7 @@ def _ask_open_document_mode(parent: ctk.CTkBaseClass, docx_path: str) -> str | N
         ),
         justify="left",
         anchor="w",
+        wraplength=600,
     ).pack(fill="x", padx=10, pady=(10, 16))
 
     button_row = ctk.CTkFrame(container, fg_color="transparent")
