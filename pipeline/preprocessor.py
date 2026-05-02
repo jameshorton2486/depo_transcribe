@@ -364,6 +364,16 @@ def normalize_audio(
     """
     Normalize an audio or video file to a clean WAV suitable for Deepgram.
     """
+    from config import PLAYGROUND_MODE
+
+    if PLAYGROUND_MODE:
+        logger.info(
+            "[Preprocessor] PLAYGROUND_MODE on — skipping normalize for parity test"
+        )
+        if progress_callback:
+            progress_callback("PLAYGROUND_MODE: normalization skipped")
+        return str(input_path)
+
     if auto_detect:
         config, tier_name = auto_detect_quality(str(input_path))
         logger.info("[Preprocessor] Auto-detected tier: %s", tier_name)

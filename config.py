@@ -80,3 +80,11 @@ TEMP_DIR = str(_HERE / "temp")
 # STRICT_MODE: when True, processing aborts if validate_blocks() returns any
 # errors. When False, errors are recorded but processing continues.
 STRICT_MODE = False
+
+# PLAYGROUND_MODE: parity-test toggle for matching Deepgram Playground output.
+# When True: skips normalize_audio() and bypasses chunking (single Deepgram
+# request, no preprocessing). USE FOR DEBUGGING ONLY — long depositions
+# (>~10 minutes) will fail single-request because of Deepgram size/timeout
+# limits. Default False so production jobs are never accidentally degraded;
+# flip to True manually for one parity-test run, then flip back.
+PLAYGROUND_MODE = False

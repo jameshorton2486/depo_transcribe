@@ -228,12 +228,31 @@ def run_transcription_job(
         except Exception as vad_exc:
             _log(f"VAD trim skipped: {vad_exc}")
 
-        _progress(20, "Splitting into chunks…")
-        chunks = chunk_audio(
-            normalized_path,
-            total_duration=v["duration"],
-            progress_callback=_log,
-        )
+        from config import PLAYGROUND_MODE
+
+        if PLAYGROUND_MODE:
+            from pipeline.chunker import AudioChunk
+
+            _log(
+                "PLAYGROUND_MODE on — single-request, no chunking, no preprocessing"
+            )
+            chunks = [
+                AudioChunk(
+                    index=0,
+                    file_path=normalized_path,
+                    start_seconds=0.0,
+                    end_seconds=float(v["duration"]),
+                    duration_seconds=float(v["duration"]),
+                    overlap_seconds=0.0,
+                )
+            ]
+        else:
+            _progress(20, "Splitting into chunks…")
+            chunks = chunk_audio(
+                normalized_path,
+                total_duration=v["duration"],
+                progress_callback=_log,
+            )
         _log(f"Split into {len(chunks)} chunk(s)")
 
         chunk_results = []
