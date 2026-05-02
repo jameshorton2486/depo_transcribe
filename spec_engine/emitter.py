@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import List
 
-
 # ---------------------------------------
 # CONSTANTS
 # ---------------------------------------
@@ -17,6 +16,7 @@ _SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
 # ---------------------------------------
 # SAFE UTILITIES
 # ---------------------------------------
+
 
 def normalize_time(text: str) -> str:
     """
@@ -52,6 +52,7 @@ def normalize_speaker(speaker: str | None) -> str:
 # Q/A FORMATTING
 # ---------------------------------------
 
+
 def format_qa(block) -> str:
     """
     Strict UFM Q/A formatting.
@@ -71,6 +72,7 @@ def format_qa(block) -> str:
 # ---------------------------------------
 # COLLOQUY FORMATTING (GROUPED)
 # ---------------------------------------
+
 
 def format_colloquy(blocks: List, start_index: int):
     """
@@ -103,6 +105,7 @@ def format_colloquy(blocks: List, start_index: int):
 # DIRECTIVE FORMATTING
 # ---------------------------------------
 
+
 def format_directive(block) -> str:
     """
     Format directives like:
@@ -113,7 +116,11 @@ def format_directive(block) -> str:
 
 
 def _split_sentences(text: str) -> list[str]:
-    return [part.strip() for part in _SENTENCE_RE.findall(str(text or "").strip()) if part.strip()]
+    return [
+        part.strip()
+        for part in _SENTENCE_RE.findall(str(text or "").strip())
+        if part.strip()
+    ]
 
 
 def split_blocks_into_paragraphs(blocks: List) -> List:
@@ -147,6 +154,7 @@ def split_blocks_into_paragraphs(blocks: List) -> List:
 # ---------------------------------------
 # MAIN EMITTER
 # ---------------------------------------
+
 
 def format_blocks_to_text(blocks: List) -> str:
     """

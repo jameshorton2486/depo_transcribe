@@ -9,7 +9,6 @@ cd C:\Users\james\PycharmProjects\depo_transcribe
 import os
 import sys
 
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _RUNTIME_DIRS = ("temp", "output", "logs", "work_files/transcripts")
 

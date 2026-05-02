@@ -118,7 +118,9 @@ def _make_intake(terms: list[str]) -> IntakeParsedResult:
 
 def test_merge_from_intake_pdf_fills_first():
     intake = _make_intake(["Matthew Coger", "Murphy Oil USA"])
-    result, intake_count, reporter_count = merge_from_intake(intake, ["Smith System", "Spill-Eater"])
+    result, intake_count, reporter_count = merge_from_intake(
+        intake, ["Smith System", "Spill-Eater"]
+    )
     assert "Matthew Coger" in result
 
 

@@ -260,21 +260,86 @@ def INTAKE_PARSER_USER_PROMPT(text: str) -> str:
 
 
 NOISE_WORDS = {
-    "court", "texas", "plaintiff", "defendant", "notice",
-    "deposition", "attorney", "firm", "march", "july",
-    "february", "january", "april", "may", "june", "august",
-    "september", "october", "november", "december", "this",
-    "your", "with", "please", "take", "pursuant", "telephone",
-    "facsimile", "witness", "produce", "case", "appearance",
-    "delivery", "signature", "parking", "interpreter",
-    "original", "standard", "certificate", "district",
-    "intention", "oral", "cause", "county", "austin", "bexar",
-    "will", "david", "kathie", "love", "wright", "greenhill",
-    "pllc", "william", "ordered", "odered", "deponent",
-    "location", "date", "pages", "exhibit", "format", "rush",
-    "due", "copy", "color", "video", "special", "instructions",
-    "conference", "room", "trans", "hard", "notary", "public",
-    "rules", "civil", "procedure", "respectfully", "submitted",
+    "court",
+    "texas",
+    "plaintiff",
+    "defendant",
+    "notice",
+    "deposition",
+    "attorney",
+    "firm",
+    "march",
+    "july",
+    "february",
+    "january",
+    "april",
+    "may",
+    "june",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "this",
+    "your",
+    "with",
+    "please",
+    "take",
+    "pursuant",
+    "telephone",
+    "facsimile",
+    "witness",
+    "produce",
+    "case",
+    "appearance",
+    "delivery",
+    "signature",
+    "parking",
+    "interpreter",
+    "original",
+    "standard",
+    "certificate",
+    "district",
+    "intention",
+    "oral",
+    "cause",
+    "county",
+    "austin",
+    "bexar",
+    "will",
+    "david",
+    "kathie",
+    "love",
+    "wright",
+    "greenhill",
+    "pllc",
+    "william",
+    "ordered",
+    "odered",
+    "deponent",
+    "location",
+    "date",
+    "pages",
+    "exhibit",
+    "format",
+    "rush",
+    "due",
+    "copy",
+    "color",
+    "video",
+    "special",
+    "instructions",
+    "conference",
+    "room",
+    "trans",
+    "hard",
+    "notary",
+    "public",
+    "rules",
+    "civil",
+    "procedure",
+    "respectfully",
+    "submitted",
 }
 
 ROLE_LEXICON = (
@@ -421,7 +486,9 @@ def _normalize_confirmed_spellings(
     return merged
 
 
-def _build_vocabulary_terms(data: dict[str, Any], filtered_terms: list[str]) -> list[VocabularyTerm]:
+def _build_vocabulary_terms(
+    data: dict[str, Any], filtered_terms: list[str]
+) -> list[VocabularyTerm]:
     filtered_lookup = {term.lower() for term in filtered_terms}
     result: list[VocabularyTerm] = []
 
@@ -461,9 +528,13 @@ def _dedupe_preserve(items: list[str]) -> list[str]:
     return out
 
 
-def _extract_county_state_from_court(court: str | None) -> tuple[str | None, str | None]:
+def _extract_county_state_from_court(
+    court: str | None,
+) -> tuple[str | None, str | None]:
     text = _coerce_str(court) or ""
-    match = re.search(r"([A-Z][A-Za-z]+)\s+County,\s+([A-Z][A-Za-z]+)", text, re.IGNORECASE)
+    match = re.search(
+        r"([A-Z][A-Za-z]+)\s+County,\s+([A-Z][A-Za-z]+)", text, re.IGNORECASE
+    )
     if not match:
         return None, None
     return f"{match.group(1).title()} County", match.group(2).title()
@@ -497,7 +568,9 @@ def _build_structured_keyterm_map(
     )
     for attorney in (ordering_attorney, filing_attorney):
         name_candidates.append(_coerce_str(attorney.get("name")) or "")
-    name_candidates.extend(_coerce_str(item.get("name")) or "" for item in copy_attorneys)
+    name_candidates.extend(
+        _coerce_str(item.get("name")) or "" for item in copy_attorneys
+    )
     name_candidates.extend(term for term in all_proper_nouns if " " in term)
 
     for name in _dedupe_preserve(name_candidates):
@@ -597,12 +670,8 @@ def _build_entity_counts(
     reporter_name: str | None,
     all_proper_nouns: list[str],
 ) -> dict[str, int]:
-    people = {
-        term.term for term in vocabulary_terms if term.term_type == "PERSON"
-    }
-    orgs = {
-        term.term for term in vocabulary_terms if term.term_type == "COMPANY"
-    }
+    people = {term.term for term in vocabulary_terms if term.term_type == "PERSON"}
+    orgs = {term.term for term in vocabulary_terms if term.term_type == "COMPANY"}
 
     for group in (plaintiffs, defendants):
         for item in group:
@@ -630,12 +699,14 @@ def _build_entity_counts(
         people.add(reporter_name)
 
     role_count = sum(
-        1 for role in ROLE_LEXICON
+        1
+        for role in ROLE_LEXICON
         if re.search(rf"\b{re.escape(role)}\b", text, flags=re.IGNORECASE)
     )
 
     legal_phrases = {
-        phrase for phrase in LEGAL_PHRASE_LEXICON
+        phrase
+        for phrase in LEGAL_PHRASE_LEXICON
         if re.search(re.escape(phrase), text, flags=re.IGNORECASE)
     }
     legal_phrases.update(_extract_rule_citations(text))
@@ -700,10 +771,12 @@ def parse_intake_document(
             model=AI_MODEL,
             max_tokens=4096,
             system=INTAKE_PARSER_SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": INTAKE_PARSER_USER_PROMPT(text[:16000]),
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": INTAKE_PARSER_USER_PROMPT(text[:16000]),
+                }
+            ],
         )
         raw_json = _strip_markdown_fences(message.content[0].text.strip())
     except Exception as exc:
@@ -718,7 +791,9 @@ def parse_intake_document(
         return None
 
     raw_terms = data.get("all_proper_nouns", [])
-    filtered_terms = hard_filter_keyterms(raw_terms if isinstance(raw_terms, list) else [])
+    filtered_terms = hard_filter_keyterms(
+        raw_terms if isinstance(raw_terms, list) else []
+    )
     log(
         f"[IntakeParser] Terms: {len(raw_terms) if isinstance(raw_terms, list) else 0} raw  "
         f"{len(filtered_terms)} after filter"

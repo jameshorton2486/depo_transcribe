@@ -14,12 +14,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 
-
 # Windows-illegal filename characters plus ASCII control bytes. NTFS
 # silently treats `:` as an alternate-data-stream separator, so a bad
 # filename can succeed at write time but be unreachable to Word.
 _ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]|[\x00-\x1f]')
-_WHITESPACE_RUN = re.compile(r'\s+')
+_WHITESPACE_RUN = re.compile(r"\s+")
 _TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
 _SENTENCE_SPACE_RE = re.compile(r"([.!?])\s+")
 
@@ -39,7 +38,9 @@ def sanitize_filename_component(value: str) -> str:
     return cleaned or "document"
 
 
-def safe_save(document: Document, path: Path, *, retries: int = 3, delay_seconds: float = 1.0) -> None:
+def safe_save(
+    document: Document, path: Path, *, retries: int = 3, delay_seconds: float = 1.0
+) -> None:
     """Retry transient Word lock failures before surfacing a clean error."""
     for attempt in range(retries):
         try:
@@ -139,7 +140,9 @@ def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
     return _merge_consecutive_speaker_blocks(blocks)
 
 
-def _merge_consecutive_speaker_blocks(blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+def _merge_consecutive_speaker_blocks(
+    blocks: list[dict[str, str]],
+) -> list[dict[str, str]]:
     merged: list[dict[str, str]] = []
     for block in blocks:
         if (
@@ -201,7 +204,9 @@ def _write_appearances(document: Document, case_meta: dict[str, Any]) -> None:
 
     if defendants:
         for entry in defendants:
-            _left_paragraph(document, f"FOR DEFENDANT {entry.get('name', '').upper()}", bold=True)
+            _left_paragraph(
+                document, f"FOR DEFENDANT {entry.get('name', '').upper()}", bold=True
+            )
             _left_paragraph(document, entry.get("name", ""))
             if entry.get("city"):
                 _left_paragraph(document, entry["city"])
@@ -213,7 +218,9 @@ def _write_appearances(document: Document, case_meta: dict[str, Any]) -> None:
         _left_paragraph(document, case_meta["reporter_name"])
 
 
-def _write_proceedings(document: Document, formatted_text: str, case_meta: dict[str, Any]) -> None:
+def _write_proceedings(
+    document: Document, formatted_text: str, case_meta: dict[str, Any]
+) -> None:
     _center_paragraph(document, "PROCEEDINGS", bold=True)
 
     witness_name = case_meta.get("witness_name", "").upper()
@@ -223,7 +230,11 @@ def _write_proceedings(document: Document, formatted_text: str, case_meta: dict[
         _center_paragraph(document, "EXAMINATION", bold=True)
 
         examining = next(
-            (entry for entry in case_meta.get("attorneys", []) or [] if entry.get("role") == "defendant"),
+            (
+                entry
+                for entry in case_meta.get("attorneys", []) or []
+                if entry.get("role") == "defendant"
+            ),
             None,
         )
         if examining:
@@ -252,11 +263,15 @@ def _write_proceedings(document: Document, formatted_text: str, case_meta: dict[
             run.bold = True
 
 
-def build_deposition_document(formatted_text: str, case_meta: dict[str, Any]) -> Document:
+def build_deposition_document(
+    formatted_text: str, case_meta: dict[str, Any]
+) -> Document:
     document = Document()
     _set_document_defaults(document)
 
-    _center_paragraph(document, f"CAUSE NO. {case_meta.get('cause_number', '')}", bold=True)
+    _center_paragraph(
+        document, f"CAUSE NO. {case_meta.get('cause_number', '')}", bold=True
+    )
     _write_caption_table(document, case_meta)
     _center_paragraph(document, "* * * * *")
     _center_paragraph(document, "ORAL VIDEOTAPED", bold=True)

@@ -46,8 +46,11 @@ class FileFormatter(logging.Formatter):
 def _make_rotating_handler(filename: str, level: int) -> RotatingFileHandler:
     LOG_DIR.mkdir(exist_ok=True)
     h = RotatingFileHandler(
-        LOG_DIR / filename, maxBytes=MAX_BYTES,
-        backupCount=BACKUP_COUNT, encoding="utf-8")
+        LOG_DIR / filename,
+        maxBytes=MAX_BYTES,
+        backupCount=BACKUP_COUNT,
+        encoding="utf-8",
+    )
     h.setLevel(level)
     h.setFormatter(FileFormatter())
     return h
@@ -90,7 +93,9 @@ def rotate_startup_logs() -> list[Path]:
         archive_path = ARCHIVE_DIR / f"{log_file.stem}_{stamp}{log_file.suffix}"
         counter = 1
         while archive_path.exists():
-            archive_path = ARCHIVE_DIR / f"{log_file.stem}_{stamp}_{counter}{log_file.suffix}"
+            archive_path = (
+                ARCHIVE_DIR / f"{log_file.stem}_{stamp}_{counter}{log_file.suffix}"
+            )
             counter += 1
 
         try:
@@ -123,12 +128,10 @@ def get_format_logger() -> logging.Logger:
     _setup_root_logger()
     logger = logging.getLogger("formatting")
     if not any(
-        isinstance(h, RotatingFileHandler)
-        and "formatting.log" in str(h.baseFilename)
+        isinstance(h, RotatingFileHandler) and "formatting.log" in str(h.baseFilename)
         for h in logger.handlers
     ):
-        logger.addHandler(
-            _make_rotating_handler("formatting.log", logging.DEBUG))
+        logger.addHandler(_make_rotating_handler("formatting.log", logging.DEBUG))
         logger.propagate = True
     return logger
 
@@ -140,12 +143,20 @@ def log_section(logger: logging.Logger, title: str):
     logger.info(bar)
 
 
-def log_api_call(logger: logging.Logger, model: str, input_chars: int,
-                 output_chars: int, elapsed_ms: int, success: bool,
-                 error: str = ""):
+def log_api_call(
+    logger: logging.Logger,
+    model: str,
+    input_chars: int,
+    output_chars: int,
+    elapsed_ms: int,
+    success: bool,
+    error: str = "",
+):
     status = "OK" if success else "FAIL"
-    msg = (f"API {status} | model={model} | "
-           f"in={input_chars:,}ch | out={output_chars:,}ch | {elapsed_ms}ms")
+    msg = (
+        f"API {status} | model={model} | "
+        f"in={input_chars:,}ch | out={output_chars:,}ch | {elapsed_ms}ms"
+    )
     if error:
         msg += f" | error={error[:120]}"
     if success:

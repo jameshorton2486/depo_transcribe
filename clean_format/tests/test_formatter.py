@@ -17,7 +17,9 @@ class _FakeMessages:
     def create(self, **kwargs):
         self.calls.append(kwargs)
         chunk_number = len(self.calls)
-        return SimpleNamespace(content=[SimpleNamespace(text=f"LABEL:\tchunk {chunk_number}")])
+        return SimpleNamespace(
+            content=[SimpleNamespace(text=f"LABEL:\tchunk {chunk_number}")]
+        )
 
 
 class _FakeClient:
@@ -26,7 +28,9 @@ class _FakeClient:
 
 
 def test_split_transcript_chunks_large_input_on_block_boundaries():
-    raw_text = "\n\n".join(f"Speaker 0: block {index} " + ("x" * 80) for index in range(20))
+    raw_text = "\n\n".join(
+        f"Speaker 0: block {index} " + ("x" * 80) for index in range(20)
+    )
     chunks = split_transcript(raw_text, max_chunk_chars=500)
     assert len(chunks) > 1
 
@@ -40,7 +44,9 @@ def test_format_transcript_includes_case_meta_in_user_message():
 
 
 def test_build_user_message_labels_chunk_position():
-    message = build_user_message("Speaker 0: hello", {"cause_number": "DC-25-13430"}, 2, 4)
+    message = build_user_message(
+        "Speaker 0: hello", {"cause_number": "DC-25-13430"}, 2, 4
+    )
     assert "Transcript chunk 2 of 4" in message
 
 
@@ -66,5 +72,7 @@ def test_postprocess_formatted_text_uses_two_spaces_after_sentence_endings():
 
 
 def test_postprocess_formatted_text_normalizes_interruption_dashes():
-    result = _postprocess_formatted_text("Q.\tOkay — if you need a break - let me know.")
+    result = _postprocess_formatted_text(
+        "Q.\tOkay — if you need a break - let me know."
+    )
     assert result == "Q.\tOkay -- if you need a break - let me know."

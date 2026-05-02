@@ -20,7 +20,10 @@ def _looks_like_directive(text: str) -> bool:
 
 
 def _is_colloquy_speaker(speaker: str) -> bool:
-    return str(speaker or "").strip().upper().rstrip(":") in {"VIDEOGRAPHER", "COURT REPORTER"}
+    return str(speaker or "").strip().upper().rstrip(":") in {
+        "VIDEOGRAPHER",
+        "COURT REPORTER",
+    }
 
 
 def _classify_type(speaker: str, text: str) -> str:
@@ -36,6 +39,7 @@ def _classify_type(speaker: str, text: str) -> str:
     if _is_colloquy_speaker(speaker):
         return "colloquy"
     return "colloquy"
+
 
 def classify_blocks(blocks: list[dict[str, Any]]) -> list[TranscriptBlock]:
     """Classify block-builder dictionaries into structural transcript blocks."""

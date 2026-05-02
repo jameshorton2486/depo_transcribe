@@ -23,7 +23,9 @@ def test_merge_with_overlap_keeps_non_overlapping_text():
 
 
 def test_merge_with_overlap_handles_partial_boundary_phrase():
-    merged = assembler.merge_with_overlap("beginning of the", "beginning of the edition")
+    merged = assembler.merge_with_overlap(
+        "beginning of the", "beginning of the edition"
+    )
 
     assert merged == "beginning of the edition"
 
@@ -173,7 +175,9 @@ def test_reassemble_chunks_merges_same_speaker_overlap_text():
 
     merged = assembler.reassemble_chunks(chunk_results, chunk_start_offsets=[0.0, 0.2])
 
-    assert [u["transcript"] for u in merged["utterances"]] == ["beginning of the edition"]
+    assert [u["transcript"] for u in merged["utterances"]] == [
+        "beginning of the edition"
+    ]
     assert merged["transcript"] == "Speaker 0: beginning of the edition"
 
 
@@ -222,7 +226,9 @@ def test_reassemble_chunks_prefers_raw_utterances_when_available():
         "Good afternoon,",
         "Doctor Leifer.",
     ]
-    assert [u["transcript"] for u in merged["utterances"]] == ["Good afternoon, Doctor Leifer."]
+    assert [u["transcript"] for u in merged["utterances"]] == [
+        "Good afternoon, Doctor Leifer."
+    ]
     assert merged["transcript"] == "Speaker 0: Good afternoon, Doctor Leifer."
 
 
@@ -276,7 +282,9 @@ def test_reassemble_chunks_merges_same_speaker_sentence_continuation():
         "Good afternoon,",
         "Doctor Leifer.",
     ]
-    assert [u["transcript"] for u in merged["utterances"]] == ["Good afternoon, Doctor Leifer."]
+    assert [u["transcript"] for u in merged["utterances"]] == [
+        "Good afternoon, Doctor Leifer."
+    ]
     assert merged["transcript"] == "Speaker 0: Good afternoon, Doctor Leifer."
 
 
@@ -411,7 +419,10 @@ def test_merge_channel_assemblies_keeps_channels_as_separate_speakers():
     merged = assembler.merge_channel_assemblies([left, right])
 
     assert [u["speaker"] for u in merged["utterances"]] == [0, 1]
-    assert [u["speaker_label"] for u in merged["utterances"]] == ["Speaker 0", "Speaker 1"]
+    assert [u["speaker_label"] for u in merged["utterances"]] == [
+        "Speaker 0",
+        "Speaker 1",
+    ]
     assert [w["speaker"] for w in merged["words"]] == [0, 1]
     assert merged["transcript"] == "Speaker 0: question\n\nSpeaker 1: answer"
     assert merged["raw_chunks"] == [

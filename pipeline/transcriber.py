@@ -44,12 +44,27 @@ SENTENCE_ENDINGS = (".", "?", "!")
 # Legitimate short witness responses — depositions are full of these. If the
 # middle utterance in an A→B→A pattern is one of these words, treat it as a
 # real speaker turn, not a Deepgram glitch.
-SHORT_ANSWER_WHITELIST = frozenset({
-    "yes", "no", "yeah", "yep", "nope", "nah",
-    "correct", "right", "sure", "okay", "ok",
-    "true", "false",
-    "uh-huh", "mm-hmm", "uh-uh", "mm-mm",
-})
+SHORT_ANSWER_WHITELIST = frozenset(
+    {
+        "yes",
+        "no",
+        "yeah",
+        "yep",
+        "nope",
+        "nah",
+        "correct",
+        "right",
+        "sure",
+        "okay",
+        "ok",
+        "true",
+        "false",
+        "uh-huh",
+        "mm-hmm",
+        "uh-uh",
+        "mm-mm",
+    }
+)
 
 
 def _is_short_answer(utterance: dict) -> bool:
@@ -57,6 +72,7 @@ def _is_short_answer(utterance: dict) -> bool:
     text = (utterance.get("transcript") or "").strip().lower()
     text = text.rstrip(".,;:?!").strip()
     return text in SHORT_ANSWER_WHITELIST
+
 
 ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
@@ -109,10 +125,17 @@ def _probe_max_volume_db(file_path: str) -> float | None:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-i", file_path,
-                "-af", "volumedetect",
-                "-vn", "-sn", "-dn",
-                "-f", "null", os.devnull,
+                "ffmpeg",
+                "-i",
+                file_path,
+                "-af",
+                "volumedetect",
+                "-vn",
+                "-sn",
+                "-dn",
+                "-f",
+                "null",
+                os.devnull,
             ],
             capture_output=True,
             text=True,
@@ -150,7 +173,9 @@ def _utterance_duration(utterance: dict) -> float:
     return max(0.0, end - start)
 
 
-def _is_short_glitch(prev_item: dict | None, item: dict, next_item: dict | None) -> bool:
+def _is_short_glitch(
+    prev_item: dict | None, item: dict, next_item: dict | None
+) -> bool:
     if not prev_item or not next_item:
         return False
 
@@ -168,9 +193,16 @@ def _is_short_glitch(prev_item: dict | None, item: dict, next_item: dict | None)
     if _is_short_answer(item):
         return False
 
-    prev_gap = _coerce_float(item.get("start", 0.0)) - _coerce_float(prev_item.get("end", 0.0))
-    next_gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(item.get("end", 0.0))
-    return prev_gap <= MERGE_GAP_THRESHOLD_SECONDS and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
+    prev_gap = _coerce_float(item.get("start", 0.0)) - _coerce_float(
+        prev_item.get("end", 0.0)
+    )
+    next_gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(
+        item.get("end", 0.0)
+    )
+    return (
+        prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
+        and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
+    )
 
 
 def _annotate_confidence(utterance: dict) -> dict:
@@ -208,9 +240,16 @@ def smooth_speakers(utterances: list) -> list:
         if _is_short_answer(current):
             continue
 
-        prev_gap = _coerce_float(current.get("start", 0.0)) - _coerce_float(prev_item.get("end", 0.0))
-        next_gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(current.get("end", 0.0))
-        if prev_gap <= MERGE_GAP_THRESHOLD_SECONDS and next_gap <= MERGE_GAP_THRESHOLD_SECONDS:
+        prev_gap = _coerce_float(current.get("start", 0.0)) - _coerce_float(
+            prev_item.get("end", 0.0)
+        )
+        next_gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(
+            current.get("end", 0.0)
+        )
+        if (
+            prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
+            and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
+        ):
             logger.debug(
                 "Smoothing speaker glitch index=%s speaker=%s -> %s text=%r",
                 index,
@@ -284,7 +323,9 @@ def merge_utterances(
             current = next_item
             continue
 
-        gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(current.get("end", 0.0))
+        gap = _coerce_float(next_item.get("start", 0.0)) - _coerce_float(
+            current.get("end", 0.0)
+        )
         current_words = current.get("words", [])
         next_words = next_item.get("words", [])
         current_word_count = len(current_words) or len(current_text.split())
@@ -306,7 +347,10 @@ def merge_utterances(
             continue
 
         if STRICT_MERGE:
-            if current_confidence < LOW_CONFIDENCE_THRESHOLD or next_confidence < LOW_CONFIDENCE_THRESHOLD:
+            if (
+                current_confidence < LOW_CONFIDENCE_THRESHOLD
+                or next_confidence < LOW_CONFIDENCE_THRESHOLD
+            ):
                 merged.append(current)
                 current = next_item
                 continue
@@ -330,15 +374,22 @@ def merge_utterances(
             "end": next_item.get("end", current.get("end", 0.0)),
             "transcript": combined_text,
             "words": combined_words,
-            "confidence": min(current_confidence, next_confidence) if combined_words else min(current_confidence, next_confidence),
-            "low_confidence": min(current_confidence, next_confidence) < LOW_CONFIDENCE_THRESHOLD,
+            "confidence": (
+                min(current_confidence, next_confidence)
+                if combined_words
+                else min(current_confidence, next_confidence)
+            ),
+            "low_confidence": min(current_confidence, next_confidence)
+            < LOW_CONFIDENCE_THRESHOLD,
         }
 
     merged.append(current)
     return merged
 
 
-def _write_debug_snapshots(audio_file_path: str, raw_utterances: list, merged_utterances: list) -> None:
+def _write_debug_snapshots(
+    audio_file_path: str, raw_utterances: list, merged_utterances: list
+) -> None:
     try:
         chunk_path = Path(audio_file_path)
         raw_path = chunk_path.with_name(f"{chunk_path.stem}_raw_utterances.json")
@@ -348,15 +399,21 @@ def _write_debug_snapshots(audio_file_path: str, raw_utterances: list, merged_ut
             "chunk": chunk_path.name,
             "raw_utterances": raw_utterances,
         }
-        raw_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        raw_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
         payload = {
             "chunk": chunk_path.name,
             "merged_utterances": merged_utterances,
         }
-        merged_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        merged_path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
     except Exception as exc:
-        logger.warning("Failed to write utterance debug snapshots for %s: %s", audio_file_path, exc)
+        logger.warning(
+            "Failed to write utterance debug snapshots for %s: %s", audio_file_path, exc
+        )
 
 
 def normalize_params(params: dict) -> dict:
@@ -454,18 +511,20 @@ def _transcribe_direct(
         str(term).strip() for term in (keyterms or []) if str(term).strip()
     ]
 
-    params = normalize_params({
-        "model":        model,
-        "language":     "en",
-        "smart_format": True,
-        "diarize":      True,
-        "punctuate":    True,
-        "paragraphs":   False,
-        "utterances":   True,
-        "utt_split":    "0.5",
-        "filler_words": True,
-        "numerals":     True,
-    })
+    params = normalize_params(
+        {
+            "model": model,
+            "language": "en",
+            "smart_format": True,
+            "diarize": True,
+            "punctuate": True,
+            "paragraphs": False,
+            "utterances": True,
+            "utt_split": "0.5",
+            "filler_words": True,
+            "numerals": True,
+        }
+    )
     params = enforce_required_deepgram_flags(params)
     params = validate_deepgram_params(params)
 
@@ -487,7 +546,9 @@ def _transcribe_direct(
         buffer = f.read()
 
     max_volume = _probe_max_volume_db(audio_file_path)
-    logger.info("Chunk volume: %s dB", "unknown" if max_volume is None else f"{max_volume:.2f}")
+    logger.info(
+        "Chunk volume: %s dB", "unknown" if max_volume is None else f"{max_volume:.2f}"
+    )
     if _is_near_silent(audio_file_path, max_volume=max_volume):
         logger.warning(
             "Near-silent chunk detected — processing anyway (safe mode). chunk=%s threshold=%.0fdB",
@@ -497,7 +558,9 @@ def _transcribe_direct(
         if SKIP_SILENCE:
             logger.info("Chunk included: NO (skip-silence mode enabled)")
             if progress_callback:
-                progress_callback(f"Skipped silent chunk: {chunk_name} (safe skip mode)")
+                progress_callback(
+                    f"Skipped silent chunk: {chunk_name} (safe skip mode)"
+                )
             return dict(_EMPTY_RESULT)
         logger.info("Chunk included: YES")
     else:
@@ -518,19 +581,25 @@ def _transcribe_direct(
                 content=buffer,
                 headers={
                     "Authorization": f"Token {api_key}",
-                    "Content-Type":  "audio/*",
+                    "Content-Type": "audio/*",
                 },
                 timeout=timeout,
             )
             if resp.status_code != 200:
-                logger.error("Deepgram returned status %s: %s", resp.status_code, resp.text[:1024])
+                logger.error(
+                    "Deepgram returned status %s: %s",
+                    resp.status_code,
+                    resp.text[:1024],
+                )
             resp.raise_for_status()
             raw = resp.json()
             results = raw.get("results") or {}
             raw_utterances = results.get("utterances")
             if not isinstance(raw_utterances, list) or not raw_utterances:
                 logger.error("Deepgram response missing utterances: %s", raw)
-                raise ValueError("Deepgram returned no utterances; transcription cannot proceed.")
+                raise ValueError(
+                    "Deepgram returned no utterances; transcription cannot proceed."
+                )
 
             logger.info("Utterances received: %s", len(raw_utterances))
             print(f"Utterances received: {len(raw_utterances)}")
@@ -550,32 +619,32 @@ def _transcribe_direct(
             alt = alternatives[0]
             words = [
                 {
-                    "word":            w.get("word", ""),
-                    "start":           w.get("start", 0),
-                    "end":             w.get("end", 0),
-                    "confidence":      w.get("confidence", 0),
-                    "speaker":         w.get("speaker"),
+                    "word": w.get("word", ""),
+                    "start": w.get("start", 0),
+                    "end": w.get("end", 0),
+                    "confidence": w.get("confidence", 0),
+                    "speaker": w.get("speaker"),
                     "punctuated_word": w.get("punctuated_word", w.get("word", "")),
-                    "type":            w.get("type", "word"),
+                    "type": w.get("type", "word"),
                 }
                 for w in alt.get("words", [])
             ]
 
             raw_utterances = [
                 {
-                    "speaker":    u.get("speaker"),
-                    "start":      u.get("start", 0),
-                    "end":        u.get("end", 0),
+                    "speaker": u.get("speaker"),
+                    "start": u.get("start", 0),
+                    "end": u.get("end", 0),
                     "transcript": u.get("transcript", ""),
                     "confidence": u.get("confidence", 0),
                     "words": [
                         {
-                            "word":       w.get("word", ""),
-                            "start":      w.get("start", 0),
-                            "end":        w.get("end", 0),
+                            "word": w.get("word", ""),
+                            "start": w.get("start", 0),
+                            "end": w.get("end", 0),
                             "confidence": w.get("confidence", 0),
-                            "speaker":    w.get("speaker"),
-                            "type":       w.get("type", "word"),
+                            "speaker": w.get("speaker"),
+                            "type": w.get("type", "word"),
                         }
                         for w in u.get("words", [])
                     ],
@@ -606,19 +675,25 @@ def _transcribe_direct(
             elapsed = time.time() - t0
             logger.info(
                 "Deepgram direct OK chunk=%s elapsed=%.2fs words=%s utterances=%s raw_utterances=%s",
-                chunk_name, elapsed, len(words), len(utterances), len(raw_utterances),
+                chunk_name,
+                elapsed,
+                len(words),
+                len(utterances),
+                len(raw_utterances),
             )
 
             if progress_callback:
-                progress_callback(f"Done: {len(words)} words, {len(utterances)} utterances")
+                progress_callback(
+                    f"Done: {len(words)} words, {len(utterances)} utterances"
+                )
 
             return {
-                "words":            words,
-                "utterances":       utterances,
+                "words": words,
+                "utterances": utterances,
                 "merged_utterances": utterances,
-                "raw_utterances":   raw_utterances,
-                "transcript":       alt.get("transcript", ""),
-                "raw":              raw,
+                "raw_utterances": raw_utterances,
+                "transcript": alt.get("transcript", ""),
+                "raw": raw,
             }
 
         except Exception as exc:
@@ -641,7 +716,12 @@ def _transcribe_direct(
             logger.error(
                 "Direct attempt %s/%s FAILED chunk=%s elapsed=%.2fs "
                 "status=%s error=%s",
-                attempt, MAX_RETRIES, chunk_name, elapsed, status, exc,
+                attempt,
+                MAX_RETRIES,
+                chunk_name,
+                elapsed,
+                status,
+                exc,
             )
             if attempt < MAX_RETRIES and _is_retryable_error(exc, status):
                 if progress_callback:
@@ -684,8 +764,7 @@ def transcribe_chunk(
     """
     if model not in ALLOWED_MODELS:
         raise ValueError(
-            f"Model '{model}' is not allowed. "
-            f"Use one of: {sorted(ALLOWED_MODELS)}"
+            f"Model '{model}' is not allowed. " f"Use one of: {sorted(ALLOWED_MODELS)}"
         )
 
     return _transcribe_direct(

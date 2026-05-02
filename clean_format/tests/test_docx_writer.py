@@ -35,7 +35,9 @@ def _case_meta() -> dict:
 
 
 def test_build_deposition_document_has_caption_table_and_examination_header():
-    document = build_deposition_document("Q.\tState your name.\n\nA.\tBianca Caram.", _case_meta())
+    document = build_deposition_document(
+        "Q.\tState your name.\n\nA.\tBianca Caram.", _case_meta()
+    )
     text = "\n".join(paragraph.text for paragraph in document.paragraphs)
     assert document.tables
     assert "EXAMINATION" in text
@@ -43,14 +45,18 @@ def test_build_deposition_document_has_caption_table_and_examination_header():
 
 def test_write_deposition_docx_sets_courier_default(tmp_path):
     output_path = tmp_path / "sample.docx"
-    saved_path = write_deposition_docx("Q.\tQuestion\n\nA.\tAnswer", _case_meta(), output_path)
+    saved_path = write_deposition_docx(
+        "Q.\tQuestion\n\nA.\tAnswer", _case_meta(), output_path
+    )
     document = Document(saved_path)
     assert document.styles["Normal"].font.name == "Courier New"
 
 
 def test_write_deposition_docx_writes_file(tmp_path):
     output_path = tmp_path / "sample.docx"
-    saved_path = write_deposition_docx("LABEL:\tToday's date is April 9, 2026.", _case_meta(), output_path)
+    saved_path = write_deposition_docx(
+        "LABEL:\tToday's date is April 9, 2026.", _case_meta(), output_path
+    )
     assert output_path.exists()
     assert saved_path.endswith("sample.docx")
 
@@ -92,7 +98,11 @@ def test_write_proceedings_uses_two_spaces_after_speaker_colon_and_sentences():
 
 def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
     document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
-    qa_paragraph = next(paragraph for paragraph in document.paragraphs if paragraph.text.startswith("Q.\t"))
+    qa_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text.startswith("Q.\t")
+    )
     tab_positions = [tab.position for tab in qa_paragraph.paragraph_format.tab_stops]
     assert 228600 in tab_positions
     assert 571500 in tab_positions
@@ -100,9 +110,9 @@ def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
 
 
 def test_sanitize_filename_component_replaces_spaces_and_punctuation():
-    assert sanitize_filename_component("CARAM Deposition April 9, 2026 at 800 a.m.") == (
-        "CARAM Deposition April 9, 2026 at 800 a.m"
-    )
+    assert sanitize_filename_component(
+        "CARAM Deposition April 9, 2026 at 800 a.m."
+    ) == ("CARAM Deposition April 9, 2026 at 800 a.m")
 
 
 def test_safe_save_retries_permission_error(monkeypatch, tmp_path):

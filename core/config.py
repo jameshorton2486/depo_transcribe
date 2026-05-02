@@ -21,12 +21,12 @@ AI_MODEL = "claude-sonnet-4-6"
 # Location: {case_root}/source_docs/job_config.json
 # Behavior: always overwrite — never create timestamped duplicates.
 JOB_CONFIG_FILENAME = "job_config.json"
-JOB_CONFIG_DIR      = "source_docs"
-JOB_CONFIG_VERSION  = 1          # increment when schema changes
+JOB_CONFIG_DIR = "source_docs"
+JOB_CONFIG_VERSION = 1  # increment when schema changes
 
 # ── Deepgram Keyterms ─────────────────────────────────────────────────────────
 # Deepgram Nova-3 hard cap is 100 terms per request.
 # MIN_TERM_LENGTH filters noise (single letters, two-char fragments).
 # Both values are imported by core/keyterm_extractor.py — change here only.
-MAX_KEYTERMS    = 100
+MAX_KEYTERMS = 100
 MIN_TERM_LENGTH = 3

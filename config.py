@@ -18,7 +18,7 @@ load_dotenv(dotenv_path=_HERE / ".env")
 
 # ── API Keys ──────────────────────────────────────────────────────────────────
 # Set these in your .env file — do not hardcode values here.
-DEEPGRAM_API_KEY  = os.getenv("DEEPGRAM_API_KEY",  "")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 # ── Deepgram model ────────────────────────────────────────────────────────────
@@ -27,10 +27,10 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 DEEPGRAM_MODEL = "nova-3"
 
 # Deepgram upload timeout settings
-DEEPGRAM_CONNECTION_TIMEOUT = 30      # seconds to establish connection
-DEEPGRAM_READ_TIMEOUT = 600           # seconds to wait for response
-DEEPGRAM_WRITE_TIMEOUT = 600          # seconds to complete upload
-DEEPGRAM_CHUNK_SIZE_LIMIT_MB = 200    # warn if chunk exceeds this
+DEEPGRAM_CONNECTION_TIMEOUT = 30  # seconds to establish connection
+DEEPGRAM_READ_TIMEOUT = 600  # seconds to wait for response
+DEEPGRAM_WRITE_TIMEOUT = 600  # seconds to complete upload
+DEEPGRAM_CHUNK_SIZE_LIMIT_MB = 200  # warn if chunk exceeds this
 
 # ── Audio normalization ───────────────────────────────────────────────────────
 # Output sample rate after FFmpeg normalization.

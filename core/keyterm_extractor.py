@@ -53,38 +53,204 @@ ADDRESS_PATTERN = re.compile(
 )
 
 SKIP_WORDS = {
-    "the", "of", "and", "or", "a", "an", "in", "at", "by", "to",
-    "for", "with", "this", "that", "is", "are", "was", "be",
-    "suite", "ste", "blvd", "rd", "hwy", "st", "ave", "dr",
-    "tx", "texas", "san", "floor", "building",
-    "200", "300", "400", "100",
+    "the",
+    "of",
+    "and",
+    "or",
+    "a",
+    "an",
+    "in",
+    "at",
+    "by",
+    "to",
+    "for",
+    "with",
+    "this",
+    "that",
+    "is",
+    "are",
+    "was",
+    "be",
+    "suite",
+    "ste",
+    "blvd",
+    "rd",
+    "hwy",
+    "st",
+    "ave",
+    "dr",
+    "tx",
+    "texas",
+    "san",
+    "floor",
+    "building",
+    "200",
+    "300",
+    "400",
+    "100",
 }
 
 STOPWORDS = {
-    "a", "an", "the", "and", "or", "if", "by", "to", "of", "in",
-    "for", "on", "at", "is", "it", "be", "as", "so", "we", "he",
-    "she", "do", "no", "yes", "you", "via", "vs", "rep", "copy",
-    "notes", "pages", "phone", "email", "fax", "date", "time",
-    "style", "format", "sign", "read", "send", "state", "suite",
-    "ste", "route", "rule", "tech", "med", "lc", "bw", "cr", "tx",
-    "civ", "csr", "llc", "lp", "am", "pm", "end", "start", "any",
-    "hard", "soft", "color", "building", "loop", "address", "location",
-    "zoom", "video", "audio", "ordered", "ordering", "travel", "miles",
-    "exhibit", "count", "start time", "end time", "send to",
-    "service email", "zoom date",
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "if",
+    "by",
+    "to",
+    "of",
+    "in",
+    "for",
+    "on",
+    "at",
+    "is",
+    "it",
+    "be",
+    "as",
+    "so",
+    "we",
+    "he",
+    "she",
+    "do",
+    "no",
+    "yes",
+    "you",
+    "via",
+    "vs",
+    "rep",
+    "copy",
+    "notes",
+    "pages",
+    "phone",
+    "email",
+    "fax",
+    "date",
+    "time",
+    "style",
+    "format",
+    "sign",
+    "read",
+    "send",
+    "state",
+    "suite",
+    "ste",
+    "route",
+    "rule",
+    "tech",
+    "med",
+    "lc",
+    "bw",
+    "cr",
+    "tx",
+    "civ",
+    "csr",
+    "llc",
+    "lp",
+    "am",
+    "pm",
+    "end",
+    "start",
+    "any",
+    "hard",
+    "soft",
+    "color",
+    "building",
+    "loop",
+    "address",
+    "location",
+    "zoom",
+    "video",
+    "audio",
+    "ordered",
+    "ordering",
+    "travel",
+    "miles",
+    "exhibit",
+    "count",
+    "start time",
+    "end time",
+    "send to",
+    "service email",
+    "zoom date",
 }
 
 BOUNDARY_NOISE_WORDS = {
-    "a", "an", "the", "and", "or", "if", "by", "to", "of", "in",
-    "for", "on", "at", "is", "it", "be", "as", "so", "we", "he",
-    "she", "do", "no", "yes", "you", "via", "vs", "rep", "copy",
-    "notes", "pages", "phone", "email", "fax", "date", "time",
-    "style", "format", "sign", "read", "send", "state", "suite",
-    "ste", "route", "rule", "tech", "med", "bw", "cr", "tx",
-    "civ", "csr", "am", "pm", "end", "start", "any", "hard",
-    "soft", "color", "building", "loop", "address", "location",
-    "zoom", "video", "audio", "ordered", "ordering", "travel",
-    "miles", "exhibit", "count", "service",
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "if",
+    "by",
+    "to",
+    "of",
+    "in",
+    "for",
+    "on",
+    "at",
+    "is",
+    "it",
+    "be",
+    "as",
+    "so",
+    "we",
+    "he",
+    "she",
+    "do",
+    "no",
+    "yes",
+    "you",
+    "via",
+    "vs",
+    "rep",
+    "copy",
+    "notes",
+    "pages",
+    "phone",
+    "email",
+    "fax",
+    "date",
+    "time",
+    "style",
+    "format",
+    "sign",
+    "read",
+    "send",
+    "state",
+    "suite",
+    "ste",
+    "route",
+    "rule",
+    "tech",
+    "med",
+    "bw",
+    "cr",
+    "tx",
+    "civ",
+    "csr",
+    "am",
+    "pm",
+    "end",
+    "start",
+    "any",
+    "hard",
+    "soft",
+    "color",
+    "building",
+    "loop",
+    "address",
+    "location",
+    "zoom",
+    "video",
+    "audio",
+    "ordered",
+    "ordering",
+    "travel",
+    "miles",
+    "exhibit",
+    "count",
+    "service",
 }
 
 
@@ -116,7 +282,11 @@ def _is_valid_term(term: str) -> bool:
         return False
     if re.fullmatch(r"[^a-zA-Z0-9]+", normalized):
         return False
-    if len(normalized.split()) == 1 and lowered.islower() and len(normalized) <= MIN_TERM_LENGTH:
+    if (
+        len(normalized.split()) == 1
+        and lowered.islower()
+        and len(normalized) <= MIN_TERM_LENGTH
+    ):
         return False
     return True
 
@@ -179,7 +349,11 @@ def split_compound_terms(terms: list[str]) -> list[str]:
             ).strip()
             cleaned = re.sub(r"^\d+\s+", "", cleaned).strip()
 
-            if not cleaned or cleaned.lower() in SKIP_WORDS or len(cleaned) < MIN_TERM_LENGTH:
+            if (
+                not cleaned
+                or cleaned.lower() in SKIP_WORDS
+                or len(cleaned) < MIN_TERM_LENGTH
+            ):
                 continue
             if cleaned.isdigit():
                 continue
@@ -199,23 +373,33 @@ def _prioritize(terms: list[str]) -> list[str]:
     """
     proper_names = [term for term in terms if _looks_like_proper_name(term)]
     legal_caps = [
-        term for term in terms
-        if term.isupper() and len(term) >= 3 and " " not in term and term not in proper_names
+        term
+        for term in terms
+        if term.isupper()
+        and len(term) >= 3
+        and " " not in term
+        and term not in proper_names
     ]
     multi_word = [
-        term for term in terms
+        term
+        for term in terms
         if " " in term and term not in proper_names and term not in legal_caps
     ]
     rest = [
-        term for term in terms
-        if term not in proper_names and term not in legal_caps and term not in multi_word
+        term
+        for term in terms
+        if term not in proper_names
+        and term not in legal_caps
+        and term not in multi_word
     ]
     return proper_names + legal_caps + multi_word + rest
 
 
 def clean_keyterms(raw: list[str] | None) -> list[str]:
     """Filter, deduplicate, and prioritize a raw keyterm list."""
-    filtered = [_strip_boundary_noise(term) for term in (raw or []) if _is_valid_term(term)]
+    filtered = [
+        _strip_boundary_noise(term) for term in (raw or []) if _is_valid_term(term)
+    ]
     deduped = _deduplicate(filtered)
     return _prioritize(deduped)
 
@@ -301,8 +485,7 @@ def merge_keyterms(
     primary_keys = {term.lower() for term in primary_capped}
 
     reporter_fill = [
-        term for term in clean_reporter
-        if term.lower() not in primary_keys
+        term for term in clean_reporter if term.lower() not in primary_keys
     ][:remaining]
 
     final_terms = primary_capped + reporter_fill
@@ -331,10 +514,9 @@ def merge_from_intake(
     pdf_capped = clean_pdf[:limit]
     remaining = max(0, limit - len(pdf_capped))
     pdf_lower = {term.lower() for term in pdf_capped}
-    reporter_fill = [
-        term for term in clean_reporter
-        if term.lower() not in pdf_lower
-    ][:remaining]
+    reporter_fill = [term for term in clean_reporter if term.lower() not in pdf_lower][
+        :remaining
+    ]
 
     final = pdf_capped + reporter_fill
     return final, len(pdf_capped), len(reporter_fill)

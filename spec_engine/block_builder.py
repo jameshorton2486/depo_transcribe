@@ -3,6 +3,7 @@ import logging
 # Initialize logger
 logger = logging.getLogger(__name__)
 
+
 def build_blocks(alt):
     """
     Parses transcription data into structured blocks.
@@ -23,11 +24,7 @@ def build_blocks(alt):
             if not text:
                 continue
 
-            blocks.append({
-                "speaker": speaker,
-                "text": text,
-                "type": "paragraph"
-            })
+            blocks.append({"speaker": speaker, "text": text, "type": "paragraph"})
 
         # Return immediately if paragraphs are found to avoid fallback logic
         return blocks
@@ -37,7 +34,7 @@ def build_blocks(alt):
     # ================================
     if "utterances" in alt:
         logger.info("[BlockBuilder] Falling back to utterance-based parsing")
-        
+
         for utt in alt["utterances"]:
             speaker = utt.get("speaker", "UNKNOWN")
             text = utt.get("text", "").strip()
@@ -45,10 +42,6 @@ def build_blocks(alt):
             if not text:
                 continue
 
-            blocks.append({
-                "speaker": speaker,
-                "text": text,
-                "type": "utterance"
-            })
+            blocks.append({"speaker": speaker, "text": text, "type": "utterance"})
 
     return blocks

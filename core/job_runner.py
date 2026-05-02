@@ -20,7 +20,9 @@ from core.file_manager import resolve_or_create_case
 def _build_transcript_from_utterances(utterances: list[dict]) -> str:
     lines: list[str] = []
     for utterance in utterances or []:
-        speaker = utterance.get("speaker_label") or f"Speaker {utterance.get('speaker', 0)}"
+        speaker = (
+            utterance.get("speaker_label") or f"Speaker {utterance.get('speaker', 0)}"
+        )
         text = (utterance.get("transcript") or "").strip()
         if text:
             lines.append(f"{speaker}: {text}")
@@ -109,8 +111,11 @@ def run_transcription_job(
 
     try:
         from pipeline.preprocessor import (
-            validate_audio_file, normalize_audio,
-            QUALITY_CONFIGS, AUTO_DETECT_KEY, check_ffmpeg,
+            validate_audio_file,
+            normalize_audio,
+            QUALITY_CONFIGS,
+            AUTO_DETECT_KEY,
+            check_ffmpeg,
         )
         from pipeline.chunker import chunk_audio, cleanup_chunks
         from pipeline.transcriber import transcribe_chunk
@@ -145,7 +150,9 @@ def run_transcription_job(
             date_str,
         )
         if folder_status["errors"]:
-            raise RuntimeError(f"Failed to create required case folders: {folder_status['errors']}")
+            raise RuntimeError(
+                f"Failed to create required case folders: {folder_status['errors']}"
+            )
         if folder_status["created"]:
             _log(f"Created folders: {folder_status['created']}")
 
@@ -170,6 +177,7 @@ def run_transcription_job(
         quality_cfg = QUALITY_CONFIGS.get(quality)
         if quality_cfg is None:
             from pipeline.preprocessor import ENHANCED_CONFIG
+
             quality_cfg = ENHANCED_CONFIG
             _log(f"Unknown quality '{quality}' — using ENHANCED")
         else:
@@ -233,7 +241,9 @@ def run_transcription_job(
         for i, chunk in enumerate(chunks):
             pct = 22 + int((i / max(1, len(chunks))) * 58)
             _progress(pct, f"Transcribing chunk {i+1} of {len(chunks)}…")
-            _log(f"Chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s")
+            _log(
+                f"Chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s"
+            )
             result = transcribe_chunk(
                 chunk.file_path,
                 model=model,
@@ -261,7 +271,9 @@ def run_transcription_job(
 
         _progress(90, "Building output files…")
 
-        transcript_text = _build_transcript_from_utterances(assembled.get("utterances", []))
+        transcript_text = _build_transcript_from_utterances(
+            assembled.get("utterances", [])
+        )
         if not transcript_text.strip():
             raise RuntimeError("Transcript text could not be built from utterances")
 
@@ -286,7 +298,9 @@ def run_transcription_job(
             assembled.get("raw_utterances", assembled.get("utterances", []))
         )
         if not raw_transcript_text.strip():
-            raise RuntimeError("Raw transcript text could not be built from Deepgram utterances")
+            raise RuntimeError(
+                "Raw transcript text could not be built from Deepgram utterances"
+            )
         _safe_write_text(raw_txt_path, raw_transcript_text, _log)
         _safe_write_text(canonical_raw_txt_path, raw_transcript_text, _log)
 
@@ -362,18 +376,20 @@ def run_transcription_job(
         _log(f"✓ Transcription complete — {word_count} words")
         _log(f"Output folder: {out_dir}")
 
-        _done({
-            "success": True,
-            "transcript_path": str(txt_path),
-            "json_path": str(json_path),
-            "raw_json_path": str(raw_json_path),
-            "raw_txt_path": str(raw_txt_path),
-            "job_config_path": str(job_config_path) if job_config_path else None,
-            "output_dir": str(out_dir),
-            "transcript_text": transcript_text,
-            "audio_tier": analysis.tier if analysis else "",
-            "error": None,
-        })
+        _done(
+            {
+                "success": True,
+                "transcript_path": str(txt_path),
+                "json_path": str(json_path),
+                "raw_json_path": str(raw_json_path),
+                "raw_txt_path": str(raw_txt_path),
+                "job_config_path": str(job_config_path) if job_config_path else None,
+                "output_dir": str(out_dir),
+                "transcript_text": transcript_text,
+                "audio_tier": analysis.tier if analysis else "",
+                "error": None,
+            }
+        )
 
     except Exception as exc:
         _log(f"ERROR: {exc}")
@@ -384,15 +400,18 @@ def run_transcription_job(
         if chunks:
             try:
                 from pipeline.chunker import cleanup_chunks
+
                 cleanup_chunks(chunks)
                 _log("Cleaned up temp chunk files after error")
             except Exception as cleanup_exc:
                 _log(f"Chunk cleanup failed: {cleanup_exc}")
 
-        _done({
-            "success": False,
-            "transcript_path": None,
-            "json_path": None,
-            "transcript_text": "",
-            "error": str(exc),
-        })
+        _done(
+            {
+                "success": False,
+                "transcript_path": None,
+                "json_path": None,
+                "transcript_text": "",
+                "error": str(exc),
+            }
+        )

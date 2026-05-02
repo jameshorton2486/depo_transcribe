@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[str]:
     """Extract intake keyterms from PDF text with AI-first and local fallback behavior."""
+
     def _log(msg: str):
         logger.info(msg)
         if progress_callback:
@@ -43,10 +44,7 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
         keyterms = list(intake.all_proper_nouns)
         reasons = intake.vocabulary_terms
         if reasons:
-            preview = "; ".join(
-                f"{item.term}: {item.reason}"
-                for item in reasons[:5]
-            )
+            preview = "; ".join(f"{item.term}: {item.reason}" for item in reasons[:5])
             _log(f"AI intake keyterms: {preview}")
         return keyterms
     except Exception as exc:
@@ -58,6 +56,7 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
 
 
 # ── Step 0: Filename extraction ──────────────────────────────────────────────
+
 
 def extract_from_filename(filename: str) -> dict:
     """
@@ -74,7 +73,7 @@ def extract_from_filename(filename: str) -> dict:
     name = os.path.splitext(os.path.basename(filename))[0]
 
     # Remove leading normalized_ prefix if present
-    name = re.sub(r'^normalized_', '', name).strip()
+    name = re.sub(r"^normalized_", "", name).strip()
 
     results = {
         "cause_number": (None, "failed"),
@@ -88,12 +87,12 @@ def extract_from_filename(filename: str) -> dict:
     # The deposition date is not trusted here, but the date token is a reliable
     # anchor for extracting the first two name tokens that follow it.
     pattern = (
-        r'^(?P<date>\d{2}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})'
-        r'(?:\s*-\s*|\s+)'
-        r'(?P<first>[A-Z][a-zA-Z\'-]+)'
-        r'\s+'
-        r'(?P<last>[A-Z][a-zA-Z\'-]+)'
-        r'(?:\b.*)?$'
+        r"^(?P<date>\d{2}-\d{2}-\d{2}|\d{4}-\d{2}-\d{2})"
+        r"(?:\s*-\s*|\s+)"
+        r"(?P<first>[A-Z][a-zA-Z\'-]+)"
+        r"\s+"
+        r"(?P<last>[A-Z][a-zA-Z\'-]+)"
+        r"(?:\b.*)?$"
     )
     match = re.match(pattern, name)
 
@@ -107,13 +106,16 @@ def extract_from_filename(filename: str) -> dict:
         results["witness_first"] = (first_name, "filename")
         results["witness_last"] = (last_name, "filename")
 
-    logger.info("Filename extraction: %s -> %s",
-                os.path.basename(filename),
-                {k: v for k, v in results.items() if k != "scanned"})
+    logger.info(
+        "Filename extraction: %s -> %s",
+        os.path.basename(filename),
+        {k: v for k, v in results.items() if k != "scanned"},
+    )
     return results
 
 
 # ── Step 1: PDF text extraction ──────────────────────────────────────────────
+
 
 def extract_pdf_text(filepath: str) -> str:
     """Extract text from pages 1-5 of a PDF using pdfplumber."""
@@ -162,13 +164,14 @@ def find_reporter_notes(case_folder: str) -> str | None:
 
 # ── Step 2: Regex extraction ────────────────────────────────────────────────
 
+
 def extract_cause_number(text: str) -> tuple[str | None, str]:
     """Extract cause/case number via regex. Returns (value, source)."""
     patterns = [
-        r'Cause\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
-        r'Case\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
-        r'Docket\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)',
-        r'No\.\s*([A-Z0-9]{2,}\-[A-Z0-9\-]+)',
+        r"Cause\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)",
+        r"Case\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)",
+        r"Docket\s*No\.?\s*[:\-]?\s*([A-Z0-9\-]+)",
+        r"No\.\s*([A-Z0-9]{2,}\-[A-Z0-9\-]+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -180,11 +183,11 @@ def extract_cause_number(text: str) -> tuple[str | None, str]:
 def extract_witness_name(text: str) -> tuple[str | None, str]:
     """Extract witness last name via regex. Returns (value, source)."""
     patterns = [
-        r'(?:Deposition|Testimony)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-        r'Witness[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-        r'My\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-        r'THE\s+WITNESS[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-        r'[Dd]eposition\s+of\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)',
+        r"(?:Deposition|Testimony)\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+        r"Witness[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+        r"My\s+name\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+        r"THE\s+WITNESS[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
+        r"[Dd]eposition\s+of\s+([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -200,11 +203,11 @@ def extract_date(text: str) -> tuple[str | None, str]:
     from dateutil import parser as dateparser
 
     patterns = [
-        r'taken\s+on\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})',
-        r'this\s+\d{1,2}(?:st|nd|rd|th)?\s+day\s+of\s+([A-Z][a-z]+,?\s+\d{4})',
-        r'Date[:\s]+(\d{1,2}/\d{1,2}/\d{4})',
-        r'(\d{1,2}/\d{1,2}/\d{4})',
-        r'([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})',
+        r"taken\s+on\s+([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})",
+        r"this\s+\d{1,2}(?:st|nd|rd|th)?\s+day\s+of\s+([A-Z][a-z]+,?\s+\d{4})",
+        r"Date[:\s]+(\d{1,2}/\d{1,2}/\d{4})",
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        r"([A-Z][a-z]+\s+\d{1,2},?\s+\d{4})",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
@@ -219,6 +222,7 @@ def extract_date(text: str) -> tuple[str | None, str]:
 
 
 # ── Step 3: Claude API fallback ─────────────────────────────────────────────
+
 
 def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
     """Call Claude API to extract fields that regex missed."""
@@ -264,8 +268,8 @@ def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
         response_text = message.content[0].text.strip()
         # Strip markdown fences if present
         if response_text.startswith("```"):
-            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
-            response_text = re.sub(r'\s*```$', '', response_text)
+            response_text = re.sub(r"^```(?:json)?\s*", "", response_text)
+            response_text = re.sub(r"\s*```$", "", response_text)
         result = json.loads(response_text)
         logger.info("AI extraction returned: %s", result)
         return result
@@ -275,6 +279,7 @@ def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
 
 
 # ── Full pipeline ───────────────────────────────────────────────────────────
+
 
 def extract_case_info_from_pdf(
     filepath: str,
@@ -339,10 +344,26 @@ def extract_case_info_from_pdf(
         "witness_last": witness,
         "witness_first": witness_first,
         "date": date,
-        "keyterms": intake_result.all_proper_nouns if intake_result else list((fallback_vocab or {}).get("deepgram_keyterms", [])),
-        "confirmed_spellings": intake_result.confirmed_spellings if intake_result else dict((fallback_vocab or {}).get("confirmed_spellings", {})),
-        "speaker_map_suggestion": intake_result.speaker_map_suggestion if intake_result else dict((fallback_vocab or {}).get("speaker_map_suggestion", {})),
-        "intake_entity_counts": intake_result.entity_counts if intake_result else dict((fallback_vocab or {}).get("counts", {})),
+        "keyterms": (
+            intake_result.all_proper_nouns
+            if intake_result
+            else list((fallback_vocab or {}).get("deepgram_keyterms", []))
+        ),
+        "confirmed_spellings": (
+            intake_result.confirmed_spellings
+            if intake_result
+            else dict((fallback_vocab or {}).get("confirmed_spellings", {}))
+        ),
+        "speaker_map_suggestion": (
+            intake_result.speaker_map_suggestion
+            if intake_result
+            else dict((fallback_vocab or {}).get("speaker_map_suggestion", {}))
+        ),
+        "intake_entity_counts": (
+            intake_result.entity_counts
+            if intake_result
+            else dict((fallback_vocab or {}).get("counts", {}))
+        ),
         "intake_result": intake_result,
         "scanned": False,
     }

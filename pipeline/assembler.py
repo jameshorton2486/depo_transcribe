@@ -57,7 +57,9 @@ def _normalize_utterance(utterance: Dict) -> Dict | None:
 
 
 def _join_transcript_text(prev_text: str, next_text: str) -> str:
-    return " ".join(part for part in [prev_text.rstrip(), next_text.lstrip()] if part).strip()
+    return " ".join(
+        part for part in [prev_text.rstrip(), next_text.lstrip()] if part
+    ).strip()
 
 
 def _append_utterance_words(target: Dict, source: Dict) -> None:
@@ -89,7 +91,8 @@ def _merge_two_utterances(current: Dict, following: Dict) -> Dict:
 def _is_duplicate_utterance(current: Dict, following: Dict) -> bool:
     return (
         current.get("speaker") == following.get("speaker")
-        and (current.get("transcript") or "").strip() == (following.get("transcript") or "").strip()
+        and (current.get("transcript") or "").strip()
+        == (following.get("transcript") or "").strip()
     )
 
 
@@ -114,12 +117,18 @@ def _is_speaker_flip_glitch(
     if previous.get("speaker") == current_speaker:
         return False
 
-    duration = float(current.get("end", 0.0) or 0.0) - float(current.get("start", 0.0) or 0.0)
+    duration = float(current.get("end", 0.0) or 0.0) - float(
+        current.get("start", 0.0) or 0.0
+    )
     if duration >= SPEAKER_GLITCH_DURATION_SECONDS:
         return False
 
-    gap_before = float(current.get("start", 0.0) or 0.0) - float(previous.get("end", 0.0) or 0.0)
-    gap_after = float(following.get("start", 0.0) or 0.0) - float(current.get("end", 0.0) or 0.0)
+    gap_before = float(current.get("start", 0.0) or 0.0) - float(
+        previous.get("end", 0.0) or 0.0
+    )
+    gap_after = float(following.get("start", 0.0) or 0.0) - float(
+        current.get("end", 0.0) or 0.0
+    )
     return gap_before <= gap_threshold_seconds and gap_after <= gap_threshold_seconds
 
 
@@ -133,7 +142,9 @@ def _should_merge_utterances(
     if current.get("speaker") != following.get("speaker"):
         return False
 
-    gap = float(following.get("start", 0.0) or 0.0) - float(current.get("end", 0.0) or 0.0)
+    gap = float(following.get("start", 0.0) or 0.0) - float(
+        current.get("end", 0.0) or 0.0
+    )
     if gap < 0:
         gap = 0.0
     if gap > gap_threshold_seconds:
@@ -213,9 +224,7 @@ def merge_utterances(
 
 
 def _build_speaker_role_map(utterances: List[Dict]) -> Dict[int, str]:
-    speaker_ids = sorted(set(
-        int(u.get("speaker", 0) or 0) for u in utterances
-    ))
+    speaker_ids = sorted(set(int(u.get("speaker", 0) or 0) for u in utterances))
     return {sid: f"Speaker {sid}" for sid in speaker_ids}
 
 
@@ -274,7 +283,9 @@ def _find_overlap_word_count(
     return 0
 
 
-def merge_with_overlap(prev_text: str, curr_text: str, max_overlap_words: int = 25) -> str:
+def merge_with_overlap(
+    prev_text: str, curr_text: str, max_overlap_words: int = 25
+) -> str:
     """
     Merge two transcript snippets by removing exact/near-duplicate overlap.
 
@@ -289,7 +300,9 @@ def merge_with_overlap(prev_text: str, curr_text: str, max_overlap_words: int = 
         return prev_text
 
     curr_words = curr_text.split()
-    overlap_count = _find_overlap_word_count(prev_text, curr_text, max_overlap_words=max_overlap_words)
+    overlap_count = _find_overlap_word_count(
+        prev_text, curr_text, max_overlap_words=max_overlap_words
+    )
 
     if overlap_count <= 0:
         return f"{prev_text} {curr_text}".strip()
@@ -323,17 +336,26 @@ def _merge_adjacent_same_speaker_overlap(
     if len(curr_text.split()) < 4:
         return False
 
-    overlap_count = _find_overlap_word_count(prev_text, curr_text, max_overlap_words=max_overlap_words)
+    overlap_count = _find_overlap_word_count(
+        prev_text, curr_text, max_overlap_words=max_overlap_words
+    )
     if overlap_count <= 0:
         return False
 
-    merged_text = merge_with_overlap(prev_text, curr_text, max_overlap_words=max_overlap_words)
+    merged_text = merge_with_overlap(
+        prev_text, curr_text, max_overlap_words=max_overlap_words
+    )
     if merged_text == prev_text:
-        previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
+        previous["end"] = max(
+            float(previous.get("end", 0.0) or 0.0),
+            float(candidate.get("end", 0.0) or 0.0),
+        )
         return True
 
     previous["transcript"] = merged_text
-    previous["end"] = max(float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0))
+    previous["end"] = max(
+        float(previous.get("end", 0.0) or 0.0), float(candidate.get("end", 0.0) or 0.0)
+    )
 
     prev_words = list(previous.get("words") or [])
     curr_words = list(candidate.get("words") or [])
@@ -358,10 +380,12 @@ def _attach_speaker_labels(
     labeled: List[Dict] = []
     for utterance in utterances:
         speaker_id = int(utterance.get("speaker", 0) or 0)
-        labeled.append({
-            **utterance,
-            "speaker_label": role_map.get(speaker_id, f"SPEAKER {speaker_id}"),
-        })
+        labeled.append(
+            {
+                **utterance,
+                "speaker_label": role_map.get(speaker_id, f"SPEAKER {speaker_id}"),
+            }
+        )
     return labeled
 
 
@@ -380,12 +404,13 @@ def _build_speaker_remap(
     unchanged for that chunk.
     """
     prev_overlap = [
-        u for u in prev_utterances
-        if float(u.get("end", 0.0) or 0.0) >= overlap_start
+        u for u in prev_utterances if float(u.get("end", 0.0) or 0.0) >= overlap_start
     ]
     next_overlap = [
-        u for u in next_utterances
-        if (float(u.get("start", 0.0) or 0.0) + offset) <= (overlap_start + CHUNK_OVERLAP_SECONDS)
+        u
+        for u in next_utterances
+        if (float(u.get("start", 0.0) or 0.0) + offset)
+        <= (overlap_start + CHUNK_OVERLAP_SECONDS)
         and (float(u.get("end", 0.0) or 0.0) + offset) >= overlap_start
     ]
 
@@ -496,11 +521,11 @@ def reassemble_chunks(
         labeled_raw_utterances = _attach_speaker_labels(source_utterances)
         transcript = build_transcript_text(labeled_utterances)
         return {
-            "words":          result.get("words", []),
-            "utterances":     labeled_utterances,
+            "words": result.get("words", []),
+            "utterances": labeled_utterances,
             "raw_utterances": labeled_raw_utterances,
-            "transcript":     transcript or result.get("transcript", ""),
-            "raw_chunks":     [result.get("raw", {})],
+            "transcript": transcript or result.get("transcript", ""),
+            "raw_chunks": [result.get("raw", {})],
         }
 
     all_words: List[Dict] = []
@@ -514,7 +539,11 @@ def reassemble_chunks(
         source_utterances = result.get("raw_utterances") or result.get("utterances", [])
 
         adjusted_words = [
-            {**w, "start": round(w["start"] + offset, 3), "end": round(w["end"] + offset, 3)}
+            {
+                **w,
+                "start": round(w["start"] + offset, 3),
+                "end": round(w["end"] + offset, 3),
+            }
             for w in result.get("words", [])
         ]
 
@@ -589,15 +618,19 @@ def reassemble_chunks(
             speaker = u.get("speaker")
             normalized_speaker = int(speaker) if speaker is not None else None
             if normalized_speaker is not None:
-                normalized_speaker = speaker_remap.get(normalized_speaker, normalized_speaker)
+                normalized_speaker = speaker_remap.get(
+                    normalized_speaker, normalized_speaker
+                )
             candidate_utterance = {
                 **u,
                 "speaker": normalized_speaker,
                 "start": u_start,
-                "end":   u_end,
+                "end": u_end,
             }
 
-            if _merge_adjacent_same_speaker_overlap(all_utterances, candidate_utterance):
+            if _merge_adjacent_same_speaker_overlap(
+                all_utterances, candidate_utterance
+            ):
                 continue
 
             all_utterances.append(candidate_utterance)
@@ -623,7 +656,9 @@ def reassemble_chunks(
     return merged
 
 
-def merge_channel_assemblies(channel_assemblies: List[Dict[str, Any]]) -> Dict[str, Any]:
+def merge_channel_assemblies(
+    channel_assemblies: List[Dict[str, Any]],
+) -> Dict[str, Any]:
     """
     Merge independently assembled mono channel transcripts into a single timeline.
 
@@ -654,9 +689,24 @@ def merge_channel_assemblies(channel_assemblies: List[Dict[str, Any]]) -> Dict[s
         for raw in assembly.get("raw_chunks", []) or []:
             raw_chunks.append({"channel": channel_index, "raw": raw})
 
-    merged_words.sort(key=lambda w: (float(w.get("start", 0.0) or 0.0), float(w.get("end", 0.0) or 0.0)))
-    merged_utterances.sort(key=lambda u: (float(u.get("start", 0.0) or 0.0), float(u.get("end", 0.0) or 0.0)))
-    merged_raw_utterances.sort(key=lambda u: (float(u.get("start", 0.0) or 0.0), float(u.get("end", 0.0) or 0.0)))
+    merged_words.sort(
+        key=lambda w: (
+            float(w.get("start", 0.0) or 0.0),
+            float(w.get("end", 0.0) or 0.0),
+        )
+    )
+    merged_utterances.sort(
+        key=lambda u: (
+            float(u.get("start", 0.0) or 0.0),
+            float(u.get("end", 0.0) or 0.0),
+        )
+    )
+    merged_raw_utterances.sort(
+        key=lambda u: (
+            float(u.get("start", 0.0) or 0.0),
+            float(u.get("end", 0.0) or 0.0),
+        )
+    )
 
     labeled_utterances = _attach_speaker_labels(merged_utterances)
     labeled_raw_utterances = _attach_speaker_labels(merged_raw_utterances)

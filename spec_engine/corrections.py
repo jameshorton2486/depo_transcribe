@@ -86,7 +86,9 @@ def _fix_short_answer_commas(text: str) -> str:
 
     words = text.split()
     if len(words) > 6:
-        text = re.sub(r"(?<!,)\s+(but|and|so)\s+", r", \1 ", text, count=1, flags=re.IGNORECASE)
+        text = re.sub(
+            r"(?<!,)\s+(but|and|so)\s+", r", \1 ", text, count=1, flags=re.IGNORECASE
+        )
 
     return text
 
@@ -176,7 +178,9 @@ def apply_corrections(
         corrected.append(
             TranscriptBlock(
                 speaker=str(block.speaker or "").strip(),
-                text=apply_morsons_rules(apply_proper_noun_corrections(block.text, corrections)),
+                text=apply_morsons_rules(
+                    apply_proper_noun_corrections(block.text, corrections)
+                ),
                 type=block.type,
                 source_type=block.source_type,
                 examiner=block.examiner,

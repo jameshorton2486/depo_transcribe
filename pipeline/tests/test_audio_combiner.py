@@ -36,6 +36,7 @@ requires_ffmpeg = pytest.mark.skipif(
 
 # ── Fixture helpers ──────────────────────────────────────────────────────────
 
+
 def _make_audio(
     path: Path,
     duration_s: float = 1.0,
@@ -50,12 +51,18 @@ def _make_audio(
         path.unlink()
     layout = "stereo" if channels == 2 else "mono"
     cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", f"sine=frequency=440:duration={duration_s}:sample_rate={sample_rate}",
-        "-ac", str(channels),
-        "-channel_layout", layout,
-        "-c:a", codec,
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=440:duration={duration_s}:sample_rate={sample_rate}",
+        "-ac",
+        str(channels),
+        "-channel_layout",
+        layout,
+        "-c:a",
+        codec,
     ]
     if extra_args:
         cmd.extend(extra_args)
@@ -63,7 +70,8 @@ def _make_audio(
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg fixture generation failed for {path}: {result.stderr}")
+            f"ffmpeg fixture generation failed for {path}: {result.stderr}"
+        )
     return path
 
 
@@ -73,22 +81,33 @@ def _make_silent_video_with_audio(path: Path, duration_s: float = 1.0) -> Path:
     if path.exists():
         path.unlink()
     cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=c=black:s=64x48:d={duration_s}",
-        "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration_s}",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
+        "ffmpeg",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=black:s=64x48:d={duration_s}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=440:duration={duration_s}",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
         "-shortest",
         str(path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(
-            f"ffmpeg video fixture generation failed: {result.stderr}")
+        raise RuntimeError(f"ffmpeg video fixture generation failed: {result.stderr}")
     return path
 
 
 # ── Pure helper tests (no ffmpeg required) ───────────────────────────────────
+
 
 def test_formats_match_single_format():
     assert formats_match([{"codec_name": "mp3", "sample_rate": 44100, "channels": 2}])
@@ -139,13 +158,13 @@ def test_audio_video_extensions_constant_unchanged():
     If the supported extensions ever change, that's a deliberate edit and
     this test should be updated alongside it."""
     assert AUDIO_VIDEO_EXTENSIONS == (
-        ("Audio / Video files",
-         "*.mp3 *.mp4 *.wav *.m4a *.mov *.avi *.mkv *.flac"),
+        ("Audio / Video files", "*.mp3 *.mp4 *.wav *.m4a *.mov *.avi *.mkv *.flac"),
         ("All files", "*.*"),
     )
 
 
 # ── ffmpeg-backed tests ──────────────────────────────────────────────────────
+
 
 @requires_ffmpeg
 def test_passthrough_single_file(tmp_path):
@@ -178,10 +197,7 @@ def test_concat_demuxer_same_format_mp3(tmp_path):
 
 @requires_ffmpeg
 def test_concat_demuxer_three_files(tmp_path):
-    paths = [
-        _make_audio(tmp_path / f"part{i}.mp3", duration_s=0.7)
-        for i in range(3)
-    ]
+    paths = [_make_audio(tmp_path / f"part{i}.mp3", duration_s=0.7) for i in range(3)]
     out = tmp_path / "combined.mp3"
 
     result = combine_audio_files(paths, out)
@@ -196,7 +212,9 @@ def test_concat_demuxer_three_files(tmp_path):
 def test_concat_filter_different_codecs(tmp_path):
     mp3 = _make_audio(tmp_path / "a.mp3", duration_s=1.0, codec="libmp3lame")
     m4a = _make_audio(
-        tmp_path / "b.m4a", duration_s=1.0, codec="aac",
+        tmp_path / "b.m4a",
+        duration_s=1.0,
+        codec="aac",
         extra_args=["-f", "mp4"],
     )
     out = tmp_path / "combined.wav"
@@ -213,6 +231,7 @@ def test_concat_filter_different_codecs(tmp_path):
     fmt = probe_audio_format(result.output_path)
     assert fmt["codec_name"] == "pcm_s16le"
     from config import TARGET_SAMPLE_RATE
+
     assert fmt["sample_rate"] == TARGET_SAMPLE_RATE
     assert fmt["channels"] == 1
 
@@ -272,7 +291,9 @@ def test_warning_on_extension_change(tmp_path):
     we override to .wav and surface a warning."""
     mp3 = _make_audio(tmp_path / "a.mp3", duration_s=1.0, codec="libmp3lame")
     m4a = _make_audio(
-        tmp_path / "b.m4a", duration_s=1.0, codec="aac",
+        tmp_path / "b.m4a",
+        duration_s=1.0,
+        codec="aac",
         extra_args=["-f", "mp4"],
     )
     requested = tmp_path / "combined.mp3"  # caller asked for .mp3
@@ -293,11 +314,17 @@ def test_wav_inputs_demuxer_duration_matches(tmp_path):
     the sum of inputs (within a small tolerance) — if it doesn't, that's
     a real problem we need to know about before shipping."""
     a = _make_audio(
-        tmp_path / "a.wav", duration_s=1.0, sample_rate=24000, channels=1,
+        tmp_path / "a.wav",
+        duration_s=1.0,
+        sample_rate=24000,
+        channels=1,
         codec="pcm_s16le",
     )
     b = _make_audio(
-        tmp_path / "b.wav", duration_s=1.0, sample_rate=24000, channels=1,
+        tmp_path / "b.wav",
+        duration_s=1.0,
+        sample_rate=24000,
+        channels=1,
         codec="pcm_s16le",
     )
     out = tmp_path / "combined.wav"
@@ -342,8 +369,14 @@ def test_probe_audio_format_returns_expected_keys(tmp_path):
     src = _make_audio(tmp_path / "probe_me.mp3", duration_s=1.0)
     fmt = probe_audio_format(src)
 
-    for key in ("codec_name", "sample_rate", "channels",
-                "bit_rate", "duration", "format_name"):
+    for key in (
+        "codec_name",
+        "sample_rate",
+        "channels",
+        "bit_rate",
+        "duration",
+        "format_name",
+    ):
         assert key in fmt, f"missing key {key} in {fmt}"
     assert fmt["sample_rate"] == 44100
     assert fmt["channels"] == 2

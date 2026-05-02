@@ -91,11 +91,13 @@ def diarize(audio_path: str) -> Optional[List[Dict]]:
 
         segments = []
         for turn, _, speaker in diarization.itertracks(yield_label=True):
-            segments.append({
-                "speaker": speaker,
-                "start": round(turn.start, 3),
-                "end": round(turn.end, 3),
-            })
+            segments.append(
+                {
+                    "speaker": speaker,
+                    "start": round(turn.start, 3),
+                    "end": round(turn.end, 3),
+                }
+            )
 
         unique_speakers = sorted({segment["speaker"] for segment in segments})
         logger.info(

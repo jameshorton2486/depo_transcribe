@@ -12,9 +12,18 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 MONTH_ABBR = {
-    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
-    5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
-    9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+    1: "Jan",
+    2: "Feb",
+    3: "Mar",
+    4: "Apr",
+    5: "May",
+    6: "Jun",
+    7: "Jul",
+    8: "Aug",
+    9: "Sep",
+    10: "Oct",
+    11: "Nov",
+    12: "Dec",
 }
 
 REQUIRED_SUBFOLDERS = ["source_docs", "Deepgram"]
@@ -66,7 +75,9 @@ def build_case_path(
 
 def create_case_folders(case_path: str) -> dict:
     result = {"case_path": case_path, "created": [], "existing": [], "errors": []}
-    all_paths = [case_path] + [os.path.join(case_path, sub) for sub in REQUIRED_SUBFOLDERS]
+    all_paths = [case_path] + [
+        os.path.join(case_path, sub) for sub in REQUIRED_SUBFOLDERS
+    ]
 
     for path in all_paths:
         if os.path.isdir(path):

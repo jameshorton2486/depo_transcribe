@@ -21,7 +21,13 @@ class _StaticClient:
 
 
 def test_formatter_returns_mocked_speaker_labels():
-    raw_text = "Speaker 0: Today's date is April 9, 2026.\n\nSpeaker 1: Raise your right hand."
-    client = _StaticClient("THE VIDEOGRAPHER:\tToday's date is April 9, 2026.\n\nTHE COURT REPORTER:\tRaise your right hand.")
-    result = format_transcript(raw_text, {"witness_name": "Bianca Caram"}, client=client)
+    raw_text = (
+        "Speaker 0: Today's date is April 9, 2026.\n\nSpeaker 1: Raise your right hand."
+    )
+    client = _StaticClient(
+        "THE VIDEOGRAPHER:\tToday's date is April 9, 2026.\n\nTHE COURT REPORTER:\tRaise your right hand."
+    )
+    result = format_transcript(
+        raw_text, {"witness_name": "Bianca Caram"}, client=client
+    )
     assert "THE VIDEOGRAPHER:" in result

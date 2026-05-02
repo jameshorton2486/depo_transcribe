@@ -46,6 +46,7 @@ UFM_RULES = {
 # DETECTION HELPERS (LOOSE)
 # ================================
 
+
 def is_question_loose(line: str) -> bool:
     """
     Detect question lines in intermediate pipeline stages.
@@ -67,6 +68,7 @@ def is_answer_loose(line: str) -> bool:
 # ================================
 # VALIDATION HELPERS (STRICT)
 # ================================
+
 
 def is_valid_question(line: str) -> bool:
     """

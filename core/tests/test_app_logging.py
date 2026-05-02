@@ -19,7 +19,9 @@ def test_rotate_startup_logs_moves_current_logs_to_archive(tmp_path, monkeypatch
     assert not (log_dir / "app.log").exists()
     assert not (log_dir / "errors.log").exists()
     assert archive_dir.is_dir()
-    assert sorted(path.name for path in archived) == sorted(path.name for path in archive_dir.glob("*.log"))
+    assert sorted(path.name for path in archived) == sorted(
+        path.name for path in archive_dir.glob("*.log")
+    )
 
 
 def test_rotate_startup_logs_ignores_missing_logs(tmp_path, monkeypatch):

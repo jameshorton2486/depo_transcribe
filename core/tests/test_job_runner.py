@@ -32,7 +32,11 @@ def test_run_transcription_job_uses_and_persists_keyterms(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "pipeline.chunker.chunk_audio",
         lambda *args, **kwargs: [
-            SimpleNamespace(file_path=str(tmp_path / "chunk.wav"), start_seconds=0.0, end_seconds=60.0)
+            SimpleNamespace(
+                file_path=str(tmp_path / "chunk.wav"),
+                start_seconds=0.0,
+                end_seconds=60.0,
+            )
         ],
     )
     monkeypatch.setattr("pipeline.chunker.cleanup_chunks", lambda _chunks: None)
@@ -51,8 +55,20 @@ def test_run_transcription_job_uses_and_persists_keyterms(monkeypatch, tmp_path)
         "pipeline.assembler.reassemble_chunks",
         lambda _results, _offsets: {
             "transcript": "Test testimony.",
-            "raw_utterances": [{"speaker": 1, "speaker_label": "Speaker 1", "transcript": "Test testimony."}],
-            "utterances": [{"speaker": 1, "speaker_label": "Speaker 1", "transcript": "Test testimony."}],
+            "raw_utterances": [
+                {
+                    "speaker": 1,
+                    "speaker_label": "Speaker 1",
+                    "transcript": "Test testimony.",
+                }
+            ],
+            "utterances": [
+                {
+                    "speaker": 1,
+                    "speaker_label": "Speaker 1",
+                    "transcript": "Test testimony.",
+                }
+            ],
             "words": [{"word": "Test", "speaker": 1, "start": 0.0, "end": 0.5}],
         },
     )
@@ -139,8 +155,22 @@ def test_run_transcription_job_passes_current_deepgram_defaults(monkeypatch, tmp
         captured["transcribe_kwargs"] = kwargs
         return {
             "raw": {"request_id": "abc123"},
-            "utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
-            "raw_utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Test testimony.",
+                    "start": 0.0,
+                    "end": 1.0,
+                }
+            ],
+            "raw_utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Test testimony.",
+                    "start": 0.0,
+                    "end": 1.0,
+                }
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "transcript": "Test testimony.",
         }
@@ -150,8 +180,20 @@ def test_run_transcription_job_passes_current_deepgram_defaults(monkeypatch, tmp
         "pipeline.assembler.reassemble_chunks",
         lambda _results, _offsets: {
             "transcript": "Speaker 0: Test testimony.",
-            "raw_utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
-            "utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
+            "raw_utterances": [
+                {
+                    "speaker": 0,
+                    "speaker_label": "Speaker 0",
+                    "transcript": "Test testimony.",
+                }
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "speaker_label": "Speaker 0",
+                    "transcript": "Test testimony.",
+                }
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "raw_chunks": [{"request_id": "abc123"}],
         },
@@ -233,7 +275,14 @@ def test_run_transcription_job_writes_auditable_json_metadata(monkeypatch, tmp_p
         "pipeline.transcriber.transcribe_chunk",
         lambda *args, **kwargs: {
             "raw": {"request_id": "abc123"},
-            "utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Test testimony.",
+                    "start": 0.0,
+                    "end": 1.0,
+                }
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "transcript": "Test testimony.",
         },
@@ -242,8 +291,20 @@ def test_run_transcription_job_writes_auditable_json_metadata(monkeypatch, tmp_p
         "pipeline.assembler.reassemble_chunks",
         lambda _results, _offsets: {
             "transcript": "Speaker 0: Test testimony.",
-            "raw_utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
-            "utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Test testimony."}],
+            "raw_utterances": [
+                {
+                    "speaker": 0,
+                    "speaker_label": "Speaker 0",
+                    "transcript": "Test testimony.",
+                }
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "speaker_label": "Speaker 0",
+                    "transcript": "Test testimony.",
+                }
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "raw_chunks": [{"request_id": "abc123"}],
         },
@@ -336,7 +397,13 @@ def test_run_transcription_job_uses_audio_analysis_single_path(monkeypatch, tmp_
 
     def _fake_chunk_audio(path, *args, **kwargs):
         stem = Path(path).stem
-        return [SimpleNamespace(file_path=str(tmp_path / f"{stem}_chunk.wav"), start_seconds=0.0, end_seconds=60.0)]
+        return [
+            SimpleNamespace(
+                file_path=str(tmp_path / f"{stem}_chunk.wav"),
+                start_seconds=0.0,
+                end_seconds=60.0,
+            )
+        ]
 
     monkeypatch.setattr("pipeline.chunker.chunk_audio", _fake_chunk_audio)
     monkeypatch.setattr("pipeline.chunker.cleanup_chunks", lambda _chunks: None)
@@ -345,7 +412,9 @@ def test_run_transcription_job_uses_audio_analysis_single_path(monkeypatch, tmp_
         captured["transcribed_paths"].append(Path(file_path).name)
         return {
             "raw": {"file": file_path},
-            "utterances": [{"speaker": 0, "transcript": "Question", "start": 0.0, "end": 1.0}],
+            "utterances": [
+                {"speaker": 0, "transcript": "Question", "start": 0.0, "end": 1.0}
+            ],
             "words": [{"word": "question", "speaker": 0, "start": 0.0, "end": 1.0}],
             "transcript": "Question",
         }
@@ -381,7 +450,9 @@ def test_run_transcription_job_uses_audio_analysis_single_path(monkeypatch, tmp_
     assert results[0]["audio_tier"] == "ENHANCED"
 
 
-def test_run_transcription_job_chunks_processed_vad_audio_not_original(monkeypatch, tmp_path):
+def test_run_transcription_job_chunks_processed_vad_audio_not_original(
+    monkeypatch, tmp_path
+):
     import core.job_runner as job_runner
 
     audio_path = tmp_path / "original_audio.wav"
@@ -442,7 +513,9 @@ def test_run_transcription_job_chunks_processed_vad_audio_not_original(monkeypat
         captured["transcribed_path"] = file_path
         return {
             "raw": {"file": file_path},
-            "utterances": [{"speaker": 0, "transcript": "Test", "start": 0.0, "end": 1.0}],
+            "utterances": [
+                {"speaker": 0, "transcript": "Test", "start": 0.0, "end": 1.0}
+            ],
             "words": [{"word": "test", "speaker": 0, "start": 0.0, "end": 1.0}],
             "transcript": "Test",
         }
@@ -533,8 +606,22 @@ def test_run_transcription_job_builds_transcript_from_utterances(monkeypatch, tm
         "pipeline.transcriber.transcribe_chunk",
         lambda *args, **kwargs: {
             "raw": {"request_id": "abc123"},
-            "raw_utterances": [{"speaker": 0, "transcript": "Test testimony.", "start": 0.0, "end": 1.0}],
-            "utterances": [{"speaker": 0, "transcript": "Merged testimony.", "start": 0.0, "end": 1.0}],
+            "raw_utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Test testimony.",
+                    "start": 0.0,
+                    "end": 1.0,
+                }
+            ],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "transcript": "Merged testimony.",
+                    "start": 0.0,
+                    "end": 1.0,
+                }
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "transcript": "IGNORED",
         },
@@ -543,8 +630,16 @@ def test_run_transcription_job_builds_transcript_from_utterances(monkeypatch, tm
         "pipeline.assembler.reassemble_chunks",
         lambda _results, _offsets: {
             "transcript": "IGNORED",
-            "utterances": [{"speaker": 0, "speaker_label": "Speaker 7", "transcript": "Authoritative text."}],
-            "raw_utterances": [{"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Raw text."}],
+            "utterances": [
+                {
+                    "speaker": 0,
+                    "speaker_label": "Speaker 7",
+                    "transcript": "Authoritative text.",
+                }
+            ],
+            "raw_utterances": [
+                {"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Raw text."}
+            ],
             "words": [{"word": "Test", "speaker": 0, "start": 0.0, "end": 0.5}],
             "raw_chunks": [{"request_id": "abc123"}],
         },
@@ -565,4 +660,7 @@ def test_run_transcription_job_builds_transcript_from_utterances(monkeypatch, tm
 
     assert results[0]["success"] is True
     assert results[0]["transcript_text"] == "Speaker 7: Authoritative text."
-    assert Path(results[0]["raw_txt_path"]).read_text(encoding="utf-8") == "Speaker 0: Raw text."
+    assert (
+        Path(results[0]["raw_txt_path"]).read_text(encoding="utf-8")
+        == "Speaker 0: Raw text."
+    )

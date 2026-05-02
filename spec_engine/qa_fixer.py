@@ -73,7 +73,9 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
         normalized = block
 
         if block.type not in {"directive", "oath"}:
-            if any(text.startswith(word) for word in QUESTION_WORDS) or text.endswith("?"):
+            if any(text.startswith(word) for word in QUESTION_WORDS) or text.endswith(
+                "?"
+            ):
                 normalized = TranscriptBlock(
                     speaker=block.speaker,
                     text=block.text,
@@ -133,9 +135,13 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
 
         if block.type == "question":
             if pending_question is not None:
-                raise ValueError("No Q without A: encountered consecutive question blocks")
+                raise ValueError(
+                    "No Q without A: encountered consecutive question blocks"
+                )
             if _SPEAKER_IN_QA_RE.match(block.text):
-                raise ValueError("No speaker text inside Q/A blocks: invalid question content")
+                raise ValueError(
+                    "No speaker text inside Q/A blocks: invalid question content"
+                )
             pending_question = block
             fixed.append(
                 TranscriptBlock(
@@ -150,7 +156,9 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
 
         if block.type == "answer":
             if _SPEAKER_IN_QA_RE.match(block.text):
-                raise ValueError("No speaker text inside Q/A blocks: invalid answer content")
+                raise ValueError(
+                    "No speaker text inside Q/A blocks: invalid answer content"
+                )
             pending_question = None
             fixed.append(
                 TranscriptBlock(
@@ -180,11 +188,15 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
     for block in fixed:
         if block.type == "question":
             if pending_question is not None:
-                raise ValueError("No Q without A: encountered consecutive question blocks")
+                raise ValueError(
+                    "No Q without A: encountered consecutive question blocks"
+                )
             pending_question = block
         elif block.type == "answer":
             if pending_question is None:
-                raise ValueError("No orphan answers: answer encountered without a prior question")
+                raise ValueError(
+                    "No orphan answers: answer encountered without a prior question"
+                )
             pending_question = None
         else:
             pending_question = None

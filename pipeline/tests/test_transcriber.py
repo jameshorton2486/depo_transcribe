@@ -50,7 +50,11 @@ def test_transcribe_chunk_sends_default_utt_split_to_deepgram(monkeypatch, tmp_p
 
     monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
     monkeypatch.setattr(transcriber.httpx, "post", fake_post)
-    monkeypatch.setattr(transcriber, "merge_utterances", lambda utterances, gap_threshold_seconds, min_word_count: utterances)
+    monkeypatch.setattr(
+        transcriber,
+        "merge_utterances",
+        lambda utterances, gap_threshold_seconds, min_word_count: utterances,
+    )
 
     transcriber.transcribe_chunk(str(audio_path))
 
@@ -99,7 +103,11 @@ def test_transcribe_chunk_uses_requested_defaults(monkeypatch, tmp_path):
 
     monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
     monkeypatch.setattr(transcriber.httpx, "post", fake_post)
-    monkeypatch.setattr(transcriber, "merge_utterances", lambda utterances, gap_threshold_seconds, min_word_count: utterances)
+    monkeypatch.setattr(
+        transcriber,
+        "merge_utterances",
+        lambda utterances, gap_threshold_seconds, min_word_count: utterances,
+    )
 
     transcriber.transcribe_chunk(str(audio_path), model="nova-3")
 
@@ -158,9 +166,15 @@ def test_transcribe_chunk_includes_keyterms_in_request(monkeypatch, tmp_path):
 
     monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
     monkeypatch.setattr(transcriber.httpx, "post", fake_post)
-    monkeypatch.setattr(transcriber, "merge_utterances", lambda utterances, gap_threshold_seconds, min_word_count: utterances)
+    monkeypatch.setattr(
+        transcriber,
+        "merge_utterances",
+        lambda utterances, gap_threshold_seconds, min_word_count: utterances,
+    )
 
-    transcriber.transcribe_chunk(str(audio_path), keyterms=["Matthew Coger", "Murphy Oil"])
+    transcriber.transcribe_chunk(
+        str(audio_path), keyterms=["Matthew Coger", "Murphy Oil"]
+    )
 
     params = parse_qs(urlparse(captured["url"]).query)
 
@@ -173,7 +187,9 @@ def test_validate_deepgram_params_rejects_uppercase_boolean_strings():
     except ValueError as exc:
         assert "lowercase 'true'/'false'" in str(exc)
     else:
-        raise AssertionError("Expected validate_deepgram_params to reject uppercase boolean strings")
+        raise AssertionError(
+            "Expected validate_deepgram_params to reject uppercase boolean strings"
+        )
 
 
 def test_normalize_params_preserves_false_values_and_all_keys():
@@ -212,7 +228,9 @@ def test_enforce_required_deepgram_flags_overrides_invalid_values():
     assert params["utt_split"] == "0.5"
 
 
-def test_transcribe_chunk_logs_params_and_utterance_count(monkeypatch, tmp_path, capsys):
+def test_transcribe_chunk_logs_params_and_utterance_count(
+    monkeypatch, tmp_path, capsys
+):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"audio")
 
@@ -335,7 +353,9 @@ def test_transcribe_chunk_returns_raw_and_merged_utterances(monkeypatch, tmp_pat
     assert result["utterances"] == merged_utterances
 
 
-def test_transcribe_chunk_processes_near_silent_chunks_in_safe_mode(monkeypatch, tmp_path):
+def test_transcribe_chunk_processes_near_silent_chunks_in_safe_mode(
+    monkeypatch, tmp_path
+):
     audio_path = tmp_path / "sample.wav"
     audio_path.write_bytes(b"audio")
 
@@ -649,5 +669,7 @@ def test_transcribe_chunk_rejects_missing_utterances(monkeypatch, tmp_path):
     monkeypatch.setattr(transcriber.os, "getenv", lambda key, default="": "test-key")
     monkeypatch.setattr(transcriber.httpx, "post", fake_post)
 
-    with pytest.raises(RuntimeError, match="no utterances; transcription cannot proceed"):
+    with pytest.raises(
+        RuntimeError, match="no utterances; transcription cannot proceed"
+    ):
         transcriber.transcribe_chunk(str(audio_path))

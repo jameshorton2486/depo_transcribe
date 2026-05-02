@@ -35,8 +35,12 @@ def test_extract_case_info_from_pdf_uses_regex_case_vocab_fallback(monkeypatch):
     JUAN M. MUÑOZ
     """
 
-    monkeypatch.setattr("core.pdf_extractor.extract_pdf_text", lambda _path: sample_text)
-    monkeypatch.setattr("core.intake_parser.parse_intake_document", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "core.pdf_extractor.extract_pdf_text", lambda _path: sample_text
+    )
+    monkeypatch.setattr(
+        "core.intake_parser.parse_intake_document", lambda *args, **kwargs: None
+    )
 
     result = extract_case_info_from_pdf("ignored.pdf")
 
@@ -45,7 +49,9 @@ def test_extract_case_info_from_pdf_uses_regex_case_vocab_fallback(monkeypatch):
     assert result["intake_entity_counts"]["People"] >= 2
 
 
-def test_extract_case_info_from_pdf_uses_intake_deponent_for_first_and_last_name(monkeypatch):
+def test_extract_case_info_from_pdf_uses_intake_deponent_for_first_and_last_name(
+    monkeypatch,
+):
     sample_text = (
         "Notice of deposition for Chris Epley in Cause Number 2025-CI-19595 "
         "scheduled for April 8, 2026 before the court reporter."
@@ -60,8 +66,13 @@ def test_extract_case_info_from_pdf_uses_intake_deponent_for_first_and_last_name
         entity_counts={"people": 1},
     )
 
-    monkeypatch.setattr("core.pdf_extractor.extract_pdf_text", lambda _path: sample_text)
-    monkeypatch.setattr("core.intake_parser.parse_intake_document", lambda *args, **kwargs: intake_result)
+    monkeypatch.setattr(
+        "core.pdf_extractor.extract_pdf_text", lambda _path: sample_text
+    )
+    monkeypatch.setattr(
+        "core.intake_parser.parse_intake_document",
+        lambda *args, **kwargs: intake_result,
+    )
 
     result = extract_case_info_from_pdf("ignored.pdf")
 

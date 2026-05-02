@@ -6,14 +6,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pipeline import chunker
 
-
 # Use 1.5 × the configured limit so the chunker takes the multi-chunk
 # path under whatever CHUNK_DURATION_SECONDS is currently set. Hard-coding
 # 700s used to work when the limit was 600; the limit was raised in
 # 2026-04 to fix Symptom A (cross-chunk speaker-ID merge corrupting
 # witness diarization), which would have left these tests in the
 # single-chunk path and they would silently stop exercising chunking.
-_DURATION_FORCING_CHUNKS = chunker.CHUNK_DURATION_SECONDS + (chunker.CHUNK_DURATION_SECONDS // 2)
+_DURATION_FORCING_CHUNKS = chunker.CHUNK_DURATION_SECONDS + (
+    chunker.CHUNK_DURATION_SECONDS // 2
+)
 
 
 def test_chunk_audio_uses_seek_before_input_and_pcm_wav(monkeypatch, tmp_path):
@@ -73,7 +74,10 @@ def test_chunk_audio_rejects_near_empty_chunk(monkeypatch, tmp_path):
         )
         assert False, "Expected RuntimeError for invalid tiny chunk"
     except RuntimeError as exc:
-        assert "too small to be valid" in str(exc) or "duration probe failed" in str(exc)
+        assert "too small to be valid" in str(exc) or "duration probe failed" in str(
+            exc
+        )
+
 
 def test_chunker_uses_10_minute_default(monkeypatch, tmp_path):
     audio_path = tmp_path / "hour.wav"
@@ -93,6 +97,10 @@ def test_chunker_uses_10_minute_default(monkeypatch, tmp_path):
 
     assert chunker.CHUNK_DURATION_SECONDS == 600
     assert len(chunks) == 6
-    assert all(c.duration_seconds <= chunker.CHUNK_DURATION_SECONDS + chunker.CHUNK_OVERLAP_SECONDS for c in chunks)
+    assert all(
+        c.duration_seconds
+        <= chunker.CHUNK_DURATION_SECONDS + chunker.CHUNK_OVERLAP_SECONDS
+        for c in chunks
+    )
     assert all(c.duration_seconds == 620 for c in chunks[:-1])
     assert chunks[-1].duration_seconds == 600

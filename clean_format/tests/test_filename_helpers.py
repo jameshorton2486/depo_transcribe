@@ -29,7 +29,10 @@ class TestSanitizeFilenameComponent:
 
     def test_strips_control_chars(self):
         # \x00-\x1f range; tab, newline, NUL all in range
-        assert sanitize_filename_component("hello\tworld\nfoo\x00bar") == "helloworldfoobar"
+        assert (
+            sanitize_filename_component("hello\tworld\nfoo\x00bar")
+            == "helloworldfoobar"
+        )
 
     def test_strips_leading_and_trailing_dot(self):
         assert sanitize_filename_component(".hidden.") == "hidden"
@@ -37,7 +40,10 @@ class TestSanitizeFilenameComponent:
     def test_strips_trailing_dot_after_substitution(self):
         # The real bug: "April 9, 2026 at 8:00 a.m." → strip `:` → "...a.m."
         # → trailing dot removed so the resulting stem doesn't end in `.`
-        assert sanitize_filename_component("April 9 2026 at 8:00 a.m.") == "April 9 2026 at 800 a.m"
+        assert (
+            sanitize_filename_component("April 9 2026 at 8:00 a.m.")
+            == "April 9 2026 at 800 a.m"
+        )
 
     def test_collapses_whitespace_runs(self):
         # Note: tabs/newlines are stripped first (they're in the control-char
@@ -64,7 +70,10 @@ class TestSanitizeFilenameComponent:
     def test_real_world_karam_filename_stem(self):
         # The exact stem produced by the bug we just fixed.
         bad = "KARAM3_Deposition_April 9 2026 at 8:00 a.m."
-        assert sanitize_filename_component(bad) == "KARAM3_Deposition_April 9 2026 at 800 a.m"
+        assert (
+            sanitize_filename_component(bad)
+            == "KARAM3_Deposition_April 9 2026 at 800 a.m"
+        )
 
 
 class TestFormatDateForFilename:

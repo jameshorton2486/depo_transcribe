@@ -25,7 +25,9 @@ def main() -> int:
 
     output_path = args.output
     if output_path is None:
-        date_part = str(case_meta.get("deposition_date", "")).replace("/", "-").replace(",", "")
+        date_part = (
+            str(case_meta.get("deposition_date", "")).replace("/", "-").replace(",", "")
+        )
         output_path = case_dir / (
             f"{case_meta.get('witness_name', 'Witness').split()[-1]}_"
             f"Deposition_{date_part}.docx"

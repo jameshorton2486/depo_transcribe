@@ -12,4 +12,3 @@ class TranscriptBlock:
     type: str
     source_type: str = ""
     examiner: str | None = None
-

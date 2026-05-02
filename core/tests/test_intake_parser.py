@@ -69,12 +69,12 @@ def test_filter_strips_whitespace():
 
 
 def test_strip_markdown_fences_removes_json_fence():
-    raw = "```json\n{\"causeNumber\": null}\n```"
-    assert _strip_markdown_fences(raw) == "{\"causeNumber\": null}"
+    raw = '```json\n{"causeNumber": null}\n```'
+    assert _strip_markdown_fences(raw) == '{"causeNumber": null}'
 
 
 def test_strip_markdown_fences_leaves_plain_text():
-    raw = "{\"causeNumber\": null}"
+    raw = '{"causeNumber": null}'
     assert _strip_markdown_fences(raw) == raw
 
 
@@ -165,12 +165,20 @@ def test_clean_extracted_text_normalizes_known_ocr_name_variant():
 
 def test_parse_intake_document_uses_preextracted_text_without_pdf_read(monkeypatch):
     def _fail_open(_path):
-        raise AssertionError("pdfplumber should not be used when extracted_text is supplied")
+        raise AssertionError(
+            "pdfplumber should not be used when extracted_text is supplied"
+        )
 
     class _FakeMessages:
         @staticmethod
         def create(**kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(text='{"cause_number":"2025-CI-19595","court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}')])
+            return SimpleNamespace(
+                content=[
+                    SimpleNamespace(
+                        text='{"cause_number":"2025-CI-19595","court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}'
+                    )
+                ]
+            )
 
     class _FakeAnthropic:
         def __init__(self, api_key=None):
@@ -178,7 +186,9 @@ def test_parse_intake_document_uses_preextracted_text_without_pdf_read(monkeypat
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setitem(sys.modules, "pdfplumber", SimpleNamespace(open=_fail_open))
-    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic)
+    )
 
     result = parse_intake_document(
         "ignored.pdf",
@@ -198,7 +208,13 @@ def test_parse_intake_document_uses_stripped_env_api_key(monkeypatch):
     class _FakeMessages:
         @staticmethod
         def create(**kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(text='{"cause_number":null,"court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}')])
+            return SimpleNamespace(
+                content=[
+                    SimpleNamespace(
+                        text='{"cause_number":null,"court":null,"case_style":null,"deposition_date":null,"deposition_method":null,"subpoena_duces_tecum":false,"amendment":null,"read_and_sign":false,"signature_waived":false,"video_recorded":false,"plaintiffs":[],"defendants":[],"deponents":[],"ordering_attorney":{},"filing_attorney":{},"copy_attorneys":[],"ordered_by":null,"reporter_name":null,"reporter_csr":null,"reporter_firm":null,"reporter_address":null,"vocabulary_terms":[],"all_proper_nouns":[],"confirmed_spellings":{}}'
+                    )
+                ]
+            )
 
     class _FakeAnthropic:
         def __init__(self, api_key=None):
@@ -206,7 +222,9 @@ def test_parse_intake_document_uses_stripped_env_api_key(monkeypatch):
             self.messages = _FakeMessages()
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", " test-key ")
-    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic)
+    )
 
     result = parse_intake_document(
         "ignored.pdf",
@@ -238,7 +256,7 @@ def test_parse_intake_document_builds_speaker_map_and_entity_counts(monkeypatch)
         '"vocabulary_terms":['
         '{"term":"Chris Epley","term_type":"PERSON","field_name":"deponent","reason":"name"},'
         '{"term":"Ford & Harrison LLP","term_type":"COMPANY","field_name":"firm","reason":"firm"}'
-        '],'
+        "],"
         '"all_proper_nouns":["Chris Epley","Ford & Harrison LLP","Texas Rule of Civil Procedure 199.2(b)(1)"],'
         '"confirmed_spellings":{"Munoz":"Muñoz"}}'
     )
@@ -253,7 +271,9 @@ def test_parse_intake_document_builds_speaker_map_and_entity_counts(monkeypatch)
             self.messages = _FakeMessages()
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic)
+    )
 
     result = parse_intake_document(
         "ignored.pdf",
@@ -310,7 +330,9 @@ def test_parse_intake_document_builds_structured_keyterm_map(monkeypatch):
             self.messages = _FakeMessages()
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    monkeypatch.setitem(sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic))
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=_FakeAnthropic)
+    )
 
     result = parse_intake_document(
         "ignored.pdf",

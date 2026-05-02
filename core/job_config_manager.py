@@ -51,12 +51,14 @@ logger = get_logger(__name__)
 
 # ── Path helper ───────────────────────────────────────────────────────────────
 
+
 def get_job_config_path(case_root: str) -> Path:
     """Return the canonical Path for job_config.json given a case root folder."""
     return Path(case_root) / JOB_CONFIG_DIR / JOB_CONFIG_FILENAME
 
 
 # ── Load ──────────────────────────────────────────────────────────────────────
+
 
 def load_job_config(case_root: str) -> dict[str, Any]:
     """
@@ -81,15 +83,18 @@ def load_job_config(case_root: str) -> dict[str, Any]:
         logger.error("[JobConfig] Failed to load %s: %s", path, exc)
         return {}
 
-
     # Version check
     version = data.get("version")
     if version is None:
-        logger.warning("[JobConfig] No 'version' key — treating as legacy file: %s", path)
+        logger.warning(
+            "[JobConfig] No 'version' key — treating as legacy file: %s", path
+        )
     elif version != JOB_CONFIG_VERSION:
         logger.warning(
             "[JobConfig] Version mismatch — file=%s expected=%s: %s",
-            version, JOB_CONFIG_VERSION, path,
+            version,
+            JOB_CONFIG_VERSION,
+            path,
         )
 
     logger.info(
@@ -103,6 +108,7 @@ def load_job_config(case_root: str) -> dict[str, Any]:
 
 
 # ── Save ──────────────────────────────────────────────────────────────────────
+
 
 def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     """
@@ -126,15 +132,19 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
     # ── Stamp version ─────────────────────────────────────────────────────────
     data["version"] = JOB_CONFIG_VERSION
 
-
     # Normalize Deepgram keyterms to a stable list[str] shape
     raw_keyterms = data.get("deepgram_keyterms")
     if raw_keyterms is None:
         pass
     elif isinstance(raw_keyterms, list):
-        data["deepgram_keyterms"] = [str(t).strip() for t in raw_keyterms if str(t).strip()]
+        data["deepgram_keyterms"] = [
+            str(t).strip() for t in raw_keyterms if str(t).strip()
+        ]
     else:
-        logger.warning("[JobConfig] deepgram_keyterms must be a list; dropping invalid value of type %s", type(raw_keyterms).__name__)
+        logger.warning(
+            "[JobConfig] deepgram_keyterms must be a list; dropping invalid value of type %s",
+            type(raw_keyterms).__name__,
+        )
         data.pop("deepgram_keyterms", None)
 
     # ── Validate confirmed_spellings ──────────────────────────────────────────
@@ -168,6 +178,7 @@ def save_job_config(case_root: str, data: dict[str, Any]) -> Path | None:
 
 
 # ── Merge + Save ──────────────────────────────────────────────────────────────
+
 
 def merge_and_save(case_root: str, **sections: Any) -> Path | None:
     """

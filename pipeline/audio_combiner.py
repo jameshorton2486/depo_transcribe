@@ -64,31 +64,36 @@ def probe_audio_format(file_path: Path) -> dict:
         raise FileNotFoundError(f"Audio file not found: {file_path}")
 
     cmd = [
-        "ffprobe", "-v", "error",
-        "-print_format", "json",
-        "-show_format", "-show_streams",
+        "ffprobe",
+        "-v",
+        "error",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
         str(file_path),
     ]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            "ffprobe not found on PATH. Install FFmpeg.") from exc
+        raise RuntimeError("ffprobe not found on PATH. Install FFmpeg.") from exc
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(
-            f"ffprobe timed out probing {file_path}") from exc
+        raise RuntimeError(f"ffprobe timed out probing {file_path}") from exc
 
     if result.returncode != 0:
-        raise RuntimeError(
-            f"ffprobe failed for {file_path}: {result.stderr.strip()}")
+        raise RuntimeError(f"ffprobe failed for {file_path}: {result.stderr.strip()}")
 
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"ffprobe returned malformed JSON for {file_path}: {exc}") from exc
+            f"ffprobe returned malformed JSON for {file_path}: {exc}"
+        ) from exc
 
     fmt = payload.get("format", {}) or {}
     streams = payload.get("streams", []) or []
@@ -177,15 +182,15 @@ def combine_audio_files(
     inputs = [Path(p) for p in input_paths]
     missing = [str(p) for p in inputs if not p.is_file()]
     if missing:
-        raise FileNotFoundError(
-            f"Input file(s) not found: {', '.join(missing)}")
+        raise FileNotFoundError(f"Input file(s) not found: {', '.join(missing)}")
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info(
         "[AudioCombiner] Combining %d audio file(s) into %s",
-        len(inputs), output_path,
+        len(inputs),
+        output_path,
     )
 
     # ── Single-file passthrough ──────────────────────────────────────────
@@ -194,8 +199,7 @@ def combine_audio_files(
         try:
             shutil.copy(src, output_path)
         except Exception as exc:
-            logger.error(
-                "[AudioCombiner] Passthrough copy failed: %s", exc)
+            logger.error("[AudioCombiner] Passthrough copy failed: %s", exc)
             return CombineResult(
                 success=False,
                 output_path=None,
@@ -208,8 +212,7 @@ def combine_audio_files(
             duration = probe_audio_format(output_path).get("duration", 0.0)
         except Exception:
             duration = 0.0
-        logger.info(
-            "[AudioCombiner] Passthrough complete (lossless=True)")
+        logger.info("[AudioCombiner] Passthrough complete (lossless=True)")
         return CombineResult(
             success=True,
             output_path=output_path,
@@ -255,17 +258,25 @@ def _combine_demuxer(
                 fh.write(f"file '{_escape_concat_path(path.resolve())}'\n")
 
         cmd = [
-            "ffmpeg", "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(filelist),
-            "-c", "copy",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(filelist),
+            "-c",
+            "copy",
             str(output_path),
         ]
         logger.info("[AudioCombiner] Using concat_demuxer (lossless=True)")
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=timeout_seconds,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
             return CombineResult(
@@ -274,9 +285,7 @@ def _combine_demuxer(
                 duration_seconds=total_duration,
                 lossless=True,
                 method="concat_demuxer",
-                error=(
-                    f"ffmpeg concat demuxer timed out after {timeout_seconds}s"
-                ),
+                error=(f"ffmpeg concat demuxer timed out after {timeout_seconds}s"),
             )
 
         if result.returncode != 0:
@@ -293,7 +302,8 @@ def _combine_demuxer(
 
         try:
             actual_duration = probe_audio_format(output_path).get(
-                "duration", total_duration)
+                "duration", total_duration
+            )
         except Exception:
             actual_duration = total_duration
         logger.info(
@@ -314,7 +324,8 @@ def _combine_demuxer(
         except Exception as cleanup_exc:
             logger.warning(
                 "[AudioCombiner] Could not delete temp filelist %s: %s",
-                filelist, cleanup_exc,
+                filelist,
+                cleanup_exc,
             )
 
 
@@ -347,17 +358,23 @@ def _combine_filter(
         cmd.extend(["-i", str(path)])
     n = len(inputs)
     filter_complex = (
-        "".join(f"[{i}:a]" for i in range(n))
-        + f"concat=n={n}:v=0:a=1[out]"
+        "".join(f"[{i}:a]" for i in range(n)) + f"concat=n={n}:v=0:a=1[out]"
     )
-    cmd.extend([
-        "-filter_complex", filter_complex,
-        "-map", "[out]",
-        "-ar", str(TARGET_SAMPLE_RATE),
-        "-ac", "1",
-        "-sample_fmt", "s16",
-        str(final_output),
-    ])
+    cmd.extend(
+        [
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[out]",
+            "-ar",
+            str(TARGET_SAMPLE_RATE),
+            "-ac",
+            "1",
+            "-sample_fmt",
+            "s16",
+            str(final_output),
+        ]
+    )
 
     logger.info(
         "[AudioCombiner] Using concat_filter (lossless=False, target_sr=%d)",
@@ -365,7 +382,10 @@ def _combine_filter(
     )
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout_seconds,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
         return CombineResult(
@@ -393,7 +413,8 @@ def _combine_filter(
 
     try:
         actual_duration = probe_audio_format(final_output).get(
-            "duration", total_duration)
+            "duration", total_duration
+        )
     except Exception:
         actual_duration = total_duration
     logger.info(

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import customtkinter as ctk
 
-
 # Accent color for the section-header bar. Subtle blue that reads on the
 # dark theme without competing with primary buttons (amber, green, purple).
 SECTION_HEADER_ACCENT = "#3A7FBF"
@@ -89,8 +88,8 @@ TOOLBAR_BTN_H = 32
 # that need to opt into a specific level (e.g. a card-on-card composition or
 # the transcript editor area).
 
-BG_BASE = "#0a0c10"        # outermost app background
-BG_CARD = "#0f1218"        # card surface (one level above base)
+BG_BASE = "#0a0c10"  # outermost app background
+BG_CARD = "#0f1218"  # card surface (one level above base)
 BG_TRANSCRIPT = "#07080c"  # transcript editor (one level below base)
 
 
@@ -102,13 +101,13 @@ BG_TRANSCRIPT = "#07080c"  # transcript editor (one level below base)
 # read as the same family as section headers / speaker labels.
 
 # Amber family (BTN_PRIMARY_AMBER #B8860B blended over BG_BASE)
-PILL_AMBER_BG = "#1B180F"      # 10% B8860B
+PILL_AMBER_BG = "#1B180F"  # 10% B8860B
 PILL_AMBER_BORDER = "#2D240F"  # 20% B8860B
 PILL_AMBER_TEXT = BTN_PRIMARY_AMBER
 
 # Blue family (SECTION_HEADER_ACCENT #3A7FBF blended over BG_BASE)
-PILL_BLUE_BG = "#0F1822"       # 10% 3A7FBF
-PILL_BLUE_BORDER = "#142333"   # 20% 3A7FBF
+PILL_BLUE_BG = "#0F1822"  # 10% 3A7FBF
+PILL_BLUE_BORDER = "#142333"  # 20% 3A7FBF
 PILL_BLUE_TEXT = SECTION_HEADER_ACCENT
 
 # Emerald family (#10B981 blended over BG_BASE) — for the "Done" pill
@@ -116,7 +115,7 @@ PILL_BLUE_TEXT = SECTION_HEADER_ACCENT
 # BTN_SAFE_GREEN (#1A6B3A) is too muted for badge text on the dark surface,
 # and the prior single-label scheme used #44AA44 inline only; the emerald
 # family is genuinely missing from the palette.
-PILL_EMERALD_BG = "#0B1D1B"      # 10% 10B981
+PILL_EMERALD_BG = "#0B1D1B"  # 10% 10B981
 PILL_EMERALD_BORDER = "#0B2F27"  # 20% 10B981
 PILL_EMERALD_TEXT = "#10B981"
 
@@ -133,10 +132,10 @@ _PILL_VARIANTS = {
 # need a four-level text hierarchy. Existing widgets stick with their
 # inline hex strings — these tokens are not retroactively applied.
 
-TEXT_PRIMARY = "#E2E8F0"    # slate-200, body text on dark surface
+TEXT_PRIMARY = "#E2E8F0"  # slate-200, body text on dark surface
 TEXT_SECONDARY = "#94A3B8"  # slate-400, secondary content
-TEXT_MUTED = "#64748B"      # slate-500, label text
-TEXT_DIM = "#475569"        # slate-600, ID labels, separators
+TEXT_MUTED = "#64748B"  # slate-500, label text
+TEXT_DIM = "#475569"  # slate-600, ID labels, separators
 
 
 # ── Numbered chip + card-with-accent + rule card tokens ──────────────────────
@@ -145,9 +144,9 @@ TEXT_DIM = "#475569"        # slate-600, ID labels, separators
 # muted state-dot color that contrasts CARD_BORDER_COLOR (#2A3A4A) so a
 # scanner can tell at a glance which library rows are dormant.
 
-CHIP_BG = "#1E293B"          # slate-800 disc fill
-CHIP_BORDER = "#334155"      # slate-700 disc border
-DOT_DISABLED = "#475569"     # slate-600 — distinct from CARD_BORDER_COLOR
+CHIP_BG = "#1E293B"  # slate-800 disc fill
+CHIP_BORDER = "#334155"  # slate-700 disc border
+DOT_DISABLED = "#475569"  # slate-600 — distinct from CARD_BORDER_COLOR
 DOT_ENABLED = PILL_EMERALD_TEXT  # alias for the active-rule emerald
 
 # Hover color for the delete button on active library rows. A muted dark

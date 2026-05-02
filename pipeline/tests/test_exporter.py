@@ -12,7 +12,13 @@ def test_export_results_writes_raw_deepgram_baseline(tmp_path, monkeypatch):
     assembled_result = {
         "words": [],
         "utterances": [
-            {"speaker": 0, "transcript": "Merged text.", "start": 0.0, "end": 1.0, "speaker_label": "Speaker 0"},
+            {
+                "speaker": 0,
+                "transcript": "Merged text.",
+                "start": 0.0,
+                "end": 1.0,
+                "speaker_label": "Speaker 0",
+            },
         ],
         "raw_utterances": [
             {"speaker": 0, "transcript": "Good afternoon,", "start": 0.0, "end": 0.5},
@@ -28,6 +34,5 @@ def test_export_results_writes_raw_deepgram_baseline(tmp_path, monkeypatch):
     assert raw_path.name == "raw_deepgram.txt"
     assert raw_path.exists()
     assert raw_path.read_text(encoding="utf-8") == (
-        "Speaker 0: Good afternoon,\n\n"
-        "Speaker 0: Doctor Leifer.\n\n"
+        "Speaker 0: Good afternoon,\n\n" "Speaker 0: Doctor Leifer.\n\n"
     )

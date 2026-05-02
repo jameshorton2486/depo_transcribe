@@ -57,30 +57,36 @@ AUTO_DETECT_KEY = "Auto-detect (recommended)"
 # Compatibility aliases for older callers/tests.
 DEFAULT_CONFIG = ENHANCED_CONFIG
 AGGRESSIVE_CONFIG = RESCUE_CONFIG
-QUALITY_CONFIGS.update({
-    "Clean (good/excellent audio)": CLEAN_CONFIG,
-    "Default (fair audio)": DEFAULT_CONFIG,
-    "Aggressive (noisy/poor audio)": AGGRESSIVE_CONFIG,
-    "Default": DEFAULT_CONFIG,
-    "Aggressive": AGGRESSIVE_CONFIG,
-    "Clean": CLEAN_CONFIG,
-})
+QUALITY_CONFIGS.update(
+    {
+        "Clean (good/excellent audio)": CLEAN_CONFIG,
+        "Default (fair audio)": DEFAULT_CONFIG,
+        "Aggressive (noisy/poor audio)": AGGRESSIVE_CONFIG,
+        "Default": DEFAULT_CONFIG,
+        "Aggressive": AGGRESSIVE_CONFIG,
+        "Clean": CLEAN_CONFIG,
+    }
+)
 
 SUPPORTED_EXTENSIONS = {
-    ".mp3", ".wav", ".m4a", ".mp4", ".mov", ".avi",
-    ".mkv", ".flac", ".ogg", ".aac", ".wma", ".webm",
+    ".mp3",
+    ".wav",
+    ".m4a",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".mkv",
+    ".flac",
+    ".ogg",
+    ".aac",
+    ".wma",
+    ".webm",
 }
 
 
 def _tier_slug(tier_name: str) -> str:
     """Convert a tier description to a safe filename component."""
-    return (
-        tier_name.lower()
-        .split(":")[0]
-        .split("(")[0]
-        .strip()
-        .replace(" ", "_")
-    )
+    return tier_name.lower().split(":")[0].split("(")[0].strip().replace(" ", "_")
 
 
 def _hash_config(config_dict: dict) -> str:
@@ -105,7 +111,9 @@ def _legacy_cache_path(input_path: Path, tier_name: str) -> str:
     """Return the pre-hash cache path for compatibility with older cache files."""
     slug = _tier_slug(tier_name)
     path_hash = hashlib.md5(str(input_path.resolve()).encode()).hexdigest()[:8]
-    return os.path.join(TEMP_DIR, f"normalized_{input_path.stem}_{slug}_{path_hash}.wav")
+    return os.path.join(
+        TEMP_DIR, f"normalized_{input_path.stem}_{slug}_{path_hash}.wav"
+    )
 
 
 def _cache_path(input_path: Path, tier_name: str, config: dict) -> str:
@@ -123,7 +131,9 @@ def _resolve_tier_name(config: dict) -> str:
     for name, candidate in QUALITY_CONFIGS.items():
         if candidate is config:
             return name
-        if candidate is not None and candidate.get("description") == config.get("description"):
+        if candidate is not None and candidate.get("description") == config.get(
+            "description"
+        ):
             return name
     return config.get("description", "custom")
 
@@ -154,8 +164,13 @@ def is_stereo_dual_channel(file_path: str) -> bool:
     try:
         probe = subprocess.run(
             [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_streams", file_path,
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                file_path,
             ],
             capture_output=True,
             text=True,
@@ -168,12 +183,22 @@ def is_stereo_dual_channel(file_path: str) -> bool:
 
         vol_result = subprocess.run(
             [
-                "ffmpeg", "-i", file_path,
+                "ffmpeg",
+                "-i",
+                file_path,
                 "-filter_complex",
                 "[0:a]channelsplit=channel_layout=stereo[L][R];"
                 "[L]volumedetect[lv];[R]volumedetect[rv]",
-                "-map", "[lv]", "-f", "null", os.devnull,
-                "-map", "[rv]", "-f", "null", os.devnull,
+                "-map",
+                "[lv]",
+                "-f",
+                "null",
+                os.devnull,
+                "-map",
+                "[rv]",
+                "-f",
+                "null",
+                os.devnull,
             ],
             capture_output=True,
             text=True,
@@ -218,10 +243,26 @@ def split_stereo_channels(
 
     subprocess.run(
         [
-            "ffmpeg", "-y", "-i", file_path,
-            "-filter_complex", "[0:a]channelsplit=channel_layout=stereo[L][R]",
-            "-map", "[L]", "-ar", str(TARGET_SAMPLE_RATE), "-ac", "1", left_path,
-            "-map", "[R]", "-ar", str(TARGET_SAMPLE_RATE), "-ac", "1", right_path,
+            "ffmpeg",
+            "-y",
+            "-i",
+            file_path,
+            "-filter_complex",
+            "[0:a]channelsplit=channel_layout=stereo[L][R]",
+            "-map",
+            "[L]",
+            "-ar",
+            str(TARGET_SAMPLE_RATE),
+            "-ac",
+            "1",
+            left_path,
+            "-map",
+            "[R]",
+            "-ar",
+            str(TARGET_SAMPLE_RATE),
+            "-ac",
+            "1",
+            right_path,
         ],
         capture_output=True,
         check=True,
@@ -255,12 +296,20 @@ def auto_detect_quality(input_path: str) -> tuple[dict, str]:
     dynamic_range = None
     try:
         vol_cmd = [
-            "ffmpeg", "-t", "120",
-            "-i", str(input_path),
-            "-af", "volumedetect",
-            "-f", "null", "-",
+            "ffmpeg",
+            "-t",
+            "120",
+            "-i",
+            str(input_path),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
         ]
-        vol_result = subprocess.run(vol_cmd, capture_output=True, text=True, timeout=120)
+        vol_result = subprocess.run(
+            vol_cmd, capture_output=True, text=True, timeout=120
+        )
         stderr = vol_result.stderr or ""
 
         mean_vol = None
@@ -321,11 +370,17 @@ def normalize_audio(
     elif config is None:
         config = ENHANCED_CONFIG
         tier_name = "ENHANCED (fair audio)"
-        logger.info("[Preprocessor] No config supplied — using ENHANCED as safe fallback")
+        logger.info(
+            "[Preprocessor] No config supplied — using ENHANCED as safe fallback"
+        )
     else:
         tier_name = _resolve_tier_name(config)
 
-    logger.info("[Preprocessor] Normalizing: %s  config=%s", Path(input_path).name, config["description"])
+    logger.info(
+        "[Preprocessor] Normalizing: %s  config=%s",
+        Path(input_path).name,
+        config["description"],
+    )
     if progress_callback:
         progress_callback(f"Normalizing audio: {config['description']}")
 
@@ -335,7 +390,9 @@ def normalize_audio(
     output_path = _cache_path(input_path, tier_name, config)
     legacy_output_path = _legacy_cache_path(input_path, tier_name)
 
-    if os.path.exists(output_path) and os.path.getmtime(output_path) >= os.path.getmtime(str(input_path)):
+    if os.path.exists(output_path) and os.path.getmtime(
+        output_path
+    ) >= os.path.getmtime(str(input_path)):
         size_mb = os.path.getsize(output_path) / (1024 * 1024)
         logger.info(
             "[Preprocessor] Cache hit — skipping normalization: %s (%.1f MB)",
@@ -343,10 +400,14 @@ def normalize_audio(
             size_mb,
         )
         if progress_callback:
-            progress_callback(f"Using cached normalized audio ({size_mb:.1f} MB)  [{tier_name}]")
+            progress_callback(
+                f"Using cached normalized audio ({size_mb:.1f} MB)  [{tier_name}]"
+            )
         return output_path
 
-    if os.path.exists(legacy_output_path) and os.path.getmtime(legacy_output_path) >= os.path.getmtime(str(input_path)):
+    if os.path.exists(legacy_output_path) and os.path.getmtime(
+        legacy_output_path
+    ) >= os.path.getmtime(str(input_path)):
         logger.info(
             "[Preprocessor] Legacy cache present but config-sensitive cache required: %s",
             legacy_output_path,
@@ -376,7 +437,12 @@ def normalize_audio(
         raise RuntimeError(f"FFmpeg normalization failed:\n{result.stderr}")
 
     size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    logger.info("[Preprocessor] Output: %s  tier=%s  size_mb=%.1f", output_path, tier_name, size_mb)
+    logger.info(
+        "[Preprocessor] Output: %s  tier=%s  size_mb=%.1f",
+        output_path,
+        tier_name,
+        size_mb,
+    )
     if progress_callback:
         progress_callback(f"Audio normalized: {size_mb:.1f} MB  [{tier_name}]")
 
@@ -399,17 +465,22 @@ def get_audio_info(file_path: str) -> dict:
     """Return FFprobe metadata for an audio file as a dict."""
     cmd = [
         "ffprobe",
-        "-v", "error",
-        "-show_entries", "format=duration,size,bit_rate",
-        "-show_entries", "stream=codec_name,sample_rate,channels,codec_type",
-        "-of", "json",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration,size,bit_rate",
+        "-show_entries",
+        "stream=codec_name,sample_rate,channels,codec_type",
+        "-of",
+        "json",
         file_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         logger.warning(
             "[Preprocessor] FFprobe failed for %s: %s",
-            file_path, result.stderr.strip()[:300],
+            file_path,
+            result.stderr.strip()[:300],
         )
         return {}
     try:
@@ -422,9 +493,13 @@ def get_audio_info(file_path: str) -> dict:
 def get_audio_duration(file_path: str) -> float:
     """Get the duration of an audio file in seconds using FFprobe."""
     cmd = [
-        "ffprobe", "-v", "quiet",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
         file_path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -442,34 +517,49 @@ def trim_long_silence(input_path: str) -> str:
     """
     input_path = Path(input_path)
     duration = get_audio_duration(str(input_path))
-    logger.info("[Preprocessor] Silence trimming check: %s duration=%.1f", input_path.name, duration)
+    logger.info(
+        "[Preprocessor] Silence trimming check: %s duration=%.1f",
+        input_path.name,
+        duration,
+    )
     if duration <= 60:
         return str(input_path)
 
     trimmed_path = input_path.with_name(f"{input_path.stem}_trimmed.wav")
-    if trimmed_path.exists() and trimmed_path.stat().st_mtime >= input_path.stat().st_mtime:
+    if (
+        trimmed_path.exists()
+        and trimmed_path.stat().st_mtime >= input_path.stat().st_mtime
+    ):
         trimmed_duration = get_audio_duration(str(trimmed_path))
         removed = max(0.0, duration - trimmed_duration)
         logger.info("Silence trimming removed %.1f seconds (cached)", removed)
         return str(trimmed_path)
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(input_path),
-        "-af", "afftdn=nf=-25,silenceremove=stop_periods=-1:stop_duration=20:stop_threshold=-50dB:stop_silence=2",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(input_path),
+        "-af",
+        "afftdn=nf=-25,silenceremove=stop_periods=-1:stop_duration=20:stop_threshold=-50dB:stop_silence=2",
         str(trimmed_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         stderr = (result.stderr or "").strip()
-        logger.error("[Preprocessor] Silence trimming failed: %s", stderr or "unknown ffmpeg error")
+        logger.error(
+            "[Preprocessor] Silence trimming failed: %s",
+            stderr or "unknown ffmpeg error",
+        )
         return str(input_path)
 
     trimmed_duration = get_audio_duration(str(trimmed_path))
     removed = max(0.0, duration - trimmed_duration)
     logger.info(
         "[Preprocessor] Silence trimming removed %.1f seconds (%s -> %s)",
-        removed, input_path.name, trimmed_path.name,
+        removed,
+        input_path.name,
+        trimmed_path.name,
     )
     logger.info("Silence trimming removed %.1f seconds", removed)
     return str(trimmed_path)
@@ -508,7 +598,12 @@ def validate_audio_file(file_path: str) -> dict:
             ),
         }
 
-    return {"valid": True, "duration": duration, "format": ext.lstrip("."), "error": None}
+    return {
+        "valid": True,
+        "duration": duration,
+        "format": ext.lstrip("."),
+        "error": None,
+    }
 
 
 def check_ffmpeg() -> bool:

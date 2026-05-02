@@ -69,7 +69,10 @@ def smooth_speaker_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlo
         current = smoothed[index]
         following = smoothed[index + 1]
 
-        if current.speaker != previous.speaker and previous.speaker == following.speaker:
+        if (
+            current.speaker != previous.speaker
+            and previous.speaker == following.speaker
+        ):
             if len(str(current.text or "").split()) < 6:
                 smoothed[index] = TranscriptBlock(
                     speaker=previous.speaker,

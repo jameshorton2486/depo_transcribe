@@ -45,10 +45,14 @@ def extract_text_from_files(file_paths: list[Path]) -> str:
             elif suffix == ".txt":
                 text = path.read_text(encoding="utf-8", errors="replace")
             else:
-                logger.warning("[SourceDocsExtractor] Unsupported file type skipped: %s", path.name)
+                logger.warning(
+                    "[SourceDocsExtractor] Unsupported file type skipped: %s", path.name
+                )
                 continue
         except Exception as exc:
-            logger.warning("[SourceDocsExtractor] Failed to extract %s: %s", path.name, exc)
+            logger.warning(
+                "[SourceDocsExtractor] Failed to extract %s: %s", path.name, exc
+            )
             continue
 
         sections.append(f"===== {path.name} =====\n{text.strip()}")

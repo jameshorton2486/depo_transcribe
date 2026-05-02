@@ -12,17 +12,91 @@ from datetime import date, datetime
 from typing import Any
 
 US_STATES = {
-    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL",
-    "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT",
-    "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",
-    "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY", "DC",
+    "AL",
+    "AK",
+    "AZ",
+    "AR",
+    "CA",
+    "CO",
+    "CT",
+    "DE",
+    "FL",
+    "GA",
+    "HI",
+    "ID",
+    "IL",
+    "IN",
+    "IA",
+    "KS",
+    "KY",
+    "LA",
+    "ME",
+    "MD",
+    "MA",
+    "MI",
+    "MN",
+    "MS",
+    "MO",
+    "MT",
+    "NE",
+    "NV",
+    "NH",
+    "NJ",
+    "NM",
+    "NY",
+    "NC",
+    "ND",
+    "OH",
+    "OK",
+    "OR",
+    "PA",
+    "RI",
+    "SC",
+    "SD",
+    "TN",
+    "TX",
+    "UT",
+    "VT",
+    "VA",
+    "WA",
+    "WV",
+    "WI",
+    "WY",
+    "DC",
 }
 
 PRONOUNS = {
-    "i", "me", "my", "mine", "myself", "we", "us", "our", "ours", "ourselves",
-    "you", "your", "yours", "yourself", "yourselves", "he", "him", "his", "himself",
-    "she", "her", "hers", "herself", "they", "them", "their", "theirs", "themselves",
-    "it", "its", "itself",
+    "i",
+    "me",
+    "my",
+    "mine",
+    "myself",
+    "we",
+    "us",
+    "our",
+    "ours",
+    "ourselves",
+    "you",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+    "he",
+    "him",
+    "his",
+    "himself",
+    "she",
+    "her",
+    "hers",
+    "herself",
+    "they",
+    "them",
+    "their",
+    "theirs",
+    "themselves",
+    "it",
+    "its",
+    "itself",
 }
 
 ROLE_CANON = {
@@ -47,8 +121,19 @@ LEGAL_PHRASE_SEEDS = [
 ]
 
 ORG_SUFFIXES = (
-    "Inc", "Inc.", "LLP", "L.L.P.", "LLC", "L.L.C.", "Association",
-    "Solutions", "Guides", "Company", "Co.", "Corp.", "Corporation",
+    "Inc",
+    "Inc.",
+    "LLP",
+    "L.L.P.",
+    "LLC",
+    "L.L.C.",
+    "Association",
+    "Solutions",
+    "Guides",
+    "Company",
+    "Co.",
+    "Corp.",
+    "Corporation",
 )
 
 
@@ -101,7 +186,9 @@ def _extract_dates_times(text: str) -> tuple[set[str], set[str]]:
         except ValueError:
             pass
 
-    for hh, mm, ampm in re.findall(r"\b(\d{1,2}):(\d{2})\s*(A\.?M\.?|P\.?M\.?)\b", text, flags=re.IGNORECASE):
+    for hh, mm, ampm in re.findall(
+        r"\b(\d{1,2}):(\d{2})\s*(A\.?M\.?|P\.?M\.?)\b", text, flags=re.IGNORECASE
+    ):
         h = int(hh)
         m = int(mm)
         ap = ampm.replace(".", "").upper()
@@ -189,7 +276,7 @@ def _canonicalize_org(org: str) -> str:
             out.append("&")
             continue
         base = word.rstrip(".,")
-        punct = word[len(base):]
+        punct = word[len(base) :]
         up = base.upper()
         if up in {"LLP", "LLC", "INC", "CO", "CORP", "CSR", "AAA"}:
             out.append(up + punct)
@@ -204,11 +291,25 @@ def _extract_people_and_orgs(text: str) -> tuple[list[str], list[str]]:
     suffix = r"(?:Jr\.?|Sr\.?|II|III|IV)"
     nick = r"\"[A-Za-z\u00C0-\u017F]+\""
 
-    person_pat = re.compile(rf"\b{cap}(?:\s+{init})?(?:\s+{nick})?(?:\s+{cap}){{1,3}}(?:\s+{suffix})?\b")
+    person_pat = re.compile(
+        rf"\b{cap}(?:\s+{init})?(?:\s+{nick})?(?:\s+{cap}){{1,3}}(?:\s+{suffix})?\b"
+    )
     candidates = []
     stop_tokens = {
-        "Texas", "Rule", "Civil", "Procedure", "Zoom", "Deposition",
-        "Certificate", "Service", "Case", "No", "First", "Amended", "Notice", "Of",
+        "Texas",
+        "Rule",
+        "Civil",
+        "Procedure",
+        "Zoom",
+        "Deposition",
+        "Certificate",
+        "Service",
+        "Case",
+        "No",
+        "First",
+        "Amended",
+        "Notice",
+        "Of",
     }
     people = []
 
@@ -261,7 +362,9 @@ def _extract_legal_phrases(text: str) -> list[str]:
     return _dedupe_preserve(found)
 
 
-def _suggest_speaker_map(text: str, people: list[str], orgs: list[str], roles: list[str]) -> dict[str, Any]:
+def _suggest_speaker_map(
+    text: str, people: list[str], orgs: list[str], roles: list[str]
+) -> dict[str, Any]:
     sm: dict[str, Any] = {}
 
     if "Deponent" in roles and people:
@@ -272,7 +375,9 @@ def _suggest_speaker_map(text: str, people: list[str], orgs: list[str], roles: l
     if "Respondent" in roles and orgs:
         sm.setdefault("respondent", orgs[0])
 
-    speaker_lines = re.findall(r"(?m)^(MR\.|MS\.|MRS\.|DR\.)\s+([A-Z][A-Z'\-]+)\s*:\s*$", text)
+    speaker_lines = re.findall(
+        r"(?m)^(MR\.|MS\.|MRS\.|DR\.)\s+([A-Z][A-Z'\-]+)\s*:\s*$", text
+    )
     for honor, last in speaker_lines:
         label = f"{honor} {last}:"
         sm.setdefault(label, _canonicalize_person(f"{honor.title()} {last.title()}"))
@@ -355,4 +460,8 @@ def precision(extracted: list[str], gold: list[str]) -> float:
 
 
 def f1(precision_value: float, recall_value: float) -> float:
-    return 0.0 if (precision_value + recall_value) == 0 else 2 * precision_value * recall_value / (precision_value + recall_value)
+    return (
+        0.0
+        if (precision_value + recall_value) == 0
+        else 2 * precision_value * recall_value / (precision_value + recall_value)
+    )

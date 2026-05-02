@@ -40,7 +40,9 @@ def _speaker_blocks(raw_text: str) -> list[str]:
     return [block for block in blocks if block]
 
 
-def split_transcript(raw_text: str, max_chunk_chars: int = CHUNK_CHAR_LIMIT) -> list[str]:
+def split_transcript(
+    raw_text: str, max_chunk_chars: int = CHUNK_CHAR_LIMIT
+) -> list[str]:
     """Split raw speaker blocks into chunks near the requested character limit."""
     blocks = _speaker_blocks(raw_text)
     if not blocks:
@@ -104,11 +106,19 @@ def _case_meta_for_prompt(case_meta: dict[str, Any]) -> dict[str, Any]:
         "attorneys",
         "videographer_name",
     ]
-    return {key: case_meta.get(key) for key in ordered_keys if case_meta.get(key) not in (None, "", [], {})}
+    return {
+        key: case_meta.get(key)
+        for key in ordered_keys
+        if case_meta.get(key) not in (None, "", [], {})
+    }
 
 
-def build_user_message(chunk: str, case_meta: dict[str, Any], chunk_index: int, chunk_count: int) -> str:
-    meta_json = json.dumps(_case_meta_for_prompt(case_meta), indent=2, ensure_ascii=False)
+def build_user_message(
+    chunk: str, case_meta: dict[str, Any], chunk_index: int, chunk_count: int
+) -> str:
+    meta_json = json.dumps(
+        _case_meta_for_prompt(case_meta), indent=2, ensure_ascii=False
+    )
     return (
         f"Case metadata:\n{meta_json}\n\n"
         f"Transcript chunk {chunk_index} of {chunk_count}:\n"
@@ -162,15 +172,23 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
 
         dunnell_match = _DUNNELL_RE.match(line)
         if dunnell_match:
-            lines.append(f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}")
+            lines.append(
+                f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}"
+            )
             continue
 
         if line.startswith("COURT REPORTER:\t"):
-            lines.append("THE REPORTER:\t" + _normalize_body_text(line[len("COURT REPORTER:\t") :]))
+            lines.append(
+                "THE REPORTER:\t"
+                + _normalize_body_text(line[len("COURT REPORTER:\t") :])
+            )
             continue
 
         if line.startswith("VIDEOGRAPHER:\t"):
-            lines.append("THE VIDEOGRAPHER:\t" + _normalize_body_text(line[len("VIDEOGRAPHER:\t") :]))
+            lines.append(
+                "THE VIDEOGRAPHER:\t"
+                + _normalize_body_text(line[len("VIDEOGRAPHER:\t") :])
+            )
             continue
 
         if line == "COURT REPORTER:":
@@ -257,7 +275,10 @@ def _extract_city(attorney: dict[str, Any]) -> str:
 
 def _attorneys_from_ufm(ufm_fields: dict[str, Any]) -> list[dict[str, str]]:
     attorneys: list[dict[str, str]] = []
-    for role_key, role_name in (("plaintiff_counsel", "plaintiff"), ("defense_counsel", "defendant")):
+    for role_key, role_name in (
+        ("plaintiff_counsel", "plaintiff"),
+        ("defense_counsel", "defendant"),
+    ):
         for entry in ufm_fields.get(role_key, []) or []:
             name = _normalize_whitespace(str(entry.get("name", "") or ""))
             if not name:
@@ -276,28 +297,46 @@ def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
     """Project existing job-config UFM data into the clean-format case metadata shape."""
     witness_name = _normalize_whitespace(str(ufm_fields.get("witness_name", "") or ""))
     witness_core, _, witness_credentials = witness_name.partition(",")
-    defendant_name = _normalize_whitespace(str(ufm_fields.get("defendant_name", "") or ""))
+    defendant_name = _normalize_whitespace(
+        str(ufm_fields.get("defendant_name", "") or "")
+    )
 
     return {
-        "cause_number": _normalize_whitespace(str(ufm_fields.get("cause_number", "") or "")),
+        "cause_number": _normalize_whitespace(
+            str(ufm_fields.get("cause_number", "") or "")
+        ),
         "court": _normalize_whitespace(
             str(ufm_fields.get("court_caption") or ufm_fields.get("court_type") or "")
         ),
         "county": _normalize_whitespace(str(ufm_fields.get("county", "") or "")),
-        "judicial_district": _normalize_whitespace(str(ufm_fields.get("judicial_district", "") or "")),
-        "deposition_date": _normalize_whitespace(str(ufm_fields.get("depo_date", "") or "")),
-        "start_time": _normalize_whitespace(str(ufm_fields.get("depo_time_start", "") or "")),
-        "end_time": _normalize_whitespace(str(ufm_fields.get("depo_time_end", "") or "")),
+        "judicial_district": _normalize_whitespace(
+            str(ufm_fields.get("judicial_district", "") or "")
+        ),
+        "deposition_date": _normalize_whitespace(
+            str(ufm_fields.get("depo_date", "") or "")
+        ),
+        "start_time": _normalize_whitespace(
+            str(ufm_fields.get("depo_time_start", "") or "")
+        ),
+        "end_time": _normalize_whitespace(
+            str(ufm_fields.get("depo_time_end", "") or "")
+        ),
         "witness_name": witness_core or witness_name,
         "witness_credentials": witness_credentials.strip(),
-        "plaintiff_name": _normalize_whitespace(str(ufm_fields.get("plaintiff_name", "") or "")),
+        "plaintiff_name": _normalize_whitespace(
+            str(ufm_fields.get("plaintiff_name", "") or "")
+        ),
         "defendant_names": [defendant_name] if defendant_name else [],
-        "reporter_name": _normalize_whitespace(str(ufm_fields.get("reporter_name", "") or "")),
+        "reporter_name": _normalize_whitespace(
+            str(ufm_fields.get("reporter_name", "") or "")
+        ),
         "reporter_csr": _normalize_whitespace(
             str(ufm_fields.get("reporter_csr") or ufm_fields.get("csr_number") or "")
         ),
         "attorneys": _attorneys_from_ufm(ufm_fields),
-        "videographer_name": _normalize_whitespace(str(ufm_fields.get("videographer_name", "") or "")),
+        "videographer_name": _normalize_whitespace(
+            str(ufm_fields.get("videographer_name", "") or "")
+        ),
     }
 
 

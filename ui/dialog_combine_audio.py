@@ -61,13 +61,14 @@ _MUTED = "#667788"
 
 # ── State enum (string constants for cheap test asserts) ─────────────────────
 
+
 class CombineState:
-    EMPTY = "empty"               # 0 files
-    TOO_FEW = "too_few"           # 1 file (passthrough is allowed but not the
-                                   # workflow this dialog exists for; force the
-                                   # user to add a second so they don't open
-                                   # this dialog by mistake)
-    TOO_LONG = "too_long"         # combined > 4h, Deepgram refuses
+    EMPTY = "empty"  # 0 files
+    TOO_FEW = "too_few"  # 1 file (passthrough is allowed but not the
+    # workflow this dialog exists for; force the
+    # user to add a second so they don't open
+    # this dialog by mistake)
+    TOO_LONG = "too_long"  # combined > 4h, Deepgram refuses
     READY_LOSSLESS = "ready_lossless"
     READY_REENCODE = "ready_reencode"
 
@@ -134,7 +135,7 @@ class CombineAudioDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             outer,
             text="Files will be combined in the order shown below "
-                 "(chronological session order):",
+            "(chronological session order):",
             font=ctk.CTkFont(size=12),
             text_color="#AABBCC",
             justify="left",
@@ -143,7 +144,10 @@ class CombineAudioDialog(ctk.CTkToplevel):
 
         # Scrollable file list
         self._list_frame = ctk.CTkScrollableFrame(
-            outer, fg_color="#1A1A2A", border_width=1, border_color="#252535",
+            outer,
+            fg_color="#1A1A2A",
+            border_width=1,
+            border_color="#252535",
             height=220,
         )
         self._list_frame.pack(fill="both", expand=True, pady=(0, 8))
@@ -153,14 +157,18 @@ class CombineAudioDialog(ctk.CTkToplevel):
         actions.pack(fill="x", pady=(0, 6))
 
         self._add_btn = ctk.CTkButton(
-            actions, text="+ Add File", width=120,
-            fg_color=BTN_UTILITY_BLUE, hover_color=BTN_UTILITY_BLUE_HOVER,
+            actions,
+            text="+ Add File",
+            width=120,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
             command=self._on_add_file,
         )
         self._add_btn.pack(side="left")
 
         self._duration_label = ctk.CTkLabel(
-            actions, text="Total duration: 0s",
+            actions,
+            text="Total duration: 0s",
             font=ctk.CTkFont(size=11),
             text_color=_MUTED,
         )
@@ -168,8 +176,13 @@ class CombineAudioDialog(ctk.CTkToplevel):
 
         # Format check + status messages
         self._status_label = ctk.CTkLabel(
-            outer, text="", font=ctk.CTkFont(size=11),
-            text_color=_MUTED, anchor="w", justify="left", wraplength=620,
+            outer,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=_MUTED,
+            anchor="w",
+            justify="left",
+            wraplength=620,
         )
         self._status_label.pack(anchor="w", pady=(0, 8))
 
@@ -178,16 +191,23 @@ class CombineAudioDialog(ctk.CTkToplevel):
         footer.pack(fill="x")
 
         self._cancel_btn = ctk.CTkButton(
-            footer, text="Cancel", width=110,
-            fg_color="transparent", border_width=1, border_color="#445",
+            footer,
+            text="Cancel",
+            width=110,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#445",
             text_color="#AABBCC",
             command=self._on_cancel,
         )
         self._cancel_btn.pack(side="left")
 
         self._combine_btn = ctk.CTkButton(
-            footer, text="Combine & Use", width=160,
-            fg_color=BTN_PRIMARY_AMBER, hover_color=BTN_PRIMARY_AMBER_HOVER,
+            footer,
+            text="Combine & Use",
+            width=160,
+            fg_color=BTN_PRIMARY_AMBER,
+            hover_color=BTN_PRIMARY_AMBER_HOVER,
             font=ctk.CTkFont(size=12, weight="bold"),
             state="disabled",
             command=self._on_combine,
@@ -217,14 +237,16 @@ class CombineAudioDialog(ctk.CTkToplevel):
     def move_up(self, idx: int) -> None:
         if 1 <= idx < len(self._files):
             self._files[idx - 1], self._files[idx] = (
-                self._files[idx], self._files[idx - 1]
+                self._files[idx],
+                self._files[idx - 1],
             )
             self._refresh()
 
     def move_down(self, idx: int) -> None:
         if 0 <= idx < len(self._files) - 1:
             self._files[idx], self._files[idx + 1] = (
-                self._files[idx + 1], self._files[idx]
+                self._files[idx + 1],
+                self._files[idx],
             )
             self._refresh()
 
@@ -237,8 +259,7 @@ class CombineAudioDialog(ctk.CTkToplevel):
         if n == 1:
             return CombineState.TOO_FEW
         total = sum(
-            float(item["format"].get("duration", 0.0) or 0.0)
-            for item in self._files
+            float(item["format"].get("duration", 0.0) or 0.0) for item in self._files
         )
         if total > DEEPGRAM_MAX_DURATION_SECONDS:
             return CombineState.TOO_LONG
@@ -249,8 +270,7 @@ class CombineAudioDialog(ctk.CTkToplevel):
 
     def _total_duration(self) -> float:
         return sum(
-            float(item["format"].get("duration", 0.0) or 0.0)
-            for item in self._files
+            float(item["format"].get("duration", 0.0) or 0.0) for item in self._files
         )
 
     # ── Refresh (rebuild list rows + recompute status) ───────────────────
@@ -265,7 +285,7 @@ class CombineAudioDialog(ctk.CTkToplevel):
         if not self._files:
             ctk.CTkLabel(
                 self._list_frame,
-                text="No files added yet — click \"+ Add File\" to begin.",
+                text='No files added yet — click "+ Add File" to begin.',
                 font=ctk.CTkFont(size=11),
                 text_color=_MUTED,
             ).pack(padx=10, pady=20)
@@ -286,7 +306,9 @@ class CombineAudioDialog(ctk.CTkToplevel):
 
         # Index
         ctk.CTkLabel(
-            row, text=f"{idx + 1}.", width=24,
+            row,
+            text=f"{idx + 1}.",
+            width=24,
             font=ctk.CTkFont(size=11, weight="bold"),
             text_color="#AABBCC",
         ).pack(side="left", padx=(8, 4), pady=4)
@@ -303,12 +325,18 @@ class CombineAudioDialog(ctk.CTkToplevel):
         text_box = ctk.CTkFrame(row, fg_color="transparent")
         text_box.pack(side="left", fill="x", expand=True, padx=(2, 4))
         ctk.CTkLabel(
-            text_box, text=path.name,
-            font=ctk.CTkFont(size=11), text_color="#DDE2E8", anchor="w",
+            text_box,
+            text=path.name,
+            font=ctk.CTkFont(size=11),
+            text_color="#DDE2E8",
+            anchor="w",
         ).pack(anchor="w")
         ctk.CTkLabel(
-            text_box, text=meta,
-            font=ctk.CTkFont(size=9), text_color=_MUTED, anchor="w",
+            text_box,
+            text=meta,
+            font=ctk.CTkFont(size=9),
+            text_color=_MUTED,
+            anchor="w",
         ).pack(anchor="w")
 
         # ↑ / ↓ / Remove buttons. ASCII fallback chars to dodge cp1252
@@ -319,24 +347,39 @@ class CombineAudioDialog(ctk.CTkToplevel):
         down_state = "normal" if idx < n - 1 else "disabled"
 
         ctk.CTkButton(
-            row, text="^", width=28, height=24,
-            fg_color="transparent", border_width=1, border_color="#445",
+            row,
+            text="^",
+            width=28,
+            height=24,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#445",
             text_color="#AABBCC",
             state=up_state,
             command=lambda i=idx: self.move_up(i),
         ).pack(side="left", padx=2, pady=4)
 
         ctk.CTkButton(
-            row, text="v", width=28, height=24,
-            fg_color="transparent", border_width=1, border_color="#445",
+            row,
+            text="v",
+            width=28,
+            height=24,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#445",
             text_color="#AABBCC",
             state=down_state,
             command=lambda i=idx: self.move_down(i),
         ).pack(side="left", padx=2, pady=4)
 
         ctk.CTkButton(
-            row, text="Remove", width=72, height=24,
-            fg_color="transparent", border_width=1, border_color="#553",
+            row,
+            text="Remove",
+            width=72,
+            height=24,
+            fg_color="transparent",
+            border_width=1,
+            border_color="#553",
             text_color="#CCAAAA",
             command=lambda i=idx: self.remove_file(i),
         ).pack(side="left", padx=(2, 8), pady=4)
@@ -365,9 +408,13 @@ class CombineAudioDialog(ctk.CTkToplevel):
             codec = first_fmt.get("codec_name") or "?"
             sr = first_fmt.get("sample_rate") or 0
             ch_label = (
-                "stereo" if first_fmt.get("channels") == 2
-                else "mono" if first_fmt.get("channels") == 1
-                else f"{first_fmt.get('channels')}ch"
+                "stereo"
+                if first_fmt.get("channels") == 2
+                else (
+                    "mono"
+                    if first_fmt.get("channels") == 1
+                    else f"{first_fmt.get('channels')}ch"
+                )
             )
             text = (
                 f"OK All files match ({codec.upper()}, {sr}Hz, {ch_label}). "
@@ -482,7 +529,9 @@ class CombineAudioDialog(ctk.CTkToplevel):
         self.result_path = result.output_path
         logger.info(
             "[CombineDialog] Combined %d files via %s (lossless=%s) -> %s",
-            len(self._files), result.method, result.lossless,
+            len(self._files),
+            result.method,
+            result.lossless,
             result.output_path,
         )
         self.destroy()

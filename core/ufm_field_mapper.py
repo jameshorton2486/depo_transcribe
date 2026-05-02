@@ -41,15 +41,15 @@ def map_intake_to_ufm(extracted: dict) -> dict:
     Returns a dict ready to be passed to JobConfig or saved as
     a ufm_fields.json alongside the transcript.
     """
-    depo       = extracted.get("deposition_details", {}) or {}
-    ord_atty   = extracted.get("ordering_attorney", {}) or {}
+    depo = extracted.get("deposition_details", {}) or {}
+    ord_atty = extracted.get("ordering_attorney", {}) or {}
     filing_atty = extracted.get("filing_attorney", {}) or {}
     copy_attys = extracted.get("copy_attorneys", []) or []
-    all_attys  = extracted.get("all_attorneys", []) or []
-    reporter   = extracted.get("court_reporter", {}) or {}
-    deponents  = extracted.get("deponents", []) or []
+    all_attys = extracted.get("all_attorneys", []) or []
+    reporter = extracted.get("court_reporter", {}) or {}
+    deponents = extracted.get("deponents", []) or []
     video_recorded = bool(extracted.get("video_recorded", False))
-    subpoena_dt    = bool(extracted.get("subpoena_duces_tecum", False))
+    subpoena_dt = bool(extracted.get("subpoena_duces_tecum", False))
 
     # Derive deposition type string for UFM title line
     # Fig. 3 line 10: "ORAL AND VIDEOTAPED DEPOSITION OF"
@@ -60,9 +60,8 @@ def map_intake_to_ufm(extracted: dict) -> dict:
 
     # ── Witness name ─────────────────────────────────────────────
     # Prefer the explicit witness field; fall back to first deponent.
-    witness_name = (
-        depo.get("witness", "")
-        or (deponents[0].get("name", "") if deponents else "")
+    witness_name = depo.get("witness", "") or (
+        deponents[0].get("name", "") if deponents else ""
     )
 
     # ── Parse date into components ────────────────────────────────
@@ -77,24 +76,24 @@ def map_intake_to_ufm(extracted: dict) -> dict:
 
     # ── Parse plaintiff and defendant from case_style ─────────────
     case_style = depo.get("case_style", "")
-    plaintiff  = ""
-    defendant  = ""
+    plaintiff = ""
+    defendant = ""
     if " v. " in case_style:
-        parts     = case_style.split(" v. ", 1)
+        parts = case_style.split(" v. ", 1)
         plaintiff = parts[0].strip()
         defendant = parts[1].strip()
     elif " vs. " in case_style.lower():
         idx = case_style.lower().index(" vs. ")
         plaintiff = case_style[:idx].strip()
-        defendant = case_style[idx + 5:].strip()
+        defendant = case_style[idx + 5 :].strip()
 
     # ── Parse court into district number and county ───────────────
-    court_raw   = depo.get("court", "")
+    court_raw = depo.get("court", "")
     district_no = ""
-    court_type  = "DISTRICT COURT"
-    county      = depo.get("county", "")
+    court_type = "DISTRICT COURT"
+    county = depo.get("county", "")
 
-    m = re.search(r'(\d+)', court_raw)
+    m = re.search(r"(\d+)", court_raw)
     if m:
         district_num = int(m.group(1))
         district_no = f"{district_num}{_ordinal_suffix(district_num)}"
@@ -102,25 +101,25 @@ def map_intake_to_ufm(extracted: dict) -> dict:
     # Extract county from the court string when not in its own field.
     # e.g. "370th Judicial District, Hidalgo County, Texas"
     if not county and court_raw:
-        cm = re.search(r'([A-Za-z]+)\s+County', court_raw, re.IGNORECASE)
+        cm = re.search(r"([A-Za-z]+)\s+County", court_raw, re.IGNORECASE)
         if cm:
             county = cm.group(1).title() + " County"
 
     # ── Build counsel lists ───────────────────────────────────────
     plaintiff_counsel = []
-    defense_counsel   = []
+    defense_counsel = []
 
     # Primary path: all_attorneys list with role field
     for atty in all_attys:
         role = (atty.get("role", "") or "").lower()
-        obj  = {
-            "name":    atty.get("name", ""),
-            "firm":    atty.get("firm", ""),
-            "sbot":    atty.get("bar_no", "") or atty.get("bar_number", ""),
+        obj = {
+            "name": atty.get("name", ""),
+            "firm": atty.get("firm", ""),
+            "sbot": atty.get("bar_no", "") or atty.get("bar_number", ""),
             "address": atty.get("address", ""),
-            "phone":   atty.get("phone", ""),
-            "email":   atty.get("email", ""),
-            "party":   atty.get("party_represented", ""),
+            "phone": atty.get("phone", ""),
+            "email": atty.get("email", ""),
+            "party": atty.get("party_represented", ""),
         }
         if "plaintiff" in role:
             plaintiff_counsel.append(obj)
@@ -132,18 +131,25 @@ def map_intake_to_ufm(extracted: dict) -> dict:
     # represents the defendant (who notices the deposition).
     # Use ordering attorney as defendant/examining counsel.
     if not defense_counsel and ord_atty.get("name"):
-        defense_counsel.append({
-            "name":    ord_atty.get("name", ""),
-            "firm":    ord_atty.get("firm", ""),
-            "sbot":    "",
-            "address": " ".join(filter(None, [
-                ord_atty.get("address", ""),
-                ord_atty.get("city_state_zip", ""),
-            ])).strip(),
-            "phone":   ord_atty.get("phone", ""),
-            "email":   ord_atty.get("email", ""),
-            "party":   defendant or plaintiff,
-        })
+        defense_counsel.append(
+            {
+                "name": ord_atty.get("name", ""),
+                "firm": ord_atty.get("firm", ""),
+                "sbot": "",
+                "address": " ".join(
+                    filter(
+                        None,
+                        [
+                            ord_atty.get("address", ""),
+                            ord_atty.get("city_state_zip", ""),
+                        ],
+                    )
+                ).strip(),
+                "phone": ord_atty.get("phone", ""),
+                "email": ord_atty.get("email", ""),
+                "party": defendant or plaintiff,
+            }
+        )
 
     # Fallback: every copy attorney → defense/opposing counsel.
     # Copy attorneys receive copies of the transcript and represent
@@ -152,72 +158,74 @@ def map_intake_to_ufm(extracted: dict) -> dict:
         for ca in copy_attys:
             if not ca.get("name"):
                 continue
-            defense_counsel.append({
-                "name":    ca.get("name", ""),
-                "firm":    ca.get("firm", ""),
-                "sbot":    "",
-                "address": " ".join(filter(None, [
-                    ca.get("address", ""),
-                    ca.get("city_state_zip", ""),
-                ])).strip(),
-                "phone":   ca.get("phone", ""),
-                "email":   ca.get("email", ""),
-                "party":   plaintiff or defendant,
-            })
+            defense_counsel.append(
+                {
+                    "name": ca.get("name", ""),
+                    "firm": ca.get("firm", ""),
+                    "sbot": "",
+                    "address": " ".join(
+                        filter(
+                            None,
+                            [
+                                ca.get("address", ""),
+                                ca.get("city_state_zip", ""),
+                            ],
+                        )
+                    ).strip(),
+                    "phone": ca.get("phone", ""),
+                    "email": ca.get("email", ""),
+                    "party": plaintiff or defendant,
+                }
+            )
 
     return {
         # ── UFM Title Page (Fig03) ───────────────────────────────
-        "cause_number":       depo.get("cause_number", ""),
-        "plaintiff_name":     plaintiff,
-        "defendant_name":     defendant,
-        "case_style":         case_style,
-        "amendment":          depo.get("amendment", ""),
-        "court_caption":      court_raw,
-        "court_type":         court_type,
-        "county":             county,
-        "state":              depo.get("state", "Texas"),
-        "judicial_district":  district_no,
-        "depo_type":          depo_type,
+        "cause_number": depo.get("cause_number", ""),
+        "plaintiff_name": plaintiff,
+        "defendant_name": defendant,
+        "case_style": case_style,
+        "amendment": depo.get("amendment", ""),
+        "court_caption": court_raw,
+        "court_type": court_type,
+        "county": county,
+        "state": depo.get("state", "Texas"),
+        "judicial_district": district_no,
+        "depo_type": depo_type,
         "subpoena_duces_tecum": subpoena_dt,
-        "depo_date":          date_str,
-        "depo_date_month":    dt.strftime("%B") if dt else "",
-        "depo_date_day":      str(dt.day) if dt else "",
-        "depo_date_year":     dt.strftime("%Y") if dt else "",
-        "depo_time_start":    depo.get("scheduled_time", ""),
-        "depo_location":      depo.get("location", ""),
-        "depo_method":        depo.get("method", ""),
-        "depo_time_end":      depo.get("scheduled_end_time", ""),
-
+        "depo_date": date_str,
+        "depo_date_month": dt.strftime("%B") if dt else "",
+        "depo_date_day": str(dt.day) if dt else "",
+        "depo_date_year": dt.strftime("%Y") if dt else "",
+        "depo_time_start": depo.get("scheduled_time", ""),
+        "depo_location": depo.get("location", ""),
+        "depo_method": depo.get("method", ""),
+        "depo_time_end": depo.get("scheduled_end_time", ""),
         # ── UFM Witness Fields ───────────────────────────────────
-        "witness_name":       witness_name,
-        "volume_number":      "1",
-
+        "witness_name": witness_name,
+        "volume_number": "1",
         # ── UFM Appearances Page (Fig04) ─────────────────────────
-        "plaintiff_counsel":  plaintiff_counsel,
-        "defense_counsel":    defense_counsel,
-        "also_present":       [],
-
+        "plaintiff_counsel": plaintiff_counsel,
+        "defense_counsel": defense_counsel,
+        "also_present": [],
         # ── UFM Certificate Page (Fig05) ─────────────────────────
-        "reporter_name":      reporter.get("name", "Miah Bardot"),
-        "csr_number":         reporter.get("csr_number", "12129"),
-        "reporter_agency":    reporter.get("agency", "SA Legal Solutions"),
+        "reporter_name": reporter.get("name", "Miah Bardot"),
+        "csr_number": reporter.get("csr_number", "12129"),
+        "reporter_agency": reporter.get("agency", "SA Legal Solutions"),
         "reporter_csr_expiration": reporter.get("csr_expiration", ""),
         "reporter_firm_registration": reporter.get("firm_registration", ""),
-        "reporter_address":   reporter.get("address",
-                                  "3201 Cherry Ridge, B 208-3"),
-        "reporter_city_state_zip": reporter.get("city_state_zip",
-                                  "San Antonio, Texas 78230"),
-        "reporter_phone":     reporter.get("phone", "(210) 591-1791"),
-
+        "reporter_address": reporter.get("address", "3201 Cherry Ridge, B 208-3"),
+        "reporter_city_state_zip": reporter.get(
+            "city_state_zip", "San Antonio, Texas 78230"
+        ),
+        "reporter_phone": reporter.get("phone", "(210) 591-1791"),
         # ── Billing / Copy Info ──────────────────────────────────
-        "ordered_by":         depo.get("ordered_by", ""),
+        "ordered_by": depo.get("ordered_by", ""),
         "ordering_attorney_name": ord_atty.get("name", ""),
-        "ordering_firm":      ord_atty.get("firm", ""),
+        "ordering_firm": ord_atty.get("firm", ""),
         "filing_attorney_name": filing_atty.get("name", ""),
         "filing_attorney_firm": filing_atty.get("firm", ""),
-        "copy_attorneys":     copy_attys,
-
+        "copy_attorneys": copy_attys,
         # ── Video / CSR flags ────────────────────────────────────
-        "video_required":     depo.get("video_required", ""),
-        "csr_required":       depo.get("csr_required", "Yes"),
+        "video_required": depo.get("video_required", ""),
+        "csr_required": depo.get("csr_required", "Yes"),
     }

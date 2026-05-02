@@ -42,27 +42,23 @@ Complex fields (handled explicitly by higher-level assembly code):
 
 UFM_TO_CFG_SCALAR: dict[str, str] = {
     # Case identifiers
-    "cause_number":      "cause_number",
-    "case_style":        "case_style",
-    "plaintiff_name":    "plaintiff_name",
-
+    "cause_number": "cause_number",
+    "case_style": "case_style",
+    "plaintiff_name": "plaintiff_name",
     # Court
-    "court_type":        "court_type",
-    "county":            "county",
-    "state":             "state",
+    "court_type": "court_type",
+    "county": "county",
+    "state": "state",
     "judicial_district": "judicial_district",
-
     # Deposition logistics
-    "depo_date":         "depo_date",
-    "depo_time_start":   "depo_start_time",     # key mismatch — intentional
-    "depo_location":     "location",            # key mismatch — intentional
-    "depo_method":       "method",              # key mismatch — intentional
-
+    "depo_date": "depo_date",
+    "depo_time_start": "depo_start_time",  # key mismatch — intentional
+    "depo_location": "location",  # key mismatch — intentional
+    "depo_method": "method",  # key mismatch — intentional
     # Witness
-    "witness_name":      "witness_name",
-
+    "witness_name": "witness_name",
     # Reporter
-    "reporter_name":     "reporter_name",
-    "csr_number":        "reporter_csr",        # key mismatch — intentional
-    "reporter_agency":   "reporter_firm",       # key mismatch — intentional
+    "reporter_name": "reporter_name",
+    "csr_number": "reporter_csr",  # key mismatch — intentional
+    "reporter_agency": "reporter_firm",  # key mismatch — intentional
 }

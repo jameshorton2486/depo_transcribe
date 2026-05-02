@@ -67,7 +67,9 @@ def trim_silence(input_wav_path: str, output_path: str | None = None) -> TrimRes
     )
 
     if not timestamps:
-        logger.warning("[VADTrimmer] No speech detected — preserving original file as-is.")
+        logger.warning(
+            "[VADTrimmer] No speech detected — preserving original file as-is."
+        )
         shutil.copy2(input_wav_path, output_path)
         return TrimResult(
             output_path=output_path,

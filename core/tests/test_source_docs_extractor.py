@@ -19,7 +19,9 @@ def _make_pdf(path: Path, lines: list[str]) -> Path:
     return path
 
 
-def _make_docx(path: Path, paragraphs: list[str], table_rows: list[list[str]] | None = None) -> Path:
+def _make_docx(
+    path: Path, paragraphs: list[str], table_rows: list[list[str]] | None = None
+) -> Path:
     doc = Document()
     for paragraph in paragraphs:
         doc.add_paragraph(paragraph)
@@ -34,7 +36,9 @@ def _make_docx(path: Path, paragraphs: list[str], table_rows: list[list[str]] | 
 
 
 def test_source_docs_extractor_pdf(tmp_path):
-    pdf_path = _make_pdf(tmp_path / "notice.pdf", ["Cause No. 2025-CI-19595", "Bianca Caram"])
+    pdf_path = _make_pdf(
+        tmp_path / "notice.pdf", ["Cause No. 2025-CI-19595", "Bianca Caram"]
+    )
 
     result = extract_text_from_files([pdf_path])
 

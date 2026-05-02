@@ -82,7 +82,9 @@ def _get_volume_stats(file_path: str) -> dict:
     }
 
 
-def _extract_channel_samples(file_path: str, channel: int, duration: float = 5.0) -> np.ndarray:
+def _extract_channel_samples(
+    file_path: str, channel: int, duration: float = 5.0
+) -> np.ndarray:
     """Extract the first few seconds of one channel as float32 samples."""
     cmd = [
         "ffmpeg",
@@ -131,8 +133,8 @@ def _detect_stereo_strategy(file_path: str) -> Tuple[bool, str]:
     logger.info("[AudioQuality] Channel correlation: %.3f", correlation)
 
     if correlation > 0.8:
-        rms_left = float(np.sqrt(np.mean(left ** 2)))
-        rms_right = float(np.sqrt(np.mean(right ** 2)))
+        rms_left = float(np.sqrt(np.mean(left**2)))
+        rms_right = float(np.sqrt(np.mean(right**2)))
         strategy = "extract_left" if rms_left >= rms_right else "extract_right"
         logger.info(
             "[AudioQuality] Zoom dual-mono detected (corr=%.3f). "
@@ -144,7 +146,9 @@ def _detect_stereo_strategy(file_path: str) -> Tuple[bool, str]:
         )
         return True, strategy
 
-    logger.info("[AudioQuality] True stereo (corr=%.3f). Using channel average.", correlation)
+    logger.info(
+        "[AudioQuality] True stereo (corr=%.3f). Using channel average.", correlation
+    )
     return False, "average"
 
 
@@ -200,16 +204,22 @@ def analyze_audio(file_path: str) -> AudioAnalysis:
     if clipping > 0.5 and max_db is not None:
         issues.append(f"Near-clipping detected (max {max_db:.1f} dBFS)")
     if zoom_dual_mono:
-        issues.append("Zoom dual-mono detected — extracting single channel to eliminate echo")
+        issues.append(
+            "Zoom dual-mono detected — extracting single channel to eliminate echo"
+        )
 
     if snr_db >= 25 and clipping < 0.3:
         tier = "CLEAN"
     elif snr_db >= 15:
         tier = "ENHANCED"
-        issues.append(f"Estimated SNR {snr_db:.0f} dB — ENHANCED tier (Deepgram diarization)")
+        issues.append(
+            f"Estimated SNR {snr_db:.0f} dB — ENHANCED tier (Deepgram diarization)"
+        )
     else:
         tier = "RESCUE"
-        issues.append(f"Estimated SNR {snr_db:.0f} dB — applying conservative denoising")
+        issues.append(
+            f"Estimated SNR {snr_db:.0f} dB — applying conservative denoising"
+        )
 
     result = AudioAnalysis(
         tier=tier,

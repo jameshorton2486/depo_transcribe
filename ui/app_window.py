@@ -28,8 +28,14 @@ class DepoTranscribeApp(ctk.CTk):
         # explicit fg_color picks up BTN_UTILITY_BLUE — our project-wide
         # blue. CTk theme values are [light_mode, dark_mode]; we use the
         # same value for both because the app is dark-mode only.
-        ctk.ThemeManager.theme["CTkButton"]["fg_color"] = [BTN_UTILITY_BLUE, BTN_UTILITY_BLUE]
-        ctk.ThemeManager.theme["CTkButton"]["hover_color"] = [BTN_UTILITY_BLUE_HOVER, BTN_UTILITY_BLUE_HOVER]
+        ctk.ThemeManager.theme["CTkButton"]["fg_color"] = [
+            BTN_UTILITY_BLUE,
+            BTN_UTILITY_BLUE,
+        ]
+        ctk.ThemeManager.theme["CTkButton"]["hover_color"] = [
+            BTN_UTILITY_BLUE_HOVER,
+            BTN_UTILITY_BLUE_HOVER,
+        ]
 
         # -- Dark navy header bar --------------------------------------------------
         header = ctk.CTkFrame(self, height=50, fg_color="#1E3A5F", corner_radius=0)
