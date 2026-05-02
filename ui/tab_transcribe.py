@@ -3359,7 +3359,18 @@ class TranscribeTab(ctk.CTkFrame):
                 "#44FF44",
             )
             choice = _ask_open_document_mode(self, self._formatted_docx_path)
+            logger.info("[TranscribeTab] Document open choice: %s", choice or "cancel")
             if choice == "word":
+                if not os.path.exists(self._formatted_docx_path):
+                    logger.error(
+                        "[TranscribeTab] DOCX file missing before Word open: %s",
+                        self._formatted_docx_path,
+                    )
+                    messagebox.showerror(
+                        "Open Transcript Failed",
+                        "The Word document could not be found on disk.",
+                    )
+                    return
                 os.startfile(self._formatted_docx_path)
             elif choice == "notepad":
                 try:
@@ -3369,6 +3380,8 @@ class TranscribeTab(ctk.CTkFrame):
                     _open_in_notepad(txt_path)
                 except Exception as exc:
                     messagebox.showerror("Open Transcript Failed", str(exc))
+            else:
+                return
         else:
             error_msg = result.get("error", "Unknown error")
             self._status_progress.set(0)
