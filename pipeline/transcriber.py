@@ -593,6 +593,30 @@ def _transcribe_direct(
                 )
             resp.raise_for_status()
             raw = resp.json()
+
+            # TRUE RAW SAVE — write Deepgram's response before any merging,
+            # smoothing, or relabeling so output/debug_raw_chunks/ stays
+            # comparable to a Deepgram Playground request on the same chunk.
+            try:
+                debug_dir = Path("output/debug_raw_chunks")
+                debug_dir.mkdir(parents=True, exist_ok=True)
+                stem = Path(chunk_name).stem
+                (debug_dir / f"{stem}_response.json").write_text(
+                    json.dumps(raw, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                lines = []
+                for u in raw.get("results", {}).get("utterances", []) or []:
+                    text = (u.get("transcript") or "").strip()
+                    if text:
+                        lines.append(f"Speaker {u.get('speaker', '?')}: {text}")
+                (debug_dir / f"{stem}_utterances.txt").write_text(
+                    "\n\n".join(lines),
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                logger.warning("RAW save failed for chunk %s: %s", chunk_name, exc)
+
             results = raw.get("results") or {}
             raw_utterances = results.get("utterances")
             if not isinstance(raw_utterances, list) or not raw_utterances:

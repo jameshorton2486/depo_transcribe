@@ -10,6 +10,7 @@ as the cutoff for the start of chunk N+1.
 
 import re
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any, Dict, List
 
 from config import CHUNK_OVERLAP_SECONDS
@@ -488,6 +489,27 @@ def build_transcript_text(
     return "\n\n".join(lines)
 
 
+def _save_playground_compare(chunk_results: List[Dict[str, Any]]) -> None:
+    """Stitch raw Deepgram utterances across chunks into one Playground-style
+    file for parity testing. No merging, no smoothing — verbatim from each
+    chunk's raw response in chunk order."""
+    try:
+        lines = []
+        for result in chunk_results:
+            utterances = (
+                (result.get("raw") or {}).get("results", {}).get("utterances", []) or []
+            )
+            for u in utterances:
+                text = (u.get("transcript") or "").strip()
+                if text:
+                    lines.append(f"Speaker {u.get('speaker', '?')}: {text}")
+        out_path = Path("output/raw_playground_compare.txt")
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text("\n\n".join(lines), encoding="utf-8")
+    except Exception as exc:
+        _logger.warning("Playground-compare save failed: %s", exc)
+
+
 def reassemble_chunks(
     chunk_results: List[Dict[str, Any]],
     chunk_start_offsets: List[float],
@@ -504,6 +526,7 @@ def reassemble_chunks(
         { "words", "utterances", "transcript", "raw_chunks" }
     """
     _logger.info("[ASSEMBLE] Joining %d chunks...", len(chunk_results))
+    _save_playground_compare(chunk_results)
     if not chunk_results:
         return {
             "words": [],
