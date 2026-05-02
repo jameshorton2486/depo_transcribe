@@ -328,6 +328,58 @@ def _open_in_notepad(txt_path: str) -> None:
     subprocess.Popen(["notepad.exe", txt_path])
 
 
+def _ask_open_document_mode(parent: ctk.CTkBaseClass, docx_path: str) -> str | None:
+    """Show a modal dialog with explicit open targets for DOCX/TXT outputs."""
+    choice: dict[str, str | None] = {"value": None}
+    dialog = ctk.CTkToplevel(parent)
+    dialog.title("Document Ready")
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.resizable(False, False)
+
+    container = ctk.CTkFrame(dialog)
+    container.pack(fill="both", expand=True, padx=20, pady=20)
+
+    ctk.CTkLabel(
+        container,
+        text=(
+            "Deposition document written to:\n\n"
+            f"{docx_path}\n\n"
+            "Choose where to open it:"
+        ),
+        justify="left",
+        anchor="w",
+    ).pack(fill="x", padx=10, pady=(10, 16))
+
+    button_row = ctk.CTkFrame(container, fg_color="transparent")
+    button_row.pack(fill="x", padx=10, pady=(0, 4))
+    button_row.grid_columnconfigure((0, 1, 2), weight=1)
+
+    def _set_choice(value: str | None) -> None:
+        choice["value"] = value
+        dialog.destroy()
+
+    ctk.CTkButton(
+        button_row,
+        text="Open in Word",
+        command=lambda: _set_choice("word"),
+    ).grid(row=0, column=0, padx=(0, 8), sticky="ew")
+    ctk.CTkButton(
+        button_row,
+        text="Open in Notepad",
+        command=lambda: _set_choice("notepad"),
+    ).grid(row=0, column=1, padx=8, sticky="ew")
+    ctk.CTkButton(
+        button_row,
+        text="Cancel",
+        command=lambda: _set_choice(None),
+    ).grid(row=0, column=2, padx=(8, 0), sticky="ew")
+
+    dialog.protocol("WM_DELETE_WINDOW", lambda: _set_choice(None))
+    dialog.wait_window()
+    return choice["value"]
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  IntakeReviewDialog
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3306,17 +3358,10 @@ class TranscribeTab(ctk.CTkFrame):
                 f"Deposition document written to: {self._formatted_docx_path}",
                 "#44FF44",
             )
-            choice = messagebox.askyesnocancel(
-                "Document Ready",
-                "Deposition document written to:\n\n"
-                f"{self._formatted_docx_path}\n\n"
-                "Yes = Open in Word\n"
-                "No = Open in Notepad\n"
-                "Cancel = Do nothing",
-            )
-            if choice is True:
+            choice = _ask_open_document_mode(self, self._formatted_docx_path)
+            if choice == "word":
                 os.startfile(self._formatted_docx_path)
-            elif choice is False:
+            elif choice == "notepad":
                 try:
                     txt_path = _save_transcript_as_txt(
                         formatted_text, self._formatted_docx_path
