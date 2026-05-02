@@ -328,6 +328,55 @@ def _open_in_notepad(txt_path: str) -> None:
     subprocess.Popen(["notepad.exe", txt_path])
 
 
+def _find_winword_exe() -> str | None:
+    """Locate WINWORD.EXE so .docx files always open in Word, regardless of
+    the user's file-association settings (which can otherwise route .docx to
+    Notepad and render the file as garbled XML/ZIP bytes)."""
+    on_path = shutil.which("WINWORD.EXE")
+    if on_path:
+        return on_path
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\WINWORD.EXE",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "")
+            if value and Path(value).is_file():
+                return value
+    except (OSError, ImportError):
+        pass
+
+    for candidate in (
+        r"C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE",
+        r"C:\Program Files (x86)\Microsoft Office\root\Office16\WINWORD.EXE",
+        r"C:\Program Files\Microsoft Office\Office16\WINWORD.EXE",
+        r"C:\Program Files (x86)\Microsoft Office\Office16\WINWORD.EXE",
+        r"C:\Program Files\Microsoft Office\Office15\WINWORD.EXE",
+        r"C:\Program Files (x86)\Microsoft Office\Office15\WINWORD.EXE",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+
+    return None
+
+
+def _open_in_word(docx_path: str) -> None:
+    """Open a .docx in Microsoft Word. Falls back to the OS shell association
+    only if Word cannot be located on disk."""
+    word_exe = _find_winword_exe()
+    if word_exe:
+        subprocess.Popen([word_exe, docx_path])
+        return
+    logger.warning(
+        "[TranscribeTab] WINWORD.EXE not found; falling back to os.startfile "
+        "(may open in whatever app .docx is associated with)."
+    )
+    os.startfile(docx_path)
+
+
 def _ask_open_document_mode(parent: ctk.CTkBaseClass, docx_path: str) -> str | None:
     """Show a modal dialog with explicit open targets for DOCX/TXT outputs."""
     choice: dict[str, str | None] = {"value": None}
@@ -3372,7 +3421,7 @@ class TranscribeTab(ctk.CTkFrame):
                         "The Word document could not be found on disk.",
                     )
                     return
-                os.startfile(self._formatted_docx_path)
+                _open_in_word(self._formatted_docx_path)
             elif choice == "notepad":
                 try:
                     txt_path = _save_transcript_as_txt(
