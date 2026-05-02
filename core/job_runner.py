@@ -290,9 +290,13 @@ def run_transcription_job(
 
         _progress(90, "Building output files…")
 
-        transcript_text = _build_transcript_from_utterances(
-            assembled.get("utterances", [])
-        )
+        # Prefer the transcript text reconstructed from Deepgram word order so
+        # app output stays aligned with Playground-style readability.
+        transcript_text = (assembled.get("transcript") or "").strip()
+        if not transcript_text:
+            transcript_text = _build_transcript_from_utterances(
+                assembled.get("utterances", [])
+            )
         if not transcript_text.strip():
             raise RuntimeError("Transcript text could not be built from utterances")
 

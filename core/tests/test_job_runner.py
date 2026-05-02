@@ -628,8 +628,10 @@ def test_run_transcription_job_builds_transcript_from_utterances(monkeypatch, tm
     )
     monkeypatch.setattr(
         "pipeline.assembler.reassemble_chunks",
+        # Empty assembled["transcript"] so the rebuild-from-utterances fallback
+        # this test verifies still triggers under the new prefer-assembled path.
         lambda _results, _offsets: {
-            "transcript": "IGNORED",
+            "transcript": "",
             "utterances": [
                 {
                     "speaker": 0,
