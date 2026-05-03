@@ -6,10 +6,59 @@ Used as a conservative fallback when AI intake parsing is unavailable.
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any
+
+from app_logging import get_logger
+
+logger = get_logger(__name__)
+
+_LEGAL_DICTIONARY_PATH = Path(__file__).parent / "legal_dictionary.json"
+_legal_dictionary_cache: dict[str, str] | None = None
+
+
+def load_legal_dictionary() -> dict[str, str]:
+    """Return the hand-maintained baseline mishearings → corrections map.
+
+    Loaded once and cached. Empty dict if the file is missing or malformed.
+    Per-case NOD spellings should override these at the corrections layer
+    (see spec_engine.corrections._build_corrections_map).
+    """
+    global _legal_dictionary_cache
+    if _legal_dictionary_cache is not None:
+        return _legal_dictionary_cache
+
+    if not _LEGAL_DICTIONARY_PATH.exists():
+        _legal_dictionary_cache = {}
+        return _legal_dictionary_cache
+
+    try:
+        with open(_LEGAL_DICTIONARY_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception as exc:
+        logger.warning("[LegalDict] Failed to load %s: %s", _LEGAL_DICTIONARY_PATH, exc)
+        _legal_dictionary_cache = {}
+        return _legal_dictionary_cache
+
+    spellings = data.get("spellings", {}) if isinstance(data, dict) else {}
+    if not isinstance(spellings, dict):
+        logger.warning("[LegalDict] 'spellings' must be an object; ignoring")
+        _legal_dictionary_cache = {}
+        return _legal_dictionary_cache
+
+    cleaned = {
+        str(k).strip(): str(v).strip()
+        for k, v in spellings.items()
+        if str(k).strip() and str(v).strip()
+    }
+    _legal_dictionary_cache = cleaned
+    if cleaned:
+        logger.info("[LegalDict] Loaded %d baseline entries", len(cleaned))
+    return cleaned
 
 US_STATES = {
     "AL",

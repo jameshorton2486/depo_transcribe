@@ -131,8 +131,31 @@ def _build_corrections_map(
     confirmed_spellings: dict | None = None,
     keyterms: list[str] | None = None,
 ) -> dict[str, str]:
+    """Build the (wrong → correct) map applied during corrections.
+
+    Priority: per-case NOD spellings override the baseline legal dictionary
+    override keyterm fallbacks. LEGAL_TERMS entries are silently dropped from
+    every source — that blocklist guards against an intake or dictionary
+    typo overwriting common objection vocabulary.
+    """
+    from core.case_vocab import load_legal_dictionary
+
     corrections: dict[str, str] = {}
 
+    # Layer 1 (lowest priority): hand-maintained baseline dictionary —
+    # common ASR mishearings that recur across cases (e.g. "voir deer"
+    # → "voir dire"). Per-case NOD entries below will overwrite any
+    # collisions, which is the intended override direction.
+    for wrong, correct in load_legal_dictionary().items():
+        wrong_text = str(wrong or "").strip()
+        correct_text = str(correct or "").strip()
+        if not wrong_text or not correct_text:
+            continue
+        if wrong_text.lower() in LEGAL_TERMS:
+            continue
+        corrections[wrong_text] = correct_text
+
+    # Layer 2 (highest priority): per-case NOD spellings.
     for wrong, correct in (confirmed_spellings or {}).items():
         wrong_text = str(wrong or "").strip()
         correct_text = str(correct or "").strip()
@@ -142,6 +165,8 @@ def _build_corrections_map(
             continue
         corrections[wrong_text] = correct_text
 
+    # Layer 3 (fallback only): Deepgram keyterms, treated as canonical
+    # capitalization for terms not already mapped by either layer above.
     for term in keyterms or []:
         clean_term = str(term or "").strip()
         if not clean_term:
