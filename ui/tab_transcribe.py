@@ -1972,14 +1972,16 @@ class TranscribeTab(ctk.CTkFrame):
         return self._current_case_path or ""
 
     def _on_cause_changed(self, *_):
+        # Update the path preview only. Do NOT call _reset_case_state here:
+        # transient empty values during normal editing (select-all + retype)
+        # would otherwise wipe in-memory intake data (confirmed_spellings,
+        # keyterms, speaker map). Reset belongs to explicit actions only
+        # (new audio picked, correction-mode clear).
         self._update_path_preview()
-        if not self._cause_var.get().strip():
-            self._reset_case_state()
 
     def _on_lastname_changed(self, *_):
+        # See _on_cause_changed — same reasoning.
         self._update_path_preview()
-        if not self._lastname_var.get().strip():
-            self._reset_case_state()
 
     def _reset_case_state(self):
         """Reset auto-detected case data when switching to a new case."""
@@ -2224,23 +2226,46 @@ class TranscribeTab(ctk.CTkFrame):
         return case_data
 
     def _populate_case_fields(self, data: dict):
-        """Refresh main UI fields from extracted case data."""
+        """Refresh main UI fields from extracted case data.
+
+        Only fills fields the user/filename hasn't already populated, and
+        skips witness names that contain commas or honorifics (e.g.
+        "Dr. Aldon B. Williams, MD"). A naive parts[0]/parts[-1] split on
+        such names produces firstname="Dr.", lastname="MD", which silently
+        re-points _current_case_path to a fabricated folder (md_dr/) and
+        causes intake data to land in the wrong case.
+        """
         if "deposition_details" not in data and any(
             key in data for key in ("cause_number", "witness_name", "depo_date")
         ):
             data = self._build_case_data_from_ufm_fields(data)
 
         depo = data.get("deposition_details", {})
-        if depo.get("cause_number"):
+        if depo.get("cause_number") and not self._cause_var.get().strip():
             self._cause_var.set(depo["cause_number"])
         witness = depo.get("witness", "")
-        if witness:
+        if witness and self._is_safe_to_split_witness_name(witness):
             parts = witness.strip().split()
             if parts:
-                self._firstname_var.set(parts[0])
-                self._lastname_var.set(parts[-1])
-        if depo.get("date"):
+                if not self._firstname_var.get().strip():
+                    self._firstname_var.set(parts[0])
+                if not self._lastname_var.get().strip():
+                    self._lastname_var.set(parts[-1])
+        if depo.get("date") and not self._date_var.get().strip():
             self._date_var.set(depo["date"])
+
+    @staticmethod
+    def _is_safe_to_split_witness_name(name: str) -> bool:
+        """Reject names whose naive first/last split would corrupt the case
+        folder path — comma-suffixed credentials or honorifics."""
+        if not name or "," in name:
+            return False
+        honorifics = {
+            "dr.", "dr", "mr.", "mr", "mrs.", "mrs", "ms.", "ms",
+            "md", "m.d.", "jr.", "jr", "sr.", "sr", "ph.d.", "phd",
+        }
+        tokens = [t.lower().strip(".") for t in name.split()]
+        return not any(t in honorifics or f"{t}." in honorifics for t in tokens)
 
     # ── Actions ──────────────────────────────────────────────────────────────
 
@@ -3161,9 +3186,33 @@ class TranscribeTab(ctk.CTkFrame):
 
     def _run_job(self):
         from core.job_runner import run_transcription_job
+        from core.job_config_manager import load_job_config
         from core.keyterm_extractor import merge_keyterms
 
         self._create_case_folders_now()
+
+        # Safety net: if in-memory intake state is empty (e.g. wiped by a
+        # transient field edit, or the user reopened a previously-processed
+        # case), recover from job_config.json before launching the job.
+        if (not self._confirmed_spellings or not self._pdf_keyterms) and (
+            self._current_case_path
+        ):
+            cfg = load_job_config(self._current_case_path)
+            if not self._confirmed_spellings:
+                recovered = cfg.get("confirmed_spellings", {}) or {}
+                if recovered:
+                    self._confirmed_spellings = recovered
+                    self._append_transcript_log(
+                        f"Recovered {len(recovered)} spellings from job_config.json"
+                    )
+            if not self._pdf_keyterms:
+                recovered_kt = list(cfg.get("deepgram_keyterms", []) or [])
+                if recovered_kt:
+                    self._pdf_keyterms = recovered_kt
+                    self._append_transcript_log(
+                        f"Recovered {len(recovered_kt)} keyterms from job_config.json"
+                    )
+
         final_keyterms, _, _ = merge_keyterms(
             self._pdf_keyterms, self._source_docs_keyterms
         )
