@@ -507,11 +507,43 @@ def _transcribe_direct(
     #   and is intentionally tighter for deposition Q/A turn boundaries
     # - preserve the current return contract; expose extra debug context without
     #   changing downstream behavior
-    from config import DEEPGRAM_MAX_KEYTERMS
+    from config import DEEPGRAM_MAX_KEYTERM_TOKENS
 
-    normalized_keyterms = [
+    cleaned_keyterms = [
         str(term).strip() for term in (keyterms or []) if str(term).strip()
-    ][:DEEPGRAM_MAX_KEYTERMS]
+    ]
+    # Trim by estimated token count rather than entry count: Deepgram's
+    # cap is 500 tokens combined, not a number of entries. ceil(len/4)+1
+    # is a conservative English-text heuristic (4 chars/token, +1 covers
+    # the entry separator). Letting short terms pack more in maximizes
+    # vocabulary support for legal-style names where most entries are 1–3
+    # tokens but a handful (firm names with punctuation) run 6+.
+    normalized_keyterms: list[str] = []
+    used_tokens = 0
+    dropped = 0
+    for term in cleaned_keyterms:
+        est_tokens = (len(term) + 3) // 4 + 1
+        if used_tokens + est_tokens > DEEPGRAM_MAX_KEYTERM_TOKENS:
+            dropped += 1
+            continue
+        normalized_keyterms.append(term)
+        used_tokens += est_tokens
+    if dropped:
+        logger.warning(
+            "[Deepgram] Sending %d keyterms (~%d tokens); dropped %d to fit "
+            "the %d-token budget",
+            len(normalized_keyterms),
+            used_tokens,
+            dropped,
+            DEEPGRAM_MAX_KEYTERM_TOKENS,
+        )
+    else:
+        logger.info(
+            "[Deepgram] Sending %d keyterms (~%d tokens, budget %d)",
+            len(normalized_keyterms),
+            used_tokens,
+            DEEPGRAM_MAX_KEYTERM_TOKENS,
+        )
 
     params = normalize_params(
         {
