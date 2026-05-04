@@ -138,9 +138,31 @@ def run_transcription_job(
         duration_min = v["duration"] / 60
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
+        from pipeline.transcriber import trim_keyterms_for_deepgram
+
         merged_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
         if merged_keyterms:
             _log(f"Deepgram keyterms: {len(merged_keyterms)} (includes defaults)")
+            merged_keyterms, kt_stats = trim_keyterms_for_deepgram(merged_keyterms)
+            _log(
+                f"Sending {kt_stats['sent']} keyterms to Deepgram "
+                f"(~{kt_stats['used_tokens']}/{kt_stats['budget']} tokens)"
+            )
+            if kt_stats["dropped_oversize"]:
+                examples = ", ".join(
+                    repr(s[:60] + ("…" if len(s) > 60 else ""))
+                    for s in kt_stats["oversize_examples"]
+                )
+                _log(
+                    f"  Dropped {kt_stats['dropped_oversize']} oversize keyterms "
+                    f"(>{kt_stats['max_entry_chars']} chars, likely form-template "
+                    f"noise): {examples}"
+                )
+            if kt_stats["dropped_budget"]:
+                _log(
+                    f"  Dropped {kt_stats['dropped_budget']} keyterms to fit "
+                    f"the {kt_stats['budget']}-token budget"
+                )
 
         case_path, folder_status = resolve_or_create_case(
             base_dir,

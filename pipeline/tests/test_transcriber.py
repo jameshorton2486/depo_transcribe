@@ -673,3 +673,50 @@ def test_transcribe_chunk_rejects_missing_utterances(monkeypatch, tmp_path):
         RuntimeError, match="no utterances; transcription cannot proceed"
     ):
         transcriber.transcribe_chunk(str(audio_path))
+
+
+# ── trim_keyterms_for_deepgram ──────────────────────────────────────────
+
+
+def test_trim_keyterms_passes_short_list_unchanged():
+    sent, stats = transcriber.trim_keyterms_for_deepgram(
+        ["David Volk", "Bexar County", "Nathan Agu"]
+    )
+    assert sent == ["David Volk", "Bexar County", "Nathan Agu"]
+    assert stats["sent"] == 3
+    assert stats["dropped_oversize"] == 0
+    assert stats["dropped_budget"] == 0
+    assert stats["used_tokens"] > 0
+
+
+def test_trim_keyterms_drops_entries_over_char_cap():
+    junk = "x" * 200
+    sent, stats = transcriber.trim_keyterms_for_deepgram(
+        ["David Volk", junk, "Nathan Agu"]
+    )
+    assert junk not in sent
+    assert sent == ["David Volk", "Nathan Agu"]
+    assert stats["dropped_oversize"] == 1
+    assert stats["oversize_examples"] == [junk]
+
+
+def test_trim_keyterms_respects_token_budget(monkeypatch):
+    # Force a tiny budget so the cap fires deterministically.
+    monkeypatch.setattr("config.DEEPGRAM_MAX_KEYTERM_TOKENS", 5)
+    # Each "abcd" is 4 chars  ~2 tokens (1 + 1 separator). Budget 5 fits 2.
+    sent, stats = transcriber.trim_keyterms_for_deepgram(
+        ["abcd", "efgh", "ijkl", "mnop"]
+    )
+    assert len(sent) < 4
+    assert stats["dropped_budget"] == 4 - len(sent)
+    assert stats["used_tokens"] <= 5
+
+
+def test_trim_keyterms_handles_empty_and_whitespace():
+    sent, stats = transcriber.trim_keyterms_for_deepgram([])
+    assert sent == []
+    assert stats["sent"] == 0
+
+    sent2, stats2 = transcriber.trim_keyterms_for_deepgram(["", "  ", "real"])
+    assert sent2 == ["real"]
+    assert stats2["sent"] == 1

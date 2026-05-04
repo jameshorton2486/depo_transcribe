@@ -455,6 +455,65 @@ def validate_deepgram_params(params: dict) -> dict:
     return validated
 
 
+_KEYTERM_MAX_ENTRY_CHARS = 100
+
+
+def trim_keyterms_for_deepgram(
+    keyterms: list,
+) -> tuple[list[str], dict]:
+    """Prepare a keyterm list for Deepgram: drop garbage entries and trim
+    to fit the per-request token budget.
+
+    Two filters apply, in order:
+
+    1. Per-entry char cap (_KEYTERM_MAX_ENTRY_CHARS = 100). A legitimate
+       keyterm is at most a short phrase; entries past 100 chars are
+       almost always form-template extraction noise (e.g. an entire NOD
+       address block scooped into one entry by the keyterm extractor).
+       Letting them through would also burn 25+ tokens of budget each.
+
+    2. Token-budget trim (config.DEEPGRAM_MAX_KEYTERM_TOKENS). Deepgram
+       Nova-3 enforces 500 tokens combined per request; we leave a
+       50-token safety margin for tokenizer drift. Token estimate is
+       conservative ((len + 3) // 4 + 1) for English text.
+
+    Returns:
+        (sent, stats) where stats keys: sent, used_tokens, budget,
+        max_entry_chars, dropped_oversize, oversize_examples,
+        dropped_budget.
+    """
+    from config import DEEPGRAM_MAX_KEYTERM_TOKENS
+
+    cleaned = [str(t).strip() for t in (keyterms or []) if str(t).strip()]
+
+    in_size: list[str] = []
+    oversize: list[str] = []
+    for term in cleaned:
+        if len(term) > _KEYTERM_MAX_ENTRY_CHARS:
+            oversize.append(term)
+        else:
+            in_size.append(term)
+
+    sent: list[str] = []
+    used_tokens = 0
+    for term in in_size:
+        est_tokens = (len(term) + 3) // 4 + 1
+        if used_tokens + est_tokens > DEEPGRAM_MAX_KEYTERM_TOKENS:
+            continue
+        sent.append(term)
+        used_tokens += est_tokens
+
+    return sent, {
+        "sent": len(sent),
+        "used_tokens": used_tokens,
+        "budget": DEEPGRAM_MAX_KEYTERM_TOKENS,
+        "max_entry_chars": _KEYTERM_MAX_ENTRY_CHARS,
+        "dropped_oversize": len(oversize),
+        "oversize_examples": oversize[:2],
+        "dropped_budget": len(in_size) - len(sent),
+    }
+
+
 def _is_retryable_error(exc: Exception, status_code: int | None = None) -> bool:
     """
     Decide whether a failed Deepgram call warrants a retry.
@@ -507,43 +566,10 @@ def _transcribe_direct(
     #   and is intentionally tighter for deposition Q/A turn boundaries
     # - preserve the current return contract; expose extra debug context without
     #   changing downstream behavior
-    from config import DEEPGRAM_MAX_KEYTERM_TOKENS
-
-    cleaned_keyterms = [
-        str(term).strip() for term in (keyterms or []) if str(term).strip()
-    ]
-    # Trim by estimated token count rather than entry count: Deepgram's
-    # cap is 500 tokens combined, not a number of entries. ceil(len/4)+1
-    # is a conservative English-text heuristic (4 chars/token, +1 covers
-    # the entry separator). Letting short terms pack more in maximizes
-    # vocabulary support for legal-style names where most entries are 1–3
-    # tokens but a handful (firm names with punctuation) run 6+.
-    normalized_keyterms: list[str] = []
-    used_tokens = 0
-    dropped = 0
-    for term in cleaned_keyterms:
-        est_tokens = (len(term) + 3) // 4 + 1
-        if used_tokens + est_tokens > DEEPGRAM_MAX_KEYTERM_TOKENS:
-            dropped += 1
-            continue
-        normalized_keyterms.append(term)
-        used_tokens += est_tokens
-    if dropped:
-        logger.warning(
-            "[Deepgram] Sending %d keyterms (~%d tokens); dropped %d to fit "
-            "the %d-token budget",
-            len(normalized_keyterms),
-            used_tokens,
-            dropped,
-            DEEPGRAM_MAX_KEYTERM_TOKENS,
-        )
-    else:
-        logger.info(
-            "[Deepgram] Sending %d keyterms (~%d tokens, budget %d)",
-            len(normalized_keyterms),
-            used_tokens,
-            DEEPGRAM_MAX_KEYTERM_TOKENS,
-        )
+    # Defense-in-depth: callers (job_runner) trim once before calling, so
+    # this is normally a no-op. We re-run it to keep _transcribe_direct
+    # safe for any future direct callers.
+    normalized_keyterms, _ = trim_keyterms_for_deepgram(keyterms or [])
 
     params = normalize_params(
         {
