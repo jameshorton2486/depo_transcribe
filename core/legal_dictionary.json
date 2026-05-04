@@ -1,4 +1,27 @@
 {
-  "_comment": "Hand-maintained baseline dictionary of common ASR mishearings for legal/medical depositions. Applied as a base layer in spec_engine/corrections.py:_build_corrections_map; per-case NOD spellings (confirmed_spellings) override these. Keys are case-insensitive and matched on word boundaries. Entries that conflict with spec_engine.corrections.LEGAL_TERMS (objection, form, foundation, privilege) are silently dropped — that blocklist is intentional. Add entries here as you confirm them across multiple cases; one-off case-specific names belong in the NOD's confirmed_spellings, not here.",
-  "spellings": {}
+  "_comment": "Hand-maintained baseline dictionary of common ASR mishearings for legal/medical depositions. Applied as a base layer in spec_engine/corrections.py:_build_corrections_map; per-case NOD spellings (confirmed_spellings) override these. Keys are case-insensitive and matched on word boundaries. Entries that conflict with spec_engine.corrections.LEGAL_TERMS (objection, form, foundation, privilege as bare single words) are silently dropped — that blocklist is intentional. Add entries here as you confirm them across multiple cases; one-off case-specific names belong in the NOD's confirmed_spellings, not here.",
+  "spellings": {
+    "Definition": "Objection.",
+    "Detection": "Objection.",
+    "Eviction": "Objection.",
+    "Infection": "Objection.",
+    "Perfection": "Objection.",
+    "Protection": "Objection.",
+    "Injection form": "Objection. Form.",
+    "Direction form": "Objection. Form.",
+    "Bleeding": "Leading.",
+    "Leaving": "Leading.",
+    "Form and leaving": "Form and leading.",
+    "Form and legal": "Form and leading.",
+    "Former leaving": "Form and leading.",
+    "Warm, leading": "Leading.",
+    "Past witness": "Pass the witness.",
+    "Pastor witness": "Pass the witness.",
+    "mister": "Mr.",
+    "any exerts": "any exhibits",
+    "remotes wearing": "remote swearing of",
+    "so many sorts": "solemnly swear to",
+    "cop number": "Cause Number",
+    "cost number": "Cause Number"
+  }
 }
