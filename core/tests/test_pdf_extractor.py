@@ -78,3 +78,42 @@ def test_extract_case_info_from_pdf_uses_intake_deponent_for_first_and_last_name
 
     assert result["witness_first"] == ("Chris", "ai")
     assert result["witness_last"] == ("Epley", "ai")
+
+
+from core.pdf_extractor import split_witness_name
+
+
+def test_split_witness_name_strips_md_with_comma():
+    assert split_witness_name("Alfred Karam, M.D.") == ("Alfred", "Karam")
+
+
+def test_split_witness_name_strips_md_without_comma():
+    assert split_witness_name("Alfred Karam M.D.") == ("Alfred", "Karam")
+
+
+def test_split_witness_name_uppercase_md_no_periods():
+    assert split_witness_name("ALFRED KARAM, MD") == ("ALFRED", "KARAM")
+
+
+def test_split_witness_name_strips_jr_suffix():
+    assert split_witness_name("Jane Smith Jr.") == ("Jane", "Smith")
+    assert split_witness_name("Jane Smith Jr")  == ("Jane", "Smith")
+
+
+def test_split_witness_name_strips_roman_numeral():
+    assert split_witness_name("John Smith III") == ("John", "Smith")
+
+
+def test_split_witness_name_strips_multiple_credentials():
+    # Comma-separated suffix tokens should all be peeled off.
+    assert split_witness_name("Jane Doe, Ph.D., LCSW") == ("Jane", "Doe")
+
+
+def test_split_witness_name_keeps_plain_two_token_name():
+    assert split_witness_name("John Public") == ("John", "Public")
+
+
+def test_split_witness_name_returns_none_for_too_few_tokens():
+    assert split_witness_name("Madonna") == (None, None)
+    assert split_witness_name("M.D.") == (None, None)
+    assert split_witness_name("") == (None, None)

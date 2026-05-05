@@ -180,6 +180,71 @@ def extract_cause_number(text: str) -> tuple[str | None, str]:
     return None, "failed"
 
 
+# Honorifics and credential suffixes stripped from AI-extracted deponent
+# names before splitting into first/last. The list is intentionally
+# conservative: only tokens whose presence in a "last name" position is
+# almost certainly an artefact of how the deponent was introduced
+# (e.g. "Deposition of Alfred Karam, M.D.").
+_HONORIFIC_SUFFIXES: frozenset[str] = frozenset({
+    # Medical
+    "md", "mds", "do", "dds", "dmd", "dvm", "dpm", "dpt", "od", "pa", "rn", "np",
+    # Doctoral
+    "phd", "edd", "psyd", "thd", "scd", "dsc", "drph",
+    # Legal / accounting / business
+    "esq", "jd", "llb", "llm", "cpa", "mba", "pe",
+    # Mental health / counselling
+    "lcsw", "lpc", "lmft", "lmhc", "mft",
+    # Generational
+    "jr", "sr", "ii", "iii", "iv", "v",
+})
+
+
+def _strip_name_token(token: str) -> str:
+    """Return token lowercased with all interior and surrounding periods,
+    commas, semicolons, colons, and whitespace removed.
+
+    Strips interior punctuation too so 'M.D.' / 'Ph.D.' normalize to 'md'
+    / 'phd' for honorific lookup. Without this, 'M.D.' would become 'm.d'
+    after .strip() and miss the suffix set.
+    """
+    return token.translate({ord(c): None for c in " ,.;:"}).lower()
+
+
+def split_witness_name(full_name: str) -> tuple[str | None, str | None]:
+    """Split a deponent's full name into (first, last).
+
+    Strips honorifics and credential suffixes from the trailing tokens
+    before taking the surname. A token is treated as an honorific if its
+    lowercase, punctuation-stripped form is in `_HONORIFIC_SUFFIXES`.
+
+    Returns (None, None) if no two non-honorific tokens remain.
+
+    Examples:
+        "Alfred Karam, M.D."        -> ("Alfred", "Karam")
+        "Alfred Karam M.D."         -> ("Alfred", "Karam")
+        "ALFRED KARAM, MD"          -> ("ALFRED", "KARAM")
+        "Jane Smith Jr."            -> ("Jane", "Smith")
+        "Jane Smith Jr"             -> ("Jane", "Smith")
+        "John Public"               -> ("John", "Public")
+        "John Smith III, Esq."      -> ("John", "Smith")
+        "Madonna"                   -> (None, None)
+        "M.D."                      -> (None, None)
+    """
+    if not full_name:
+        return (None, None)
+    tokens = full_name.split()
+    # Drop trailing honorifics. Iterate from the end and keep dropping
+    # while the trailing token is an honorific.
+    while tokens and _strip_name_token(tokens[-1]) in _HONORIFIC_SUFFIXES:
+        tokens.pop()
+    if len(tokens) < 2:
+        return (None, None)
+    # Strip a trailing comma from the surname token (e.g. "Karam,").
+    last = tokens[-1].rstrip(",.")
+    first = tokens[0].rstrip(",.")
+    return (first or None, last or None)
+
+
 def extract_witness_name(text: str) -> tuple[str | None, str]:
     """Extract witness last name via regex. Returns (value, source)."""
     patterns = [
@@ -193,8 +258,9 @@ def extract_witness_name(text: str) -> tuple[str | None, str]:
         match = re.search(pattern, text)
         if match:
             full_name = match.group(1).strip()
-            last_name = full_name.split()[-1]
-            return last_name, "regex"
+            _first, last_name = split_witness_name(full_name)
+            if last_name:
+                return last_name, "regex"
     return None, "failed"
 
 
@@ -320,10 +386,10 @@ def extract_case_info_from_pdf(
 
         if witness[1] == "failed":
             for deponent in intake_result.deponents:
-                name_parts = str(deponent.get("name", "")).split()
-                if len(name_parts) >= 2:
-                    witness = (name_parts[-1], "ai")
-                    witness_first = (name_parts[0], "ai")
+                first, last = split_witness_name(str(deponent.get("name", "")))
+                if first and last:
+                    witness = (last, "ai")
+                    witness_first = (first, "ai")
                     break
 
         if date[1] == "failed" and intake_result.deposition_date:
