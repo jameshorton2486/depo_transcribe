@@ -99,6 +99,7 @@ class TemplatesTab(ctk.CTkFrame):
         self._template_checkboxes: dict[str, ctk.CTkCheckBox] = {}
         self._template_vars: dict[str, ctk.BooleanVar] = {}
         self._block_toggle_vars: dict[str, ctk.BooleanVar] = {}
+        self._last_generated_template_ids: set[str] = set()
         self._block_toggle_widgets: dict[str, ctk.CTkCheckBox] = {}
         self._manual_field_entries: dict[str, ctk.CTkEntry] = {}
 
@@ -662,15 +663,21 @@ class TemplatesTab(ctk.CTkFrame):
     def _run_generate(self, selected, fields, toggles, draft_dir: Path):
         from ufm_engine.populator.populate import populate
         results = []
+        succeeded: set[str] = set()
         for tid in selected:
             template = TEMPLATES_FIGURES / f"{tid}.docx"
             out = draft_dir / f"{tid}.docx"
             try:
                 populate(template, out, fields=fields, block_toggles=toggles)
                 results.append((tid, True, None))
+                succeeded.add(tid)
             except Exception as e:
                 logger.exception("populate %s failed", tid)
                 results.append((tid, False, str(e)))
+        # Record what this run successfully produced so Apply Format Box
+        # can scope to only those files. Replaces (does not extend) the
+        # prior set so a re-run cleanly supersedes its predecessor.
+        self._last_generated_template_ids = succeeded
         ok = sum(1 for _, success, _ in results if success)
         msg = f"Generated {ok}/{len(results)} into {draft_dir}"
         errors = [f"{tid}: {err}" for tid, success, err in results if not success]
@@ -711,7 +718,20 @@ class TemplatesTab(ctk.CTkFrame):
                               firm_name: Optional[str]):
         from ufm_engine.post_processor.format_box import apply_format_box
         results = []
-        for src in sorted(draft_dir.glob("*.docx")):
+        # Scope to files emitted by the most recent Generate. If the user
+        # has not run Generate in this session, fall back to the full
+        # draft folder so the button still does something sensible after
+        # an app restart against an existing case folder.
+        scoped_ids = set(self._last_generated_template_ids)
+        all_drafts = sorted(draft_dir.glob("*.docx"))
+        if scoped_ids:
+            sources = [p for p in all_drafts if p.stem in scoped_ids]
+            skipped = [p.name for p in all_drafts if p.stem not in scoped_ids]
+        else:
+            sources = all_drafts
+            skipped = []
+
+        for src in sources:
             dest = final_dir / src.name
             try:
                 apply_format_box(
@@ -726,6 +746,11 @@ class TemplatesTab(ctk.CTkFrame):
                 results.append((src.name, False, str(e)))
         ok = sum(1 for _, success, _ in results if success)
         msg = f"Finished {ok}/{len(results)} into {final_dir}"
+        if skipped:
+            msg += (
+                f"\nSkipped {len(skipped)} stale draft(s) not from the "
+                f"most recent Generate: " + ", ".join(skipped)
+            )
         errors = [f"{name}: {err}" for name, success, err in results if not success]
         if errors:
             msg += "\nErrors:\n  " + "\n  ".join(errors)
