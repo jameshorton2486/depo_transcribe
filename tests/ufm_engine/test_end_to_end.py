@@ -162,6 +162,8 @@ def test_full_pipeline_against_synthetic_case(tmp_path):
     assert "AND VIDEOTAPED" in title_text          # block_videotaped True
     assert "WITH SUBPOENA DUCES TECUM" not in title_text  # toggle False
     assert "VOLUME" not in title_text              # block_volume False
+    assert ", via " not in title_text              # block_remote False — via clause must be gone
+    assert "[Remote Platform" not in title_text    # block_remote False — placeholder must be gone too
     assert "[Witness Name]" not in title_text      # placeholders gone
 
     # Cert: signature-waived flow with cost + custodial attorney

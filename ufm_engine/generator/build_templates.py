@@ -67,9 +67,14 @@ def _add_paragraph(doc: Document, text: str = "", *,
             run.bold = True
 
 
-def _add_content_control(paragraph, tag: str, alias: str,
-                         placeholder: Optional[str] = None) -> None:
-    """Append a Plain Text Content Control to the given paragraph."""
+def _make_content_control_sdt(tag: str, alias: str,
+                               placeholder: Optional[str] = None):
+    """Build a Plain Text Content Control sdt element. Caller appends it.
+
+    Used by _add_content_control (paragraph append) and by
+    _add_inline_field_to_content (sdtContent append, for content
+    controls nested inside inline conditional blocks).
+    """
     if placeholder is None:
         placeholder = f"[{alias}]"
 
@@ -90,6 +95,13 @@ def _add_content_control(paragraph, tag: str, alias: str,
     sdt.append(sdt_pr)
 
     sdt_content = OxmlElement("w:sdtContent")
+    sdt_content.append(_make_courier_run(placeholder))
+    sdt.append(sdt_content)
+    return sdt
+
+
+def _make_courier_run(text: str):
+    """Build a Courier New 12pt <w:r> element with the given text."""
     r = OxmlElement("w:r")
     rpr = OxmlElement("w:rPr")
     rfonts = OxmlElement("w:rFonts")
@@ -103,12 +115,15 @@ def _add_content_control(paragraph, tag: str, alias: str,
 
     t = OxmlElement("w:t")
     t.set(qn("xml:space"), "preserve")
-    t.text = placeholder
+    t.text = text
     r.append(t)
-    sdt_content.append(r)
-    sdt.append(sdt_content)
+    return r
 
-    paragraph._p.append(sdt)
+
+def _add_content_control(paragraph, tag: str, alias: str,
+                         placeholder: Optional[str] = None) -> None:
+    """Append a Plain Text Content Control to the given paragraph."""
+    paragraph._p.append(_make_content_control_sdt(tag, alias, placeholder))
 
 
 def _add_field(doc: Document, tag: str, alias: str,
@@ -132,12 +147,13 @@ def _add_inline_field(paragraph, tag: str, alias: str) -> None:
     _add_content_control(paragraph, tag, alias)
 
 
-def _add_inline_block(paragraph, block_tag: str, text: str) -> None:
-    """Wrap a literal text run in an inline conditional sdt.
+def _open_inline_block(paragraph, block_tag: str):
+    """Append an empty inline conditional sdt and return its sdtContent.
 
-    The populator will unwrap (keep) or remove the sdt based on
-    block_toggles[block_tag]. Used for short conditional phrases that
-    must stay inline ("AND VIDEOTAPED ", "WITH SUBPOENA DUCES TECUM ").
+    The caller adds runs and/or nested content controls to the returned
+    sdtContent element. Used for inline conditional phrases that may
+    need to contain a content control (e.g., ", via [Remote Platform]"
+    where the entire phrase disappears when the toggle is False).
     """
     sdt = OxmlElement("w:sdt")
     sdt_pr = OxmlElement("w:sdtPr")
@@ -153,25 +169,20 @@ def _add_inline_block(paragraph, block_tag: str, text: str) -> None:
     sdt.append(sdt_pr)
 
     sdt_content = OxmlElement("w:sdtContent")
-    r = OxmlElement("w:r")
-    rpr = OxmlElement("w:rPr")
-    rfonts = OxmlElement("w:rFonts")
-    rfonts.set(qn("w:ascii"), "Courier New")
-    rfonts.set(qn("w:hAnsi"), "Courier New")
-    rpr.append(rfonts)
-    sz = OxmlElement("w:sz")
-    sz.set(qn("w:val"), "24")
-    rpr.append(sz)
-    r.append(rpr)
-
-    t = OxmlElement("w:t")
-    t.set(qn("xml:space"), "preserve")
-    t.text = text
-    r.append(t)
-    sdt_content.append(r)
     sdt.append(sdt_content)
 
     paragraph._p.append(sdt)
+    return sdt_content
+
+
+def _add_inline_block(paragraph, block_tag: str, text: str) -> None:
+    """Wrap a literal text run in an inline conditional sdt.
+
+    Convenience wrapper around _open_inline_block for the common case
+    where the conditional content is a single literal phrase.
+    """
+    content = _open_inline_block(paragraph, block_tag)
+    content.append(_make_courier_run(text))
 
 
 def _wrap_in_block_sdt(doc: Document, block_tag: str,
@@ -347,8 +358,12 @@ def build_title_page_tx_state() -> None:
     _add_inline_field(p, "depo_time_start", "Start Time")
     p.add_run(" to ")
     _add_inline_field(p, "depo_time_end", "End Time")
-    p.add_run(", via ")
-    _add_inline_field(p, "remote_platform", "Remote Platform (or 'Zoom')")
+    # Remote platform notation — entire ", via [PLATFORM]" segment is
+    # conditional on block_remote so non-remote depos don't render an
+    # awkward ", via ," with a missing platform.
+    remote_block = _open_inline_block(p, "block_remote")
+    remote_block.append(_make_courier_run(", via "))
+    remote_block.append(_make_content_control_sdt("remote_platform", "Remote Platform"))
     p.add_run(", before ")
     _add_inline_field(p, "reporter_name", "Reporter Name")
     p.add_run(", CSR in and for the State of Texas, reported by ")
@@ -368,7 +383,9 @@ def build_title_page_federal() -> None:
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.add_run("ORAL DEPOSITION OF")
+    p.add_run("ORAL ")
+    _add_inline_block(p, "block_videotaped", "AND VIDEOTAPED ")
+    p.add_run("DEPOSITION OF")
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -376,11 +393,22 @@ def build_title_page_federal() -> None:
 
     _add_field(doc, "depo_date", "Deposition Date", align=WD_ALIGN_PARAGRAPH.CENTER)
 
+    # Optional interpreted notation, paragraph-level so the populator
+    # can drop the whole line when the depo is not interpreted.
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run("(INTERPRETED FROM ")
+    _add_inline_field(p, "interpreter_language", "Interpreter Language")
+    p.add_run(" TO ENGLISH)")
+    _wrap_in_block_sdt(doc, "block_interpreted", 1)
+
     _add_paragraph(doc, SEPARATOR, align=WD_ALIGN_PARAGRAPH.CENTER)
     _add_paragraph(doc, "")
 
     p = doc.add_paragraph()
-    p.add_run("ORAL DEPOSITION OF ")
+    p.add_run("ORAL ")
+    _add_inline_block(p, "block_videotaped", "AND VIDEOTAPED ")
+    p.add_run("DEPOSITION OF ")
     _add_inline_field(p, "witness_name", "Witness Name")
     p.add_run(", produced as a witness at the instance of the ")
     _add_inline_field(p, "instance_party", "Party")
@@ -390,6 +418,9 @@ def build_title_page_federal() -> None:
     _add_inline_field(p, "depo_time_start", "Start Time")
     p.add_run(" to ")
     _add_inline_field(p, "depo_time_end", "End Time")
+    remote_block = _open_inline_block(p, "block_remote")
+    remote_block.append(_make_courier_run(", via "))
+    remote_block.append(_make_content_control_sdt("remote_platform", "Remote Platform"))
     p.add_run(", before ")
     _add_inline_field(p, "reporter_name", "Reporter Name")
     p.add_run(", CSR in and for the State of Texas, reported by ")

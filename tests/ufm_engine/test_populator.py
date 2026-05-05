@@ -258,3 +258,95 @@ def test_volume_line_uses_total_volumes_field(tmp_path):
     )
     text = _all_text(out)
     assert "VOLUME 1 OF 3" in text
+
+
+def test_tx_state_body_block_remote_kept(tmp_path):
+    """", via [Remote Platform]" in the body is now conditional on block_remote."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_tx_state.docx",
+        out,
+        fields={"remote_platform": "Zoom"},
+        block_toggles={"block_remote": True, "block_videotaped": False,
+                        "block_subpoena_duces_tecum": False, "block_volume": False},
+    )
+    text = _all_text(out)
+    assert ", via Zoom" in text
+
+
+def test_tx_state_body_block_remote_dropped(tmp_path):
+    """toggle=False removes the entire ", via …" segment so no awkward ", via , "."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_tx_state.docx",
+        out,
+        fields={},
+        block_toggles={"block_remote": False, "block_videotaped": False,
+                        "block_subpoena_duces_tecum": False, "block_volume": False},
+    )
+    text = _all_text(out)
+    assert ", via" not in text
+    assert "[Remote Platform]" not in text
+
+
+def test_federal_title_page_videotaped_kept(tmp_path):
+    """Federal title page block_videotaped True keeps the phrase in both
+    the title block and the body paragraph."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_federal.docx",
+        out,
+        fields={},
+        block_toggles={"block_videotaped": True, "block_interpreted": False,
+                        "block_remote": False},
+    )
+    text = _all_text(out)
+    # Two occurrences expected: title block + body opening
+    assert text.count("AND VIDEOTAPED") == 2
+
+
+def test_federal_title_page_videotaped_dropped(tmp_path):
+    """toggle=False removes both the title and body uses."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_federal.docx",
+        out,
+        fields={},
+        block_toggles={"block_videotaped": False, "block_interpreted": False,
+                        "block_remote": False},
+    )
+    text = _all_text(out)
+    assert "AND VIDEOTAPED" not in text
+    assert "ORAL DEPOSITION" in text
+
+
+def test_federal_title_page_interpreted_block(tmp_path):
+    """The interpreted notation is a full-paragraph block; toggle on/off
+    keeps or removes the whole line."""
+    from ufm_engine.populator.populate import populate
+
+    on_path = tmp_path / "on.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_federal.docx",
+        on_path,
+        fields={"interpreter_language": "Spanish"},
+        block_toggles={"block_videotaped": False, "block_interpreted": True,
+                        "block_remote": False},
+    )
+    on_text = _all_text(on_path)
+    assert "INTERPRETED FROM Spanish TO ENGLISH" in on_text
+
+    off_path = tmp_path / "off.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_federal.docx",
+        off_path,
+        fields={},
+        block_toggles={"block_videotaped": False, "block_interpreted": False,
+                        "block_remote": False},
+    )
+    off_text = _all_text(off_path)
+    assert "INTERPRETED FROM" not in off_text

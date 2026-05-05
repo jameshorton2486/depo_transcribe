@@ -13,14 +13,12 @@
       "conditional_blocks": [
         "block_subpoena_duces_tecum",
         "block_videotaped",
-        "block_interpreted",
         "block_remote",
         "block_volume"
       ],
       "default_blocks": {
         "block_subpoena_duces_tecum": false,
         "block_videotaped": false,
-        "block_interpreted": false,
         "block_remote": false,
         "block_volume": false
       },
