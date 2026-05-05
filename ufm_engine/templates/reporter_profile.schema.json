@@ -14,13 +14,13 @@
     "firm_name":                { "type": ["string", "null"] },
     "firm_registration_number": { "type": ["string", "null"] },
     "firm_reg_expiration":      { "type": ["string", "null"] },
-    "address_line1":            { "type": "string" },
-    "address_line2":            { "type": ["string", "null"] },
-    "city":                     { "type": "string" },
-    "state":                    { "type": "string" },
-    "zip":                      { "type": "string" },
-    "phone":                    { "type": ["string", "null"] },
-    "email":                    { "type": ["string", "null"] },
+    "reporter_address_line1":   { "type": "string" },
+    "reporter_address_line2":   { "type": ["string", "null"] },
+    "reporter_city":            { "type": "string" },
+    "reporter_state":           { "type": "string" },
+    "reporter_zip":             { "type": "string" },
+    "reporter_phone":           { "type": ["string", "null"] },
+    "reporter_email":           { "type": ["string", "null"] },
     "chassis_default":          { "enum": ["template_native", "apply_after_populate"] }
   }
 }

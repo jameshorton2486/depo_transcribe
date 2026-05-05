@@ -659,25 +659,25 @@ def _add_reporter_signature_block(doc: Document) -> None:
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_content_control(p, "address_line1", "Address Line 1")
+    _add_content_control(p, "reporter_address_line1", "Address Line 1")
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    _add_content_control(p, "city", "City")
+    _add_content_control(p, "reporter_city", "City")
     p.add_run(", ")
-    _add_inline_field(p, "state", "State")
+    _add_inline_field(p, "reporter_state", "State")
     p.add_run(" ")
-    _add_inline_field(p, "zip", "ZIP")
+    _add_inline_field(p, "reporter_zip", "ZIP")
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.add_run("Phone: ")
-    _add_inline_field(p, "phone", "Phone")
+    _add_inline_field(p, "reporter_phone", "Phone")
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.add_run("Email: ")
-    _add_inline_field(p, "email", "Email")
+    _add_inline_field(p, "reporter_email", "Email")
 
 
 # ---------------------------------------------------------------------------

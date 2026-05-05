@@ -381,10 +381,11 @@ class TemplatesTab(ctk.CTkFrame):
             f"  Firm: {p.get('firm_name') or '—'}"
             + (f" (Reg {p['firm_registration_number']})"
                if p.get("firm_registration_number") else ""),
-            f"  Address: {p.get('address_line1', '')}, "
-                f"{p.get('city', '')}, {p.get('state', '')} {p.get('zip', '')}",
-            f"  Phone: {p.get('phone') or '—'}",
-            f"  Email: {p.get('email') or '—'}",
+            f"  Address: {p.get('reporter_address_line1', '')}, "
+                f"{p.get('reporter_city', '')}, "
+                f"{p.get('reporter_state', '')} {p.get('reporter_zip', '')}",
+            f"  Phone: {p.get('reporter_phone') or '—'}",
+            f"  Email: {p.get('reporter_email') or '—'}",
         ]
         self._reporter_summary.configure(text="\n".join(lines))
 
@@ -571,11 +572,12 @@ class TemplatesTab(ctk.CTkFrame):
     # ── Field resolution ─────────────────────────────────────────────────────
 
     def _resolved_fields(self) -> dict:
-        """Merge ufm_fields + reporter_profile + manual fields. Manual wins over NOD;
-        reporter wins over NOD on collision (case state vs reporter state). NOD wins
-        over reporter only for fields the NOD owns. We accept that case-vs-reporter
-        `state` collides — most templates use the case state. The reporter signature
-        block re-uses the same `state` field so a TX case + TX reporter coincide.
+        """Merge ufm_fields + reporter_profile + manual fields. Manual wins
+        over both. Reporter-profile keys are namespaced with `reporter_`
+        (reporter_state, reporter_city, etc.) so they no longer collide with
+        the case caption's bare `state` and `county` fields — an out-of-state
+        reporter on an in-state case now produces the correct case caption
+        AND the correct reporter address block independently.
         """
         merged: dict = {}
         merged.update(self._job_config.get("ufm_fields") or {})
