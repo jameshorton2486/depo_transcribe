@@ -205,3 +205,56 @@ def test_input_template_unchanged(tmp_path):
     populate(src, tmp_path / "out.docx", fields={"witness_name": "JANE"})
     after = src.read_bytes()
     assert before == after
+
+
+def test_inline_block_videotaped_kept(tmp_path):
+    """Title-page videotaped phrase is now inline-conditional. toggle=True keeps it."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_tx_state.docx",
+        out,
+        fields={},
+        block_toggles={
+            "block_videotaped": True,
+            "block_subpoena_duces_tecum": False,
+            "block_volume": False,
+        },
+    )
+    text = _all_text(out)
+    assert "AND VIDEOTAPED" in text
+    assert "WITH SUBPOENA DUCES TECUM" not in text
+
+
+def test_inline_block_videotaped_dropped(tmp_path):
+    """toggle=False for an inline block removes the phrase entirely."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_tx_state.docx",
+        out,
+        fields={},
+        block_toggles={
+            "block_videotaped": False,
+            "block_subpoena_duces_tecum": False,
+            "block_volume": False,
+        },
+    )
+    text = _all_text(out)
+    assert "AND VIDEOTAPED" not in text
+    assert "WITH SUBPOENA DUCES TECUM" not in text
+    assert "ORAL DEPOSITION" in text
+
+
+def test_volume_line_uses_total_volumes_field(tmp_path):
+    """The volume line accepts both volume_number and total_volumes."""
+    from ufm_engine.populator.populate import populate
+    out = tmp_path / "out.docx"
+    populate(
+        TEMPLATES_DIR / "title_page_tx_state.docx",
+        out,
+        fields={"volume_number": "1", "total_volumes": "3"},
+        block_toggles={"block_volume": True},
+    )
+    text = _all_text(out)
+    assert "VOLUME 1 OF 3" in text

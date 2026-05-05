@@ -132,6 +132,48 @@ def _add_inline_field(paragraph, tag: str, alias: str) -> None:
     _add_content_control(paragraph, tag, alias)
 
 
+def _add_inline_block(paragraph, block_tag: str, text: str) -> None:
+    """Wrap a literal text run in an inline conditional sdt.
+
+    The populator will unwrap (keep) or remove the sdt based on
+    block_toggles[block_tag]. Used for short conditional phrases that
+    must stay inline ("AND VIDEOTAPED ", "WITH SUBPOENA DUCES TECUM ").
+    """
+    sdt = OxmlElement("w:sdt")
+    sdt_pr = OxmlElement("w:sdtPr")
+
+    tag_el = OxmlElement("w:tag")
+    tag_el.set(qn("w:val"), block_tag)
+    sdt_pr.append(tag_el)
+
+    alias_el = OxmlElement("w:alias")
+    alias_el.set(qn("w:val"), f"Conditional Block: {block_tag}")
+    sdt_pr.append(alias_el)
+
+    sdt.append(sdt_pr)
+
+    sdt_content = OxmlElement("w:sdtContent")
+    r = OxmlElement("w:r")
+    rpr = OxmlElement("w:rPr")
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:ascii"), "Courier New")
+    rfonts.set(qn("w:hAnsi"), "Courier New")
+    rpr.append(rfonts)
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "24")
+    rpr.append(sz)
+    r.append(rpr)
+
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = text
+    r.append(t)
+    sdt_content.append(r)
+    sdt.append(sdt_content)
+
+    paragraph._p.append(sdt)
+
+
 def _wrap_in_block_sdt(doc: Document, block_tag: str,
                        paragraph_count: int) -> None:
     """
@@ -266,9 +308,9 @@ def build_title_page_tx_state() -> None:
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.add_run("ORAL ")
-    p.add_run("AND VIDEOTAPED ")
+    _add_inline_block(p, "block_videotaped", "AND VIDEOTAPED ")
     p.add_run("DEPOSITION ")
-    p.add_run("WITH SUBPOENA DUCES TECUM ")
+    _add_inline_block(p, "block_subpoena_duces_tecum", "WITH SUBPOENA DUCES TECUM ")
     p.add_run("OF")
 
     p = doc.add_paragraph()
@@ -277,9 +319,16 @@ def build_title_page_tx_state() -> None:
 
     _add_field(doc, "depo_date", "Deposition Date", align=WD_ALIGN_PARAGRAPH.CENTER)
 
-    _add_field(doc, "volume_number", "Volume Number",
-               prefix="VOLUME ", suffix=" OF ",
-               align=WD_ALIGN_PARAGRAPH.CENTER)
+    # Volume line: "VOLUME N OF M". Both volume_number and total_volumes
+    # are content controls; the entire paragraph is wrapped in
+    # block_volume so the toggle removes the line outright when there's
+    # only one volume.
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run("VOLUME ")
+    _add_inline_field(p, "volume_number", "Volume Number")
+    p.add_run(" OF ")
+    _add_inline_field(p, "total_volumes", "Total Volumes")
     _wrap_in_block_sdt(doc, "block_volume", 1)
 
     _add_paragraph(doc, SEPARATOR, align=WD_ALIGN_PARAGRAPH.CENTER)
@@ -287,7 +336,7 @@ def build_title_page_tx_state() -> None:
 
     p = doc.add_paragraph()
     p.add_run("ORAL ")
-    p.add_run("AND VIDEOTAPED ")
+    _add_inline_block(p, "block_videotaped", "AND VIDEOTAPED ")
     p.add_run("DEPOSITION OF ")
     _add_inline_field(p, "witness_name", "Witness Name")
     p.add_run(", produced as a witness at the instance of the ")

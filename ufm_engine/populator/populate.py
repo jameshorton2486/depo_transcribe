@@ -65,21 +65,31 @@ def populate(
 # ---------------------------------------------------------------------------
 
 def _resolve_block_sdts(doc, toggles: Optional[Mapping[str, bool]]) -> None:
+    """Resolve every conditional block sdt in the document.
+
+    Walks the entire body — not just top-level children — so inline
+    block sdts (e.g. an "AND VIDEOTAPED " phrase wrapped within a
+    paragraph) are handled the same way as full-paragraph block sdts.
+
+    Snapshots the list before mutating: removing an outer sdt also
+    detaches any inner sdts in the same pass, so we skip detached
+    elements rather than crash.
+    """
     body = doc.element.body
-    for sdt in _iter_block_sdts(body):
-        tag = _sdt_tag(sdt)
-        if tag is None or not tag.startswith(BLOCK_TAG_PREFIX):
+    sdts = [
+        s for s in body.iter(qn("w:sdt"))
+        if (_sdt_tag(s) or "").startswith(BLOCK_TAG_PREFIX)
+    ]
+    for sdt in sdts:
+        if sdt.getparent() is None:
+            # Already removed when an outer block was deleted.
             continue
+        tag = _sdt_tag(sdt)
         keep = _toggle_value(tag, toggles)
         if keep:
             _unwrap_sdt(sdt)
         else:
             _remove_sdt(sdt)
-
-
-def _iter_block_sdts(body):
-    """Top-level <w:sdt> elements in the body, in document order."""
-    return [c for c in list(body) if c.tag == qn("w:sdt")]
 
 
 def _toggle_value(tag: str, toggles: Optional[Mapping[str, bool]]) -> bool:
