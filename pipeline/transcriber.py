@@ -78,14 +78,20 @@ ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
 NEAR_SILENT_THRESHOLD_DB = -55.0
 REQUEST_DEBUG_PREFIX = "DEEPGRAM PARAMS:"
+# Source of truth for Deepgram request flags. enforce_required_deepgram_flags
+# overrides any caller-provided value with these, so changing a value here
+# changes the value sent to the API. paragraphs=true and utt_split=0.8 are
+# Playground-parity defaults — keep them aligned with the per-request dict
+# in _transcribe_direct so the documentation visible to a reader matches the
+# enforced reality.
 REQUIRED_DEEPGRAM_FLAGS = {
     "utterances": "true",
     "diarize": "true",
-    "paragraphs": "false",
+    "paragraphs": "true",
     "punctuate": "true",
     "smart_format": "true",
     "numerals": "true",
-    "utt_split": "0.5",
+    "utt_split": "0.8",
 }
 
 # Transient HTTP failures that should trigger a retry. 401/403 are excluded
@@ -559,13 +565,16 @@ def _transcribe_direct(
     if not api_key:
         raise ValueError("DEEPGRAM_API_KEY is not set.")
 
-    # Deepgram request defaults:
+    # Deepgram request defaults — Playground-parity baseline:
     # - filler_words stays on for verbatim compliance (uh/um are legal record)
     # - utterances=True is required — correction_runner checks for this key
-    # - utt_split controls silence length before Deepgram starts a new utterance
-    #   and is intentionally tighter for deposition Q/A turn boundaries
-    # - preserve the current return contract; expose extra debug context without
-    #   changing downstream behavior
+    # - paragraphs=True matches Playground; block_builder already prefers
+    #   paragraph-based parsing when present and falls back to utterances
+    # - utt_split=0.8 matches Playground (was 0.5; the tighter value
+    #   over-segmented Q/A and didn't agree with Playground's stitching)
+    # - smart_format / numerals / punctuate all match Playground
+    # - preserve the current return contract; expose extra debug context
+    #   without changing downstream behavior
     # Defense-in-depth: callers (job_runner) trim once before calling, so
     # this is normally a no-op. We re-run it to keep _transcribe_direct
     # safe for any future direct callers.
@@ -578,9 +587,9 @@ def _transcribe_direct(
             "smart_format": True,
             "diarize": True,
             "punctuate": True,
-            "paragraphs": False,
+            "paragraphs": True,
             "utterances": True,
-            "utt_split": "0.5",
+            "utt_split": "0.8",
             "filler_words": True,
             "numerals": True,
         }
