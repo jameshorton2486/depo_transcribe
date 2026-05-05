@@ -99,3 +99,20 @@ def test_every_template_has_default_blocks_key():
                 f"{t['id']}: default_blocks references {tag} which is not "
                 f"in conditional_blocks"
             )
+
+
+def test_required_fields_only_reference_emitted_tags():
+    """Every tag in required_fields must be a content control that the
+    matching builder actually emits. Otherwise the validator will block
+    Generate forever on an unreachable requirement.
+    """
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    builders_src = (ROOT / "ufm_engine" / "generator"
+                    / "build_templates.py").read_text()
+    for t in manifest["templates"]:
+        for tag in t.get("required_fields") or []:
+            assert f'"{tag}"' in builders_src, (
+                f'{t["id"]}: required_fields includes {tag} but no '
+                f'_add_content_control / _add_inline_field call references '
+                f'that tag in build_templates.py'
+            )

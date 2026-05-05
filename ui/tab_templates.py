@@ -51,6 +51,14 @@ PROFILES_DIR = PROJECT_ROOT / "data" / "reporter_profiles"
 MANIFEST_PATH = PROJECT_ROOT / "ufm_engine" / "templates" / "manifest.json"
 TEMPLATES_FIGURES = PROJECT_ROOT / "ufm_engine" / "templates" / "figures"
 
+
+def _is_field_present(value) -> bool:
+    """A field is 'present' if it is not None and not empty after str/strip."""
+    if value is None:
+        return False
+    return bool(str(value).strip())
+
+
 SELECTIONS_VERSION = 1
 
 GROUP_LABELS = {
@@ -583,6 +591,32 @@ class TemplatesTab(ctk.CTkFrame):
                 merged[tag] = val
         return merged
 
+    def _validate_required_fields(
+        self, selected: list[str], fields: dict
+    ) -> dict[str, list[str]]:
+        """Return {template_id: [missing_tag, ...]} for any selected template
+        whose declared required_fields are absent or empty in `fields`.
+
+        Templates without a `required_fields` entry in the manifest are
+        treated as having no requirements and never appear in the result.
+        """
+        manifest_by_id = {
+            t["id"]: t for t in self._manifest.get("templates", [])
+        }
+        result: dict[str, list[str]] = {}
+        for tid in selected:
+            entry = manifest_by_id.get(tid)
+            if not entry:
+                continue
+            required = entry.get("required_fields") or []
+            missing = [
+                tag for tag in required
+                if not _is_field_present(fields.get(tag))
+            ]
+            if missing:
+                result[tid] = missing
+        return result
+
     # ── Generate / Apply / Open ──────────────────────────────────────────────
 
     def _output_dir(self, sub: str) -> Optional[Path]:
@@ -604,8 +638,19 @@ class TemplatesTab(ctk.CTkFrame):
         self._save_template_selections()
         fields = self._resolved_fields()
         toggles = {k: v.get() for k, v in self._block_toggle_vars.items()}
-        draft_dir = self._output_dir("draft")
 
+        missing = self._validate_required_fields(selected, fields)
+        if missing:
+            lines = [f"  • {tid}: {', '.join(tags)}" for tid, tags in missing.items()]
+            self._set_status(
+                f"{len(missing)} template(s) have missing required fields:\n"
+                + "\n".join(lines)
+                + "\nFill the fields or remove the template, then retry.",
+                error=True,
+            )
+            return
+
+        draft_dir = self._output_dir("draft")
         self._set_status(f"Generating {len(selected)} template(s)…")
         thread = threading.Thread(
             target=self._run_generate,

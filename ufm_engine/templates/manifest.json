@@ -24,6 +24,24 @@
         "block_remote": false,
         "block_volume": false
       },
+      "required_fields": [
+        "cause_number",
+        "plaintiff_name",
+        "defendant_names_block",
+        "county",
+        "state",
+        "judicial_district_phrase",
+        "witness_name",
+        "depo_date",
+        "depo_day_ordinal",
+        "depo_time_start",
+        "depo_time_end",
+        "remote_platform",
+        "reporter_name",
+        "method",
+        "depo_location_full",
+        "instance_party"
+      ],
       "auto_pulls": []
     },
     {
@@ -41,6 +59,19 @@
         "block_interpreted": false,
         "block_remote": false
       },
+      "required_fields": [
+        "plaintiff_name",
+        "defendant_names_block",
+        "witness_name",
+        "depo_date",
+        "depo_day_ordinal",
+        "depo_time_start",
+        "depo_time_end",
+        "reporter_name",
+        "method",
+        "depo_location_full",
+        "instance_party"
+      ],
       "auto_pulls": []
     },
     {
@@ -56,6 +87,7 @@
       "default_blocks": {
         "block_also_present": false
       },
+      "required_fields": [],
       "auto_pulls": []
     },
     {
@@ -69,6 +101,7 @@
       "default_selected": true,
       "conditional_blocks": [],
       "default_blocks": {},
+      "required_fields": ["witness_name"],
       "auto_pulls": []
     },
     {
@@ -82,6 +115,7 @@
       "default_selected": true,
       "conditional_blocks": [],
       "default_blocks": {},
+      "required_fields": ["witness_name"],
       "auto_pulls": []
     },
     {
@@ -95,6 +129,7 @@
       "default_selected": false,
       "conditional_blocks": [],
       "default_blocks": {},
+      "required_fields": ["witness_name"],
       "auto_pulls": []
     },
     {
@@ -108,6 +143,7 @@
       "default_selected": false,
       "conditional_blocks": [],
       "default_blocks": {},
+      "required_fields": ["witness_name"],
       "auto_pulls": ["witness_acknowledgment_notary"]
     },
     {
@@ -121,6 +157,7 @@
       "default_selected": false,
       "conditional_blocks": [],
       "default_blocks": {},
+      "required_fields": ["witness_name"],
       "auto_pulls": []
     },
     {
@@ -134,6 +171,13 @@
       "default_selected": true,
       "conditional_blocks": ["block_credentials_suffix", "block_firm_signature_block"],
       "default_blocks": {},
+      "required_fields": [
+        "cause_number",
+        "witness_name",
+        "reporter_name",
+        "csr_number",
+        "csr_expiration"
+      ],
       "auto_pulls": ["further_cert_trcp_203"]
     },
     {
@@ -155,6 +199,15 @@
         "block_custodial_attorney": false,
         "block_cost_paragraph": false
       },
+      "required_fields": [
+        "cause_number",
+        "witness_name",
+        "reporter_name",
+        "csr_number",
+        "csr_expiration",
+        "served_on_date",
+        "certification_date"
+      ],
       "auto_pulls": []
     },
     {
@@ -174,6 +227,12 @@
       "default_blocks": {
         "block_custodial_attorney": false
       },
+      "required_fields": [
+        "witness_name",
+        "reporter_name",
+        "csr_number",
+        "csr_expiration"
+      ],
       "auto_pulls": []
     },
     {
@@ -193,6 +252,13 @@
       "default_blocks": {
         "block_remote": false
       },
+      "required_fields": [
+        "cause_number",
+        "witness_name",
+        "reporter_name",
+        "csr_number",
+        "csr_expiration"
+      ],
       "auto_pulls": []
     },
     {
@@ -206,6 +272,10 @@
       "default_selected": false,
       "conditional_blocks": ["block_credentials_suffix", "block_firm_signature_block"],
       "default_blocks": {},
+      "required_fields": [
+        "reporter_name",
+        "csr_number"
+      ],
       "auto_pulls": []
     }
   ]
