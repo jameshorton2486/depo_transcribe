@@ -227,6 +227,9 @@ def split_witness_name(full_name: str) -> tuple[str | None, str | None]:
         "Jane Smith Jr"             -> ("Jane", "Smith")
         "John Public"               -> ("John", "Public")
         "John Smith III, Esq."      -> ("John", "Smith")
+        "Karam M.D."                -> (None, "Karam")
+        "Karam, M.D."               -> (None, "Karam")
+        "KARAM MD"                  -> (None, "KARAM")
         "Madonna"                   -> (None, None)
         "M.D."                      -> (None, None)
     """
@@ -235,10 +238,24 @@ def split_witness_name(full_name: str) -> tuple[str | None, str | None]:
     tokens = full_name.split()
     # Drop trailing honorifics. Iterate from the end and keep dropping
     # while the trailing token is an honorific.
+    stripped_honorific = False
     while tokens and _strip_name_token(tokens[-1]) in _HONORIFIC_SUFFIXES:
         tokens.pop()
-    if len(tokens) < 2:
+        stripped_honorific = True
+    if not tokens:
         return (None, None)
+    # Single non-honorific token *after* honorific stripping: treat as
+    # surname-only. Common when a NOD introduces a deponent as just
+    # "Karam M.D." with no first name in the caption — without this
+    # branch we'd lose the surname entirely. We only do this when at
+    # least one honorific WAS stripped, so a bare mononym like
+    # "Madonna" still returns (None, None) — there's no signal it's
+    # really a surname.
+    if len(tokens) == 1:
+        if not stripped_honorific:
+            return (None, None)
+        last = tokens[-1].rstrip(",.")
+        return (None, last or None)
     # Strip a trailing comma from the surname token (e.g. "Karam,").
     last = tokens[-1].rstrip(",.")
     first = tokens[0].rstrip(",.")
@@ -387,10 +404,15 @@ def extract_case_info_from_pdf(
         if witness[1] == "failed":
             for deponent in intake_result.deponents:
                 first, last = split_witness_name(str(deponent.get("name", "")))
-                if first and last:
-                    witness = (last, "ai")
+                if not last:
+                    continue
+                witness = (last, "ai")
+                # Only fill the first-name slot if we actually parsed one;
+                # surname-only inputs like "Karam M.D." set witness without
+                # fabricating a first name.
+                if first:
                     witness_first = (first, "ai")
-                    break
+                break
 
         if date[1] == "failed" and intake_result.deposition_date:
             try:

@@ -117,3 +117,17 @@ def test_split_witness_name_returns_none_for_too_few_tokens():
     assert split_witness_name("Madonna") == (None, None)
     assert split_witness_name("M.D.") == (None, None)
     assert split_witness_name("") == (None, None)
+
+
+def test_split_witness_name_surname_only_with_md():
+    """The Karam-matter regression: NOD says "Karam M.D." with no first name.
+    Phase 4 returned (None, None) and lost the surname; this returns the
+    surname so the caller can still populate witness_last."""
+    assert split_witness_name("Karam M.D.") == (None, "Karam")
+    assert split_witness_name("Karam, M.D.") == (None, "Karam")
+    assert split_witness_name("KARAM MD") == (None, "KARAM")
+
+
+def test_split_witness_name_surname_only_with_jr():
+    assert split_witness_name("Smith Jr.") == (None, "Smith")
+    assert split_witness_name("Smith III") == (None, "Smith")
