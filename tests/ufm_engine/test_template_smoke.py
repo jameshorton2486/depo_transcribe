@@ -87,3 +87,15 @@ def test_post_processor_imports_and_runs(tmp_path):
         render_firm_footer=False,
     )
     assert out.exists()
+
+
+def test_every_template_has_default_blocks_key():
+    manifest = json.loads(MANIFEST_PATH.read_text())
+    for t in manifest["templates"]:
+        assert "default_blocks" in t, f"{t['id']} missing default_blocks"
+        # Every key in default_blocks must appear in conditional_blocks
+        for tag in (t["default_blocks"] or {}).keys():
+            assert tag in t["conditional_blocks"], (
+                f"{t['id']}: default_blocks references {tag} which is not "
+                f"in conditional_blocks"
+            )

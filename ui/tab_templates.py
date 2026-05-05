@@ -426,15 +426,11 @@ class TemplatesTab(ctk.CTkFrame):
         for tag, defining in block_ids:
             var = self._block_toggle_vars.get(tag)
             if var is None:
-                # Default: blocks default-on except a small known-off list.
-                default_on = tag not in {"block_subpoena_duces_tecum",
-                                         "block_videotaped",
-                                         "block_remote",
-                                         "block_interpreted",
-                                         "block_volume",
-                                         "block_also_present",
-                                         "block_cost_paragraph",
-                                         "block_custodial_attorney"}
+                # Default sourced from manifest. A block tag absent from the
+                # defining template's default_blocks map defaults to True
+                # (block kept and unwrapped). Policy lives in the manifest;
+                # the UI only consumes it.
+                default_on = self._manifest_block_default(tag)
                 var = ctk.BooleanVar(value=default_on)
                 self._block_toggle_vars[tag] = var
             cb = ctk.CTkCheckBox(
@@ -446,6 +442,22 @@ class TemplatesTab(ctk.CTkFrame):
             )
             cb.pack(fill="x", padx=12, pady=1, anchor="w")
             self._block_toggle_widgets[tag] = cb
+
+    def _manifest_block_default(self, block_tag: str) -> bool:
+        """Resolve the default state of a conditional block.
+
+        A block tag may appear in more than one template's
+        conditional_blocks list. We resolve to the first selected template
+        that defines a default for the tag; if no selected template
+        explicitly declares a default, the tag defaults to True.
+        """
+        for t in self._manifest.get("templates", []):
+            if not self._template_vars.get(t["id"], ctk.BooleanVar(value=False)).get():
+                continue
+            defaults = t.get("default_blocks") or {}
+            if block_tag in defaults:
+                return bool(defaults[block_tag])
+        return True
 
     # ── Case folder ──────────────────────────────────────────────────────────
 
