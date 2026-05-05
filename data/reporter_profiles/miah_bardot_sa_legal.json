@@ -1,0 +1,20 @@
+{
+  "id": "miah_bardot_sa_legal",
+  "display_name": "Miah Bardot — SA Legal",
+  "reporter_name": "Miah Bardot",
+  "csr_number": "12129",
+  "csr_expiration": "6-30-2026",
+  "credentials": null,
+  "method": "oral stenography",
+  "firm_name": "SA Legal",
+  "firm_registration_number": null,
+  "firm_reg_expiration": null,
+  "address_line1": "7234 Hovingham",
+  "address_line2": null,
+  "city": "San Antonio",
+  "state": "Texas",
+  "zip": "78257",
+  "phone": "469 740-9603",
+  "email": "ilovemycourtreporter@gmail.com",
+  "chassis_default": "apply_after_populate"
+}

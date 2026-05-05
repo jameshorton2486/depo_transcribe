@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Reporter Profile",
+  "type": "object",
+  "required": ["id", "display_name", "reporter_name", "csr_number", "csr_expiration", "method", "chassis_default"],
+  "properties": {
+    "id":                       { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "display_name":             { "type": "string" },
+    "reporter_name":            { "type": "string" },
+    "csr_number":               { "type": "string" },
+    "csr_expiration":           { "type": "string" },
+    "credentials":              { "type": ["string", "null"] },
+    "method":                   { "type": "string" },
+    "firm_name":                { "type": ["string", "null"] },
+    "firm_registration_number": { "type": ["string", "null"] },
+    "firm_reg_expiration":      { "type": ["string", "null"] },
+    "address_line1":            { "type": "string" },
+    "address_line2":            { "type": ["string", "null"] },
+    "city":                     { "type": "string" },
+    "state":                    { "type": "string" },
+    "zip":                      { "type": "string" },
+    "phone":                    { "type": ["string", "null"] },
+    "email":                    { "type": ["string", "null"] },
+    "chassis_default":          { "enum": ["template_native", "apply_after_populate"] }
+  }
+}

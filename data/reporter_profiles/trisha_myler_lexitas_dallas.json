@@ -1,0 +1,20 @@
+{
+  "id": "trisha_myler_lexitas_dallas",
+  "display_name": "Trisha Myler — Lexitas (Dallas)",
+  "reporter_name": "Trisha Myler",
+  "csr_number": "3465",
+  "csr_expiration": "04/30/2022",
+  "credentials": "CSR, RPR, CRR, RMR",
+  "method": "machine shorthand",
+  "firm_name": "LEXITAS",
+  "firm_registration_number": "459",
+  "firm_reg_expiration": null,
+  "address_line1": "325 N. St. Paul, Suite 1900",
+  "address_line2": null,
+  "city": "Dallas",
+  "state": "Texas",
+  "zip": "75201",
+  "phone": null,
+  "email": null,
+  "chassis_default": "template_native"
+}

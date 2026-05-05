@@ -1,0 +1,20 @@
+{
+  "id": "trisha_myler_lexitas_fortworth",
+  "display_name": "Trisha Myler — Lexitas (Fort Worth)",
+  "reporter_name": "Trisha Myler",
+  "csr_number": "3465",
+  "csr_expiration": "04/30/2022",
+  "credentials": "CSR, RPR, CRR",
+  "method": "machine shorthand",
+  "firm_name": "LEXITAS",
+  "firm_registration_number": "10698",
+  "firm_reg_expiration": null,
+  "address_line1": "201 Main Street, Suite 600",
+  "address_line2": null,
+  "city": "Fort Worth",
+  "state": "Texas",
+  "zip": "76102",
+  "phone": "(817) 810-0244",
+  "email": null,
+  "chassis_default": "template_native"
+}

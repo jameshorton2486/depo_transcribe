@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Template Selections (per-job)",
+  "type": "object",
+  "required": ["version", "reporter_profile_id", "selected_templates", "finishing_options"],
+  "properties": {
+    "version":             { "const": 1 },
+    "reporter_profile_id": { "type": "string" },
+    "selected_templates":  { "type": "array", "items": { "type": "string" } },
+    "block_toggles":       {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" }
+    },
+    "finishing_options":   {
+      "type": "object",
+      "required": ["apply_format_box", "apply_line_numbers", "render_firm_footer"],
+      "properties": {
+        "apply_format_box":   { "type": "boolean" },
+        "apply_line_numbers": { "type": "boolean" },
+        "render_firm_footer": { "type": "boolean" }
+      }
+    }
+  }
+}

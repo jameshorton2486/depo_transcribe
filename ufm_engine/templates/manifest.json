@@ -1,0 +1,180 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "title_page_tx_state",
+      "filename": "title_page_tx_state.docx",
+      "ufm_figure": "17",
+      "display_name": "Title Page (Texas State Court)",
+      "category": "title",
+      "scope": "freelance_depo",
+      "court_type": "tx_state",
+      "default_selected": true,
+      "conditional_blocks": [
+        "block_subpoena_duces_tecum",
+        "block_videotaped",
+        "block_interpreted",
+        "block_remote",
+        "block_volume"
+      ],
+      "auto_pulls": []
+    },
+    {
+      "id": "title_page_federal",
+      "filename": "title_page_federal.docx",
+      "ufm_figure": null,
+      "display_name": "Title Page (Federal Court)",
+      "category": "title",
+      "scope": "freelance_depo",
+      "court_type": "federal",
+      "default_selected": false,
+      "conditional_blocks": ["block_videotaped", "block_interpreted", "block_remote"],
+      "auto_pulls": []
+    },
+    {
+      "id": "appearances",
+      "filename": "appearances.docx",
+      "ufm_figure": "18",
+      "display_name": "Appearances",
+      "category": "appearances",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": true,
+      "conditional_blocks": ["block_also_present"],
+      "auto_pulls": []
+    },
+    {
+      "id": "index_chronological",
+      "filename": "index_chronological.docx",
+      "ufm_figure": "22",
+      "display_name": "Index (Chronological)",
+      "category": "index",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": true,
+      "conditional_blocks": [],
+      "auto_pulls": []
+    },
+    {
+      "id": "witness_setup_standard",
+      "filename": "witness_setup_standard.docx",
+      "ufm_figure": "23",
+      "display_name": "Witness Setup (Standard)",
+      "category": "witness_setup",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": true,
+      "conditional_blocks": [],
+      "auto_pulls": []
+    },
+    {
+      "id": "witness_setup_interpreter",
+      "filename": "witness_setup_interpreter.docx",
+      "ufm_figure": "27",
+      "display_name": "Witness Setup (Through Interpreter)",
+      "category": "witness_setup",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": false,
+      "conditional_blocks": [],
+      "auto_pulls": []
+    },
+    {
+      "id": "changes_signature_grid",
+      "filename": "changes_signature_grid.docx",
+      "ufm_figure": "19",
+      "display_name": "Changes and Signature Grid",
+      "category": "signature",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": false,
+      "conditional_blocks": [],
+      "auto_pulls": ["witness_acknowledgment_notary"]
+    },
+    {
+      "id": "witness_acknowledgment_notary",
+      "filename": "witness_acknowledgment_notary.docx",
+      "ufm_figure": "19A",
+      "display_name": "Witness Acknowledgment + Notary",
+      "category": "signature",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": false,
+      "conditional_blocks": [],
+      "auto_pulls": []
+    },
+    {
+      "id": "cert_tx_sig_required",
+      "filename": "cert_tx_sig_required.docx",
+      "ufm_figure": "20",
+      "display_name": "Reporter's Certification (TX, Sig Required)",
+      "category": "certification",
+      "scope": "freelance_depo",
+      "court_type": "tx_state",
+      "default_selected": true,
+      "conditional_blocks": ["block_credentials_suffix", "block_firm_signature_block"],
+      "auto_pulls": ["further_cert_trcp_203"]
+    },
+    {
+      "id": "cert_tx_sig_waived",
+      "filename": "cert_tx_sig_waived.docx",
+      "ufm_figure": "21",
+      "display_name": "Reporter's Certification (TX, Sig Waived)",
+      "category": "certification",
+      "scope": "freelance_depo",
+      "court_type": "tx_state",
+      "default_selected": false,
+      "conditional_blocks": [
+        "block_credentials_suffix",
+        "block_firm_signature_block",
+        "block_custodial_attorney",
+        "block_cost_paragraph"
+      ],
+      "auto_pulls": []
+    },
+    {
+      "id": "cert_federal_frcp",
+      "filename": "cert_federal_frcp.docx",
+      "ufm_figure": null,
+      "display_name": "Reporter's Certificate (Federal FRCP 30)",
+      "category": "certification",
+      "scope": "freelance_depo",
+      "court_type": "federal",
+      "default_selected": false,
+      "conditional_blocks": [
+        "block_credentials_suffix",
+        "block_firm_signature_block",
+        "block_custodial_attorney"
+      ],
+      "auto_pulls": []
+    },
+    {
+      "id": "cert_nonappearance",
+      "filename": "cert_nonappearance.docx",
+      "ufm_figure": "24",
+      "display_name": "Certificate of Nonappearance",
+      "category": "certification",
+      "scope": "freelance_depo",
+      "court_type": "any",
+      "default_selected": false,
+      "conditional_blocks": [
+        "block_remote",
+        "block_credentials_suffix",
+        "block_firm_signature_block"
+      ],
+      "auto_pulls": []
+    },
+    {
+      "id": "further_cert_trcp_203",
+      "filename": "further_cert_trcp_203.docx",
+      "ufm_figure": "20B",
+      "display_name": "Further Certification under TRCP Rule 203",
+      "category": "certification",
+      "scope": "freelance_depo",
+      "court_type": "tx_state",
+      "default_selected": false,
+      "conditional_blocks": ["block_credentials_suffix", "block_firm_signature_block"],
+      "auto_pulls": []
+    }
+  ]
+}

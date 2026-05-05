@@ -26,3 +26,4 @@ python-vlc>=3.0.0
 
 # Testing
 pytest>=8.0.0
+jsonschema>=4.0.0
