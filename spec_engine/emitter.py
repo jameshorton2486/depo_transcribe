@@ -33,14 +33,25 @@ def double_space_after_punctuation(text: str) -> str:
     return re.sub(r"([.!?])\s+", r"\1  ", str(text or "").strip())
 
 
+_LEADING_ZERO_INT_RE = re.compile(r"\b0+(\d+)\b")
+
+
 def normalize_speaker(speaker: str | None) -> str:
     """
     Normalize speaker label to uppercase with colon.
+
+    Strips leading zeros from numeric tokens so labels like "Speaker 01"
+    and "Speaker 1" canonicalize to the same form. Without this step,
+    same-speaker colloquy blocks emitted by Deepgram with inconsistent
+    zero-padding (observed when one chunk uses "Speaker 01" and an
+    adjacent chunk uses "Speaker 1") fail to group in format_colloquy.
+    A bare "0" is preserved (no-op), since 0 is a valid speaker id.
     """
     if not speaker:
         return ""
 
     speaker = speaker.strip().upper()
+    speaker = _LEADING_ZERO_INT_RE.sub(r"\1", speaker)
 
     if not speaker.endswith(":"):
         speaker += ":"

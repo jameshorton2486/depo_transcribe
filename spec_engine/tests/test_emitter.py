@@ -76,3 +76,53 @@ def test_emitter_splits_long_answer_into_paragraphs():
     )
     rendered = emit_blocks(normalize_speakers(enforce_structure(classified)))
     assert rendered.count("\tA.\t") == 2
+
+
+# ── normalize_speaker leading-zero canonicalization ────────────────────
+
+
+from spec_engine.emitter import normalize_speaker
+
+
+def test_normalize_speaker_single_digit_unchanged():
+    assert normalize_speaker("Speaker 1") == "SPEAKER 1:"
+    assert normalize_speaker("Speaker 0") == "SPEAKER 0:"
+    assert normalize_speaker("Speaker 9") == "SPEAKER 9:"
+
+
+def test_normalize_speaker_strips_leading_zero_from_two_digits():
+    assert normalize_speaker("Speaker 01") == "SPEAKER 1:"
+    assert normalize_speaker("Speaker 09") == "SPEAKER 9:"
+    assert normalize_speaker("Speaker 00") == "SPEAKER 0:"
+
+
+def test_normalize_speaker_canonicalizes_padded_and_unpadded_to_same_form():
+    # The drift fix: same id, different padding, must canonicalize equal.
+    assert normalize_speaker("Speaker 01") == normalize_speaker("Speaker 1")
+    assert normalize_speaker("speaker 03") == normalize_speaker("Speaker 3")
+
+
+def test_normalize_speaker_preserves_already_canonical_two_digit():
+    # Real two-digit ids (10, 11, ...) are not padded so they pass through.
+    assert normalize_speaker("Speaker 10") == "SPEAKER 10:"
+    assert normalize_speaker("Speaker 12") == "SPEAKER 12:"
+
+
+def test_normalize_speaker_handles_existing_colon_and_whitespace():
+    assert normalize_speaker("  speaker 01:  ") == "SPEAKER 1:"
+    assert normalize_speaker("SPEAKER 1:") == "SPEAKER 1:"
+
+
+def test_normalize_speaker_does_not_strip_zeros_from_words():
+    # The strip is bounded to whole-numeric tokens; CSR numbers and the
+    # like must not be touched. (Speaker labels rarely contain these,
+    # but defense-in-depth: the regex requires an isolated numeric run.)
+    assert normalize_speaker("MR. 007") == "MR. 7:"
+    assert normalize_speaker("MS. SMITH 02") == "MS. SMITH 2:"
+    assert normalize_speaker("THE WITNESS") == "THE WITNESS:"
+    assert normalize_speaker("THE COURT REPORTER") == "THE COURT REPORTER:"
+
+
+def test_normalize_speaker_empty_and_none():
+    assert normalize_speaker(None) == ""
+    assert normalize_speaker("") == ""
