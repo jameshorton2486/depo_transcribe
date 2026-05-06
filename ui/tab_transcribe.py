@@ -1236,6 +1236,15 @@ class TranscribeTab(ctk.CTkFrame):
         self._case_files_expanded: bool = True
         self._intake_processing: bool = False
 
+        # Word-level review (Phase 1: low-confidence list + audio jump).
+        # Populated from the saved per-run JSON's "words" field after
+        # transcription completes; the UI panel cycles through these.
+        from core.word_review import WordReviewItem  # local import — avoid Tk-time cost
+        self._word_review_items: list[WordReviewItem] = []
+        self._current_review_index: int = 0
+        self._reviewed_word_indexes: set[int] = set()
+        self._vlc_player: Any | None = None  # lazy-init in _on_done
+
         self._build_ui()
 
     # ── UI Construction ──────────────────────────────────────────────────────
@@ -1851,6 +1860,92 @@ class TranscribeTab(ctk.CTkFrame):
             corner_radius=8,
         )
         self._apply_save_btn.pack(anchor="e", padx=16, pady=(4, 6))
+
+        # ── Word-review panel (gridded only after a run produces words) ────────
+        # Created here but not gridded; _show_word_review_section places it.
+        self._word_review_card = _make_card(body)
+        make_section_header(
+            self._word_review_card,
+            "⚠  Low-Confidence Word Review",
+            font_size=14,
+        ).pack(fill="x", padx=12, pady=(6, 2))
+        self._word_review_status_label = ctk.CTkLabel(
+            self._word_review_card,
+            text="No transcription run yet.",
+            font=ctk.CTkFont(size=11),
+            text_color=TEXT_SECONDARY,
+            justify="left",
+        )
+        self._word_review_status_label.pack(anchor="w", padx=16, pady=(0, 2))
+        self._word_review_counts_label = ctk.CTkLabel(
+            self._word_review_card,
+            text="Flagged: 0    Reviewed: 0    Remaining: 0",
+            font=ctk.CTkFont(family="Courier New", size=11, weight="bold"),
+            text_color=TEXT_PRIMARY,
+        )
+        self._word_review_counts_label.pack(anchor="w", padx=16, pady=(0, 2))
+        self._word_review_current_label = ctk.CTkLabel(
+            self._word_review_card,
+            text="",
+            font=ctk.CTkFont(family="Courier New", size=13),
+            text_color=TEXT_PRIMARY,
+            justify="left",
+        )
+        self._word_review_current_label.pack(anchor="w", padx=16, pady=(2, 6))
+
+        word_review_btn_row = ctk.CTkFrame(
+            self._word_review_card, fg_color="transparent"
+        )
+        word_review_btn_row.pack(fill="x", padx=16, pady=(0, 8))
+        self._word_review_prev_btn = ctk.CTkButton(
+            word_review_btn_row,
+            text="← Prev Flag",
+            width=110,
+            height=30,
+            font=utility_font,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            command=self._on_word_review_prev,
+            corner_radius=8,
+        )
+        self._word_review_prev_btn.pack(side="left", padx=(0, 6))
+        self._word_review_play_btn = ctk.CTkButton(
+            word_review_btn_row,
+            text="▶ Play From Word",
+            width=140,
+            height=30,
+            font=utility_font,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            command=self._on_word_review_play,
+            corner_radius=8,
+        )
+        self._word_review_play_btn.pack(side="left", padx=(0, 6))
+        self._word_review_next_btn = ctk.CTkButton(
+            word_review_btn_row,
+            text="Next Flag →",
+            width=110,
+            height=30,
+            font=utility_font,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            command=self._on_word_review_next,
+            corner_radius=8,
+        )
+        self._word_review_next_btn.pack(side="left", padx=(0, 6))
+        self._word_review_mark_btn = ctk.CTkButton(
+            word_review_btn_row,
+            text="✓ Mark Reviewed",
+            width=140,
+            height=30,
+            font=utility_font,
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
+            text_color="white",
+            command=self._on_word_review_mark,
+            corner_radius=8,
+        )
+        self._word_review_mark_btn.pack(side="left", padx=(0, 6))
 
         # ── Footer strip ───────────────────────────────────────────────────────
         self._footer_strip = ctk.CTkFrame(
@@ -3322,6 +3417,10 @@ class TranscribeTab(ctk.CTkFrame):
 
             # Show speaker labels section
             self._show_speaker_section()
+            # Phase 1: low-confidence word review panel populated from
+            # the saved per-run JSON. Tolerant of missing/malformed
+            # JSON — the panel renders an explanatory status string.
+            self._show_word_review_section(result.get("json_path"))
 
             if self._last_transcript_path and os.path.isfile(
                 self._last_transcript_path
@@ -3611,6 +3710,208 @@ class TranscribeTab(ctk.CTkFrame):
             sticky="ew",
             pady=(0, _SECTION_GAP_Y),
         )
+
+    # ── Word-level review panel (Phase 1) ────────────────────────────────────
+
+    def _show_word_review_section(self, json_path: str | None) -> None:
+        """Load the per-run JSON's word list, build review items, and
+        surface the panel. Tolerant of missing JSON / words — the panel
+        always shows a status string.
+        """
+        from core.word_review import build_review_items
+
+        # Reset state so a re-run cleanly supersedes the previous one.
+        self._word_review_items = []
+        self._current_review_index = 0
+        self._reviewed_word_indexes = set()
+
+        words: list = []
+        load_error: str | None = None
+        if json_path and os.path.isfile(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                words = list(payload.get("words") or [])
+            except Exception as exc:
+                load_error = f"Could not read word data: {exc}"
+        else:
+            load_error = "No word-level data on disk for this run."
+
+        if load_error:
+            self._word_review_status_label.configure(text=load_error)
+        else:
+            self._word_review_items = build_review_items(words, threshold=0.75)
+            if not self._word_review_items:
+                self._word_review_status_label.configure(
+                    text="No word-level review data available."
+                )
+            else:
+                self._word_review_status_label.configure(
+                    text=f"Reviewing {len(self._word_review_items)} flagged "
+                    f"words (confidence < 75%)."
+                )
+
+        # Lazy-init VLC. If python-vlc / VLC runtime is missing the
+        # adapter reports is_available=False and we just disable the
+        # Play button. Loading the audio file (selected on the source
+        # card) is what enables jump_to to work.
+        if self._vlc_player is None:
+            try:
+                from core.vlc_player import VLCPlayer
+                self._vlc_player = VLCPlayer()
+            except Exception:
+                self._vlc_player = None
+        audio_loaded = False
+        if (
+            self._vlc_player is not None
+            and getattr(self._vlc_player, "is_available", False)
+            and self._selected_file
+            and os.path.isfile(self._selected_file)
+        ):
+            try:
+                audio_loaded = bool(self._vlc_player.load(self._selected_file))
+            except Exception:
+                audio_loaded = False
+        self._word_review_audio_loaded = audio_loaded
+        if not audio_loaded:
+            self._word_review_play_btn.configure(state="disabled")
+        else:
+            self._word_review_play_btn.configure(state="normal")
+
+        self._update_word_review_display()
+
+        # Place the card below the speaker card.
+        body = self._speaker_card.master
+        self._word_review_card.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            in_=body,
+            sticky="ew",
+            pady=(0, _SECTION_GAP_Y),
+        )
+
+    def _update_word_review_display(self) -> None:
+        """Refresh counts + current-word labels from the in-memory state."""
+        flagged = len(self._word_review_items)
+        reviewed = len(self._reviewed_word_indexes)
+        remaining = max(0, flagged - reviewed)
+        self._word_review_counts_label.configure(
+            text=f"Flagged: {flagged}    Reviewed: {reviewed}    Remaining: {remaining}"
+        )
+
+        if not flagged:
+            self._word_review_current_label.configure(text="")
+            for btn in (
+                self._word_review_prev_btn,
+                self._word_review_next_btn,
+                self._word_review_mark_btn,
+            ):
+                btn.configure(state="disabled")
+            return
+
+        if remaining == 0:
+            self._word_review_current_label.configure(
+                text="✓  All flagged words reviewed."
+            )
+            for btn in (
+                self._word_review_prev_btn,
+                self._word_review_next_btn,
+                self._word_review_mark_btn,
+            ):
+                btn.configure(state="disabled")
+            return
+
+        # Clamp cursor
+        if self._current_review_index < 0:
+            self._current_review_index = 0
+        if self._current_review_index >= flagged:
+            self._current_review_index = flagged - 1
+
+        item = self._word_review_items[self._current_review_index]
+        timestamp = self._format_timestamp_mm_ss(item.start)
+        confidence_pct = int(round(item.confidence * 100))
+        marker = "  (reviewed)" if item.reviewed else ""
+        self._word_review_current_label.configure(
+            text=(
+                f"#{self._current_review_index + 1} / {flagged}    "
+                f"\"{item.punctuated_word}\"    "
+                f"conf {confidence_pct}%    {timestamp}{marker}"
+            )
+        )
+        for btn in (
+            self._word_review_prev_btn,
+            self._word_review_next_btn,
+            self._word_review_mark_btn,
+        ):
+            btn.configure(state="normal")
+        if not getattr(self, "_word_review_audio_loaded", False):
+            self._word_review_play_btn.configure(state="disabled")
+
+    @staticmethod
+    def _format_timestamp_mm_ss(seconds: float) -> str:
+        secs = max(0, int(seconds or 0))
+        return f"{secs // 60:02d}:{secs % 60:02d}"
+
+    def _on_word_review_prev(self) -> None:
+        if not self._word_review_items:
+            return
+        # Step backward; skip already-reviewed.
+        idx = self._current_review_index - 1
+        while idx >= 0 and self._word_review_items[idx].reviewed:
+            idx -= 1
+        if idx < 0:
+            # Fall back to plain decrement so the user can still see the
+            # last word even if all preceding are reviewed.
+            idx = max(0, self._current_review_index - 1)
+        self._current_review_index = idx
+        self._update_word_review_display()
+
+    def _on_word_review_next(self) -> None:
+        if not self._word_review_items:
+            return
+        n = len(self._word_review_items)
+        idx = self._current_review_index + 1
+        while idx < n and self._word_review_items[idx].reviewed:
+            idx += 1
+        if idx >= n:
+            idx = min(n - 1, self._current_review_index + 1)
+        self._current_review_index = idx
+        self._update_word_review_display()
+
+    def _on_word_review_mark(self) -> None:
+        if not self._word_review_items:
+            return
+        item = self._word_review_items[self._current_review_index]
+        item.reviewed = True
+        self._reviewed_word_indexes.add(item.index)
+        # Advance to next unreviewed if any.
+        n = len(self._word_review_items)
+        idx = self._current_review_index + 1
+        while idx < n and self._word_review_items[idx].reviewed:
+            idx += 1
+        if idx < n:
+            self._current_review_index = idx
+        self._update_word_review_display()
+
+    def _on_word_review_play(self) -> None:
+        if not self._word_review_items:
+            return
+        if self._vlc_player is None or not getattr(
+            self._vlc_player, "is_available", False
+        ):
+            self._word_review_status_label.configure(
+                text="Audio sync unavailable (VLC not loaded)."
+            )
+            self._word_review_play_btn.configure(state="disabled")
+            return
+        item = self._word_review_items[self._current_review_index]
+        try:
+            self._vlc_player.jump_to(item.start)
+        except Exception as exc:
+            self._word_review_status_label.configure(
+                text=f"Audio jump failed: {exc}"
+            )
 
     @staticmethod
     def _set_speaker_entry_value(entry: ctk.CTkEntry, value: str):
