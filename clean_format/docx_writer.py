@@ -245,8 +245,6 @@ def _write_proceedings(
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.DOUBLE
         paragraph.paragraph_format.space_after = Pt(0)
-        paragraph.paragraph_format.left_indent = Inches(0)
-        paragraph.paragraph_format.first_line_indent = Inches(0)
         # Canonical UFM tab stops per spec_engine/ufm_rules.py:25
         # (UFM Section 2.102.11). The "\tQ.\t..." / "\tA.\t..." text from
         # spec_engine/emitter.py lands the letter at 0.5" and the body at
@@ -256,13 +254,27 @@ def _write_proceedings(
         paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
 
         if block["kind"] == "qa":
+            # Hanging indent for Q/A wrap. left_indent=1.0" sets the
+            # natural left edge of the paragraph to the text column;
+            # first_line_indent=-0.5" pulls the first line back so "Q."
+            # / "A." land at the 0.5" tab stop. The tab between label
+            # and text then pushes content to the 1.0" stop, and any
+            # wrapped continuation lines hang at 1.0" so they align
+            # under the first character of the question/answer body —
+            # the standard court-reporter Q/A presentation.
+            paragraph.paragraph_format.left_indent = Inches(1.0)
+            paragraph.paragraph_format.first_line_indent = Inches(-0.5)
             paragraph.add_run(f"{block['label']}\t{block['text']}")
         elif block["kind"] == "speaker":
+            paragraph.paragraph_format.left_indent = Inches(0)
+            paragraph.paragraph_format.first_line_indent = Inches(0)
             if block["label"]:
                 paragraph.add_run(f"{block['label']}  {block['text']}")
             else:
                 paragraph.add_run(_double_space_sentences(block["text"]))
         else:
+            paragraph.paragraph_format.left_indent = Inches(0)
+            paragraph.paragraph_format.first_line_indent = Inches(0)
             run = paragraph.add_run(block["label"])
             run.bold = True
 

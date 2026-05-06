@@ -112,6 +112,44 @@ def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
     assert 1371600 in tab_positions  # 1.5"
 
 
+def test_write_proceedings_qa_paragraph_uses_hanging_indent_for_wrap():
+    """Q/A paragraphs must hang at 1.0" so wrapped continuation lines
+    align under the first character of the question/answer body
+    (court-reporter convention). Achieved with left_indent=1.0" and
+    first_line_indent=-0.5"; the negative offset puts the first line
+    at column 0.5" so the "Q."/"A." letter lands on the 0.5" tab
+    stop, the tab pushes text to 1.0", and wrapped lines fall back
+    to the 1.0" left edge.
+    """
+    document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
+    qa_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text.startswith("Q.\t")
+    )
+    pf = qa_paragraph.paragraph_format
+    # 914400 EMU = 1.0", -457200 EMU = -0.5"
+    assert pf.left_indent == 914400
+    assert pf.first_line_indent == -457200
+
+
+def test_write_proceedings_speaker_paragraph_does_not_hang():
+    """Speaker blocks (e.g. 'MR. SMITH:  Objection. Form.') stay at
+    the left margin — only Q/A bodies hang.
+    """
+    document = build_deposition_document(
+        "MR. SMITH:\tObjection. Form.", _case_meta()
+    )
+    speaker_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if "MR. SMITH" in paragraph.text and "Objection" in paragraph.text
+    )
+    pf = speaker_paragraph.paragraph_format
+    assert (pf.left_indent or 0) == 0
+    assert (pf.first_line_indent or 0) == 0
+
+
 def test_sanitize_filename_component_replaces_spaces_and_punctuation():
     assert sanitize_filename_component(
         "CARAM Deposition April 9, 2026 at 800 a.m."
