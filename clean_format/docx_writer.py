@@ -254,17 +254,22 @@ def _write_proceedings(
         paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
 
         if block["kind"] == "qa":
-            # Hanging indent for Q/A wrap. left_indent=1.0" sets the
-            # natural left edge of the paragraph to the text column;
-            # first_line_indent=-0.5" pulls the first line back so "Q."
-            # / "A." land at the 0.5" tab stop. The tab between label
-            # and text then pushes content to the 1.0" stop, and any
-            # wrapped continuation lines hang at 1.0" so they align
-            # under the first character of the question/answer body —
-            # the standard court-reporter Q/A presentation.
+            # Hanging indent for Q/A wrap, with the canonical leading-tab
+            # text shape "\tQ.\t{body}" / "\tA.\t{body}" (matches what
+            # spec_engine/emitter.py emits).
+            #
+            # Geometry:
+            #   left_indent       = 1.0"   — wrapped continuation lines
+            #                                hang at 1.0", aligning under
+            #                                the first character of body.
+            #   first_line_indent = -1.0"  — first-line origin is column 0
+            #                                so the leading "\t" lands the
+            #                                "Q."/"A." letter at the 0.5"
+            #                                tab stop, then the body tab
+            #                                pushes text to the 1.0" stop.
             paragraph.paragraph_format.left_indent = Inches(1.0)
-            paragraph.paragraph_format.first_line_indent = Inches(-0.5)
-            paragraph.add_run(f"{block['label']}\t{block['text']}")
+            paragraph.paragraph_format.first_line_indent = Inches(-1.0)
+            paragraph.add_run(f"\t{block['label']}\t{block['text']}")
         elif block["kind"] == "speaker":
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0)

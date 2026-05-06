@@ -101,7 +101,7 @@ def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
     qa_paragraph = next(
         paragraph
         for paragraph in document.paragraphs
-        if paragraph.text.startswith("Q.\t")
+        if paragraph.text.startswith("\tQ.\t")
     )
     tab_positions = [tab.position for tab in qa_paragraph.paragraph_format.tab_stops]
     # Canonical UFM tab stops at 0.5" / 1.0" / 1.5" (UFM Section 2.102.11),
@@ -114,23 +114,38 @@ def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
 
 def test_write_proceedings_qa_paragraph_uses_hanging_indent_for_wrap():
     """Q/A paragraphs must hang at 1.0" so wrapped continuation lines
-    align under the first character of the question/answer body
-    (court-reporter convention). Achieved with left_indent=1.0" and
-    first_line_indent=-0.5"; the negative offset puts the first line
-    at column 0.5" so the "Q."/"A." letter lands on the 0.5" tab
-    stop, the tab pushes text to 1.0", and wrapped lines fall back
-    to the 1.0" left edge.
+    align under the first character of the question/answer body. The
+    canonical text shape is "\tQ.\t{body}" / "\tA.\t{body}" (matches
+    spec_engine/emitter.py). Geometry:
+      left_indent       = 1.0"   wrap continuation column
+      first_line_indent = -1.0"  first-line origin = column 0; the
+                                 leading tab lands "Q."/"A." at the
+                                 0.5" tab stop and the body tab
+                                 pushes text to the 1.0" stop.
     """
     document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
     qa_paragraph = next(
         paragraph
         for paragraph in document.paragraphs
-        if paragraph.text.startswith("Q.\t")
+        if paragraph.text.startswith("\tQ.\t")
     )
     pf = qa_paragraph.paragraph_format
-    # 914400 EMU = 1.0", -457200 EMU = -0.5"
+    # 914400 EMU = 1.0", -914400 EMU = -1.0"
     assert pf.left_indent == 914400
-    assert pf.first_line_indent == -457200
+    assert pf.first_line_indent == -914400
+
+
+def test_write_proceedings_qa_run_text_preserves_leading_tab():
+    """The Q/A run text must include the leading tab so the spec_engine
+    canonical shape "\tQ.\t..." / "\tA.\t..." is preserved through the
+    DOCX writer (not stripped or re-built without the leading tab)."""
+    document = build_deposition_document("Q.\tQuestion\n\nA.\tAnswer", _case_meta())
+    qa_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if "Question" in paragraph.text
+    )
+    assert qa_paragraph.text == "\tQ.\tQuestion"
 
 
 def test_write_proceedings_speaker_paragraph_does_not_hang():

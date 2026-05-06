@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import subprocess
+import textwrap
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -238,6 +239,44 @@ def _normalize_preview_sentence_spacing(text: str) -> str:
     return _SENTENCE_SPACING_RE.sub(r"\1  ", " ".join((text or "").split()).strip())
 
 
+def format_qa_for_plain_text(label: str, text: str, width: int = 75) -> str:
+    """Render one Q/A line for Notepad / TXT export with deterministic
+    space-based wrap. Notepad has no Word tab stops, so we pad the
+    canonical "\\tQ.\\t..." / "\\tA.\\t..." shape into fixed-width
+    columns instead.
+
+    Layout (Courier-friendly fixed-width):
+      first line: 8 spaces + label + 4 spaces + body          -> body at col 14
+      wrapped:    14 spaces + body                            -> wrap at col 14
+
+    `width` is the total line width (including the prefix); body is
+    re-wrapped to fit the available space after the prefix using
+    textwrap.wrap, which preserves word boundaries and never inserts
+    arrows or visible tab markers.
+    """
+    first_prefix = "        " + label + "    "  # 8 + len(label) + 4
+    cont_prefix = " " * 14
+    body = (text or "").strip()
+    if not body:
+        return first_prefix.rstrip()
+    # replace_whitespace=False preserves the canonical double-space-after-
+    # sentence-ending-punctuation convention that
+    # _normalize_preview_sentence_spacing has already applied. Without it
+    # textwrap collapses every run of whitespace to a single space, which
+    # would silently break the spacing contract.
+    wrapped_lines = textwrap.wrap(
+        body,
+        width=width,
+        initial_indent=first_prefix,
+        subsequent_indent=cont_prefix,
+        break_long_words=False,
+        break_on_hyphens=False,
+        replace_whitespace=False,
+        drop_whitespace=True,
+    )
+    return "\n".join(wrapped_lines)
+
+
 def _format_transcript_for_txt(formatted_text: str) -> str:
     """
     Reformat clean-format output into a UFM-style plain-text view for Notepad
@@ -277,12 +316,12 @@ def _format_transcript_for_txt(formatted_text: str) -> str:
         text = _normalize_preview_sentence_spacing(block["text"])
 
         if block_type == "question":
-            lines.append(f"\tQ.\t{text}")
+            lines.append(format_qa_for_plain_text("Q.", text))
             index += 1
             continue
 
         if block_type == "answer":
-            lines.append(f"\tA.\t{text}")
+            lines.append(format_qa_for_plain_text("A.", text))
             lines.append("")
             index += 1
             continue
@@ -311,7 +350,11 @@ def _format_transcript_for_txt(formatted_text: str) -> str:
         lines.append(text)
         index += 1
 
-    return "\n".join(lines).strip()
+    # Trim only trailing blank lines / whitespace. Leading whitespace on
+    # the first line is meaningful — Q/A blocks start at column 8 and
+    # speaker labels at column 4 — so .strip() would silently break
+    # alignment when the document opens with a Q/A or labeled block.
+    return "\n".join(lines).rstrip()
 
 
 def _save_transcript_as_txt(transcript_text: str, docx_path: str) -> str:
