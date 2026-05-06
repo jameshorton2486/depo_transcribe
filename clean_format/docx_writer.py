@@ -247,9 +247,13 @@ def _write_proceedings(
         paragraph.paragraph_format.space_after = Pt(0)
         paragraph.paragraph_format.left_indent = Inches(0)
         paragraph.paragraph_format.first_line_indent = Inches(0)
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.25))
-        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.625))
+        # Canonical UFM tab stops per spec_engine/ufm_rules.py:25
+        # (UFM Section 2.102.11). The "\tQ.\t..." / "\tA.\t..." text from
+        # spec_engine/emitter.py lands the letter at 0.5" and the body at
+        # 1.0"; the third stop at 1.5" exists for indented continuation.
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.5))
         paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.0))
+        paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(1.5))
 
         if block["kind"] == "qa":
             paragraph.add_run(f"{block['label']}\t{block['text']}")

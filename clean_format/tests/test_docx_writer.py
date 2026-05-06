@@ -104,9 +104,12 @@ def test_write_proceedings_sets_qa_tab_stops_to_requested_positions():
         if paragraph.text.startswith("Q.\t")
     )
     tab_positions = [tab.position for tab in qa_paragraph.paragraph_format.tab_stops]
-    assert 228600 in tab_positions
-    assert 571500 in tab_positions
-    assert 914400 in tab_positions
+    # Canonical UFM tab stops at 0.5" / 1.0" / 1.5" (UFM Section 2.102.11),
+    # mirrored from spec_engine/ufm_rules.py:25. EMU = English Metric Units;
+    # 914400 EMU = 1 inch.
+    assert 457200 in tab_positions   # 0.5"
+    assert 914400 in tab_positions   # 1.0"
+    assert 1371600 in tab_positions  # 1.5"
 
 
 def test_sanitize_filename_component_replaces_spaces_and_punctuation():
