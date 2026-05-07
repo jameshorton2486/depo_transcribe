@@ -260,6 +260,24 @@ def _apply_speaker_labels_to_text(text: str, speaker_map: dict[int, str]) -> str
     return _SPEAKER_LINE_RE.sub(_replace, text or "")
 
 
+def _resolve_raw_json_for_corrections(txt_path: Path | None) -> Path | None:
+    """Return the ``{base}_raw.json`` next to ``txt_path``, or ``None``.
+
+    Handles both the formatted transcript (``foo.txt``) and the raw text
+    file (``foo_raw.txt``); both resolve to ``foo_raw.json`` in the same
+    directory. Returns ``None`` if ``txt_path`` is falsy or the resolved
+    raw JSON does not exist on disk.
+    """
+    if not txt_path:
+        return None
+    txt_path = Path(txt_path)
+    stem = txt_path.stem
+    if stem.endswith("_raw"):
+        stem = stem[: -len("_raw")]
+    candidate = txt_path.parent / f"{stem}_raw.json"
+    return candidate if candidate.is_file() else None
+
+
 def _normalize_preview_sentence_spacing(text: str) -> str:
     return _SENTENCE_SPACING_RE.sub(r"\1  ", " ".join((text or "").split()).strip())
 
@@ -1901,6 +1919,36 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._apply_save_btn.pack(side="right")
 
+        # ── Corrections card (gridded into body row 2 only after a run) ────────
+        # Created here but not gridded; _show_corrections_section places it.
+        self._corrections_card = _make_card(body)
+        make_section_header(
+            self._corrections_card,
+            "✎ Run Corrections",
+            font_size=14,
+        ).pack(fill="x", padx=12, pady=(6, 2))
+        ctk.CTkLabel(
+            self._corrections_card,
+            text=(
+                "Apply spec_engine corrections (Q/A classification, name "
+                "spellings, legal formatting) to the current transcript."
+            ),
+            font=body_font,
+            text_color=TEXT_SECONDARY,
+        ).pack(anchor="w", padx=16, pady=(0, 4))
+        self._run_corrections_btn = ctk.CTkButton(
+            self._corrections_card,
+            text="✎  Run Corrections",
+            height=36,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
+            text_color="white",
+            command=self._run_corrections,
+            corner_radius=8,
+        )
+        self._run_corrections_btn.pack(anchor="e", padx=16, pady=(0, 6))
+
         # ── Word-review panel (gridded only after a run produces words) ────────
         # Created here but not gridded; _show_word_review_section places it.
         self._word_review_card = _make_card(body)
@@ -3457,6 +3505,7 @@ class TranscribeTab(ctk.CTkFrame):
 
             # Show speaker labels section
             self._show_speaker_section()
+            self._show_corrections_section()
             # Phase 1: low-confidence word review panel populated from
             # the saved per-run JSON. Tolerant of missing/malformed
             # JSON — the panel renders an explanatory status string.
@@ -4136,6 +4185,83 @@ class TranscribeTab(ctk.CTkFrame):
         if label is None:
             return
         label.configure(text=text, text_color=color)
+
+    # ── Run Corrections button ─────────────────────────────────────────────────
+
+    def _show_corrections_section(self):
+        """Place the corrections card into the body grid (row 2)."""
+        self._corrections_card.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            pady=(0, _SECTION_GAP_Y),
+        )
+
+    def _run_corrections(self):
+        """Spawn a background thread to call ``corrections_runner.run_corrections``.
+
+        Surfaces any exception from the runner in a messagebox; the UI
+        thread is only touched via ``self.after``.
+        """
+        if not self._current_txt_path:
+            messagebox.showerror("No transcript", "Load a transcript first.")
+            return
+
+        raw_json = _resolve_raw_json_for_corrections(
+            Path(self._current_txt_path)
+        )
+        if raw_json is None:
+            messagebox.showerror(
+                "Raw JSON not found",
+                (
+                    "Could not locate the *_raw.json next to:\n"
+                    f"{self._current_txt_path}\n\n"
+                    "Re-run transcription so the raw JSON is written, "
+                    "then try again."
+                ),
+            )
+            return
+
+        self._run_corrections_btn.configure(
+            state="disabled", text="Running…"
+        )
+        self.set_status("Running corrections…", "#FFD400")
+        self.append_log(f"Running corrections on {raw_json.name}")
+
+        def _worker(target_path: Path = raw_json) -> None:
+            try:
+                from core.corrections_runner import run_corrections
+
+                output_path = run_corrections(target_path)
+            except Exception as exc:  # noqa: BLE001 — surface any failure to the UI
+                message = str(exc) or exc.__class__.__name__
+                self.after(
+                    0, lambda msg=message: self._on_corrections_failed(msg)
+                )
+                return
+            self.after(
+                0, lambda p=output_path: self._on_corrections_done(p)
+            )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_corrections_done(self, output_path: Path) -> None:
+        """Re-enable the button and show success in the status bar."""
+        self._run_corrections_btn.configure(
+            state="normal", text="✎  Run Corrections"
+        )
+        self.set_status(f"Corrected: {output_path.name}", "#44FF44")
+        self.append_log(f"Corrections complete: {output_path}")
+
+    def _on_corrections_failed(self, error_message: str) -> None:
+        """Re-enable the button and show the error in a messagebox."""
+        self._run_corrections_btn.configure(
+            state="normal", text="✎  Run Corrections"
+        )
+        self.set_status("Corrections failed", "#FF4444")
+        self.append_log(f"Corrections error: {error_message}")
+        messagebox.showerror("Corrections Failed", error_message)
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
 
