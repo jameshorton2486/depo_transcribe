@@ -221,6 +221,26 @@ def _build_ui_quickfill_labels(suggestion: dict[str, Any] | None) -> list[str]:
 
 _SPEAKER_LINE_RE = re.compile(r"(^|\n)(Speaker\s+(\d+)):\s*", re.MULTILINE)
 _SENTENCE_SPACING_RE = re.compile(r"([.!?])\s+")
+_SPEAKER_ID_RE = re.compile(r"Speaker (\d+):")
+
+
+def _sorted_transcript_speaker_ids(text: str) -> list[str]:
+    """Extract every "Speaker N:" id from transcript text and return them
+    sorted **numerically**, not lexicographically.
+
+    Bug this guards against: prior code did
+        sorted(set(re.findall(r"Speaker (\\d+):", text)))
+    on string ids, so '10' sorted between '1' and '2'. That mis-ordered
+    list then got zip()'d against the ordered NOD suggestion list inside
+    _build_ui_speaker_defaults, which silently put Speaker 10 in the
+    "first NOD suggestion" slot (typically THE REPORTER) when the
+    transcript contained only two-digit speaker ids — the long-standing
+    "Speaker 10+ misclassified as court reporter" symptom.
+
+    Returns string-typed ids to match _build_ui_speaker_defaults'
+    existing input contract.
+    """
+    return sorted(set(_SPEAKER_ID_RE.findall(text or "")), key=int)
 
 
 def _apply_speaker_labels_to_text(text: str, speaker_map: dict[int, str]) -> str:
@@ -3647,8 +3667,9 @@ class TranscribeTab(ctk.CTkFrame):
             )
         )
 
-        # Find all unique speaker IDs in the transcript
-        speakers = sorted(set(re.findall(r"Speaker (\d+):", self._transcript_text)))
+        # Find all unique speaker IDs in the transcript. Numeric (not
+        # lexicographic) order — see _sorted_transcript_speaker_ids.
+        speakers = _sorted_transcript_speaker_ids(self._transcript_text)
         suggested_defaults = _build_ui_speaker_defaults(
             speakers,
             self._saved_speaker_map,
