@@ -68,7 +68,6 @@ _PRIMARY_BLUE_HOVER = "#3B82F6"
 _EMERALD = "#10B981"
 _REVIEW_BG = "#1D4ED8"
 _REVIEW_HOVER = "#2563EB"
-_INFO_CHIP_BG = "#172554"
 
 # Inline-status colors for the speaker-labels save feedback.
 _SPEAKER_SAVE_COLOR_OK = "#44FF44"     # green — full success
@@ -1539,15 +1538,6 @@ class TranscribeTab(ctk.CTkFrame):
         )
         _style_combo(self._quality_combo)
         self._quality_combo.grid(row=1, column=1, sticky="ew", pady=(0, 4))
-
-        info_chip = ctk.CTkFrame(settings_body, fg_color=_INFO_CHIP_BG, corner_radius=6)
-        info_chip.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
-        ctk.CTkLabel(
-            info_chip,
-            text="ⓘ Estimated processing time: ~4m 30s",
-            font=ctk.CTkFont(size=11),
-            text_color="#BFDBFE",
-        ).pack(anchor="w", padx=10, pady=3)
 
         self._audio_tier_label = ctk.CTkLabel(
             settings_body,
