@@ -96,28 +96,58 @@ def _is_likely_question(text: str) -> bool:
     return word_count >= _MIN_WORDS_FOR_QUESTION_WORD_START
 
 
-def _is_likely_answer(text: str, prior_type: str | None) -> bool:
+def _is_likely_answer(
+    text: str,
+    prior_type: str | None,
+    prior_speaker: str | None,
+    current_speaker: str,
+    current_classifier_type: str,
+) -> bool:
     """Return True only when ``text`` strongly looks like an answer.
 
     Rules (all must hold):
       * The immediately prior emitted block's type was ``question``.
-      * Trimmed lowercased text, with trailing sentence-ending
-        punctuation stripped, is in ``STANDALONE_ANSWER_WORDS``.
+      * The prior emitted block's speaker is known and DIFFERS from the
+        current block's speaker. Same-speaker continuations are not
+        answers — they're the asker continuing to talk.
+      * Either:
+          - Trimmed lowercased text, with trailing sentence-ending
+            punctuation stripped, is in ``STANDALONE_ANSWER_WORDS``
+            (canonical bare answer like ``Yes.`` / ``No.`` / ``Correct.``), OR
+          - The classifier originally typed this block as ``colloquy``
+            AND ``_is_likely_question`` returns False on the text. This
+            is the contextual-colloquy fallback: a witness's substantive
+            response to a question (e.g. "Gilberto Rodriguez Cavazos.")
+            doesn't match the bare-word set but is still semantically
+            an answer when the speaker has changed and the text isn't
+            itself a question.
 
-    The trailing-punctuation strip lives here in the helper rather than
-    in the constant: ``"Yes."``, ``"Yes"``, and ``"Yes!"`` should all
-    match the canonical ``"yes"`` entry without polluting the constant
-    with every punctuation variant.
+    The speaker-change requirement is what prevents a question-asker's
+    own follow-up text from being mistyped as an answer to their own
+    question. The trailing-punctuation strip lives in the helper rather
+    than in the constant: ``"Yes."``, ``"Yes"``, and ``"Yes!"`` all match
+    the canonical ``"yes"`` entry without polluting the constant.
 
-    The prior implementation also accepted ``len(text.split()) <= 6`` as
-    sufficient grounds for re-typing as ``answer``. That clause is removed
-    here because it produced false answer typings on short colloquy lines
-    that happened to follow a true question.
+    The prior implementation accepted ``len(text.split()) <= 6`` as
+    sufficient grounds for re-typing as ``answer``. That clause is
+    replaced here by the speaker-change + contextual-colloquy rule,
+    which captures the same "witness's short response after a question"
+    intuition without typing every short colloquy line that happens to
+    follow a question.
     """
     if prior_type != "question":
         return False
+    if prior_speaker is None or current_speaker == prior_speaker:
+        return False
+
     stripped = text.strip().lower().rstrip(".,!?;:")
-    return stripped in STANDALONE_ANSWER_WORDS
+    if stripped in STANDALONE_ANSWER_WORDS:
+        return True
+
+    if current_classifier_type == "colloquy" and not _is_likely_question(text):
+        return True
+
+    return False
 
 
 def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
@@ -137,7 +167,11 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
         as testimony.
       * After the gate opens, ``_is_likely_question`` and
         ``_is_likely_answer`` decide re-typing with deterministic rules.
-        See those helpers for the exact criteria.
+        Both helpers receive enough context (text + prior emitted type
+        + prior emitted speaker + current speaker + current classifier
+        type) to apply the speaker-change rule that distinguishes a
+        witness's substantive answer from the asker's own continuation
+        text. See those helpers for the exact criteria.
 
     Existing behaviors preserved:
       * ``directive`` and ``oath`` blocks pass through with no re-typing.
@@ -147,6 +181,7 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
     """
     fixed: list[TranscriptBlock] = []
     last_type: str | None = None
+    prior_speaker: str | None = None
     seen_deposition_marker: bool = False
 
     for block in blocks:
@@ -160,9 +195,11 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
         if block.type in {"directive", "oath"}:
             fixed.append(block)
             last_type = block.type
+            prior_speaker = block.speaker
             continue
 
         normalized = block
+        original_classifier_type = block.type
 
         if seen_deposition_marker:
             if _is_likely_question(block.text):
@@ -173,7 +210,13 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     source_type=block.source_type,
                     examiner=block.examiner,
                 )
-            elif _is_likely_answer(block.text, last_type):
+            elif _is_likely_answer(
+                block.text,
+                last_type,
+                prior_speaker,
+                block.speaker,
+                original_classifier_type,
+            ):
                 normalized = TranscriptBlock(
                     speaker=block.speaker,
                     text=block.text,
@@ -194,10 +237,12 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     examiner=previous.examiner,
                 )
                 last_type = fixed[-1].type
+                prior_speaker = fixed[-1].speaker
                 continue
 
         fixed.append(normalized)
         last_type = normalized.type
+        prior_speaker = normalized.speaker
 
     return fixed
 

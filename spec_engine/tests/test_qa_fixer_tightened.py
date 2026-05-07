@@ -71,23 +71,99 @@ class TestIsLikelyQuestion:
 
 
 class TestIsLikelyAnswer:
-    def test_yes_after_question(self):
-        assert _is_likely_answer("Yes.", prior_type="question") is True
+    """The signature is now speaker-aware:
+        _is_likely_answer(text, prior_type, prior_speaker,
+                          current_speaker, current_classifier_type)
+    """
+
+    def test_yes_after_question_from_different_speaker(self):
+        # Canonical bare answer with speaker change → answer.
+        assert _is_likely_answer(
+            "Yes.",
+            prior_type="question",
+            prior_speaker="Speaker 1",
+            current_speaker="Speaker 0",
+            current_classifier_type="colloquy",
+        ) is True
 
     def test_yes_not_after_question(self):
-        assert _is_likely_answer("Yes.", prior_type="colloquy") is False
+        # Prior wasn't a question → not an answer.
+        assert _is_likely_answer(
+            "Yes.",
+            prior_type="colloquy",
+            prior_speaker="Speaker 1",
+            current_speaker="Speaker 0",
+            current_classifier_type="colloquy",
+        ) is False
 
-    def test_long_answer_no_longer_qualifies_by_length(self):
-        # Old rule: any text <=6 words after a question → answer.
-        # New rule: must be in STANDALONE_ANSWER_WORDS.
-        assert _is_likely_answer("Around three days ago.", prior_type="question") is False
+    def test_correct_after_question_from_different_speaker(self):
+        assert _is_likely_answer(
+            "Correct.",
+            prior_type="question",
+            prior_speaker="Speaker 1",
+            current_speaker="Speaker 0",
+            current_classifier_type="colloquy",
+        ) is True
 
-    def test_correct_after_question(self):
-        assert _is_likely_answer("Correct.", prior_type="question") is True
+    def test_witness_substantive_answer_via_colloquy_fallback(self):
+        # The Cavazos regression case: witness's name response after
+        # question from a different speaker. Doesn't match the
+        # bare-word set, but qualifies via colloquy + speaker-change +
+        # not-a-question.
+        assert _is_likely_answer(
+            "Gilberto Rodriguez Cavazos.",
+            prior_type="question",
+            prior_speaker="Speaker 2",
+            current_speaker="Speaker 4",
+            current_classifier_type="colloquy",
+        ) is True
 
-    def test_short_colloquy_no_longer_re_typed(self):
-        # Old rule would have re-typed this; new rule does not.
-        assert _is_likely_answer("Right, exactly that.", prior_type="question") is False
+    def test_same_speaker_continuation_after_own_question_not_answer(self):
+        # Asker continues talking after their own question. No speaker
+        # change → not an answer, even if the text is canonical.
+        assert _is_likely_answer(
+            "Yes.",
+            prior_type="question",
+            prior_speaker="Speaker 2",
+            current_speaker="Speaker 2",
+            current_classifier_type="colloquy",
+        ) is False
+
+    def test_question_shaped_colloquy_after_question_not_answer(self):
+        # "Excuse me?" — colloquy ending with `?` from a different
+        # speaker after a question. _is_likely_question returns True
+        # for it, so the colloquy fallback's `not _is_likely_question`
+        # clause fires negatively. Not an answer.
+        assert _is_likely_answer(
+            "Excuse me?",
+            prior_type="question",
+            prior_speaker="Speaker 1",
+            current_speaker="Speaker 0",
+            current_classifier_type="colloquy",
+        ) is False
+
+    def test_pre_classified_answer_not_via_colloquy_fallback(self):
+        # Block already typed `answer` by the classifier. The colloquy
+        # fallback doesn't apply (it's gated on classifier=colloquy).
+        # The bare-word check still runs, but with substantive text
+        # outside the set, it returns False here.
+        assert _is_likely_answer(
+            "Around three days ago.",
+            prior_type="question",
+            prior_speaker="Speaker 1",
+            current_speaker="Speaker 0",
+            current_classifier_type="answer",  # not colloquy
+        ) is False
+
+    def test_no_prior_speaker_returns_false(self):
+        # First block in the walk — prior_speaker is None.
+        assert _is_likely_answer(
+            "Yes.",
+            prior_type="question",
+            prior_speaker=None,
+            current_speaker="Speaker 0",
+            current_classifier_type="colloquy",
+        ) is False
 
 
 # ── Pre-deposition gate ───────────────────────────────────────────────────────
