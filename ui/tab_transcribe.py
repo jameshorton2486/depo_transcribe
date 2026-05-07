@@ -3821,10 +3821,13 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._update_word_review_display()
 
-        # Place the card below the speaker card.
+        # Place the card below the speaker + corrections cards. Speaker
+        # is row=1, corrections is row=2, so the word-review panel sits
+        # at row=3 to keep the workflow order: assign labels -> correct
+        # -> review.
         body = self._speaker_card.master
         self._word_review_card.grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=3,
             in_=body,
