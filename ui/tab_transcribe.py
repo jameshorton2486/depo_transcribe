@@ -70,6 +70,11 @@ _REVIEW_BG = "#1D4ED8"
 _REVIEW_HOVER = "#2563EB"
 _INFO_CHIP_BG = "#172554"
 
+# Inline-status colors for the speaker-labels save feedback.
+_SPEAKER_SAVE_COLOR_OK = "#44FF44"     # green — full success
+_SPEAKER_SAVE_COLOR_WARN = "#DDAA00"   # amber — partial / no-op
+_SPEAKER_SAVE_COLOR_ERROR = "#FF6666"  # red — pre-flight reject
+
 
 def _normalize_ui_speaker_map(raw: dict | None) -> dict[int, str]:
     """Normalize persisted speaker_map keys to int IDs for UI use."""
@@ -1868,8 +1873,23 @@ class TranscribeTab(ctk.CTkFrame):
             self._speaker_card, fg_color="transparent"
         )
         self._speaker_rows_frame.pack(fill="x", padx=16)
+        # Inline save-status label sits next to the Apply button so the
+        # operator gets visible feedback in the same card, not just at
+        # the page-top status label which is easy to miss at the bottom
+        # of the page.
+        apply_row = ctk.CTkFrame(self._speaker_card, fg_color="transparent")
+        apply_row.pack(fill="x", padx=16, pady=(4, 6))
+        self._speaker_save_status_label = ctk.CTkLabel(
+            apply_row,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_SECONDARY,
+            anchor="w",
+            justify="left",
+        )
+        self._speaker_save_status_label.pack(side="left", fill="x", expand=True)
         self._apply_save_btn = ctk.CTkButton(
-            self._speaker_card,
+            apply_row,
             text="\u2713  Apply Speaker Labels",
             height=36,
             font=ctk.CTkFont(size=13, weight="bold"),
@@ -1879,7 +1899,7 @@ class TranscribeTab(ctk.CTkFrame):
             command=self._apply_and_save_labels,
             corner_radius=8,
         )
-        self._apply_save_btn.pack(anchor="e", padx=16, pady=(4, 6))
+        self._apply_save_btn.pack(side="right")
 
         # ── Word-review panel (gridded only after a run produces words) ────────
         # Created here but not gridded; _show_word_review_section places it.
@@ -3940,18 +3960,41 @@ class TranscribeTab(ctk.CTkFrame):
         entry.insert(0, value)
 
     def _apply_and_save_labels(self):
-        """
-        Apply speaker label assignments in two ways:
+        """Apply speaker label assignments and persist them.
 
-        1. Text replacement in the .txt transcript file
-           (Speaker 0: → MR. GARCIA:, etc.)
+        Outcomes are surfaced in three places so a "nothing happened"
+        click can never be silent:
+          - inline label next to the Apply button (the operator's
+            actual gaze location at the bottom of the page)
+          - logger.info / logger.warning lines (logs/pipeline.log)
+          - the page-top status label (legacy; kept for parity)
 
-        2. Persist the speaker_map to self._ufm_fields and write it to
-           the ufm_fields.json file on disk so the corrections pipeline
-           and AI corrector automatically use the correct speaker names.
+        Two flows:
+          1. Text replacement in the .txt transcript file.
+          2. Persist the speaker_map to job_config.json under
+             ufm_fields.speaker_map so the corrections pipeline picks
+             up the right speaker identities.
         """
+        # Pre-flight diagnostics — surface no-op cases visibly.
         if not self._current_txt_path:
-            messagebox.showerror("No file", "No transcript file path available.")
+            self._set_speaker_save_status(
+                "No transcript loaded. Run a transcription first.",
+                _SPEAKER_SAVE_COLOR_ERROR,
+            )
+            logger.warning(
+                "[SpeakerLabels] Apply clicked but _current_txt_path is None"
+            )
+            return
+
+        if not self._speaker_entries:
+            self._set_speaker_save_status(
+                "No Speaker N: rows visible. Re-run transcription, "
+                "then assign labels.",
+                _SPEAKER_SAVE_COLOR_ERROR,
+            )
+            logger.warning(
+                "[SpeakerLabels] Apply clicked but _speaker_entries is empty"
+            )
             return
 
         # ── Build the speaker map from UI entries ────────────────────────────
@@ -3960,51 +4003,117 @@ class TranscribeTab(ctk.CTkFrame):
         speaker_map: dict[int, str] = {}
         for original_label, entry in self._speaker_entries.items():
             replacement = " ".join(entry.get().split()).strip()
-            if replacement:
-                try:
-                    sid = int(original_label.replace("Speaker ", "").strip())
-                    speaker_map[sid] = replacement
-                except ValueError:
-                    pass
+            if not replacement:
+                continue
+            try:
+                sid = int(original_label.replace("Speaker ", "").strip())
+            except ValueError:
+                logger.warning(
+                    "[SpeakerLabels] Could not parse speaker id from %r",
+                    original_label,
+                )
+                continue
+            speaker_map[sid] = replacement
 
-        # ── 1. Text replacement in the .txt file ─────────────────────────────
-        text = _apply_speaker_labels_to_text(self._transcript_text, speaker_map)
+        if not speaker_map:
+            self._set_speaker_save_status(
+                f"Type names into the {len(self._speaker_entries)} "
+                "speaker box(es) above, then click Apply.",
+                _SPEAKER_SAVE_COLOR_ERROR,
+            )
+            logger.warning(
+                "[SpeakerLabels] Apply clicked but every entry was blank "
+                "(rows=%d)",
+                len(self._speaker_entries),
+            )
+            return
+
+        new_text = _apply_speaker_labels_to_text(
+            self._transcript_text, speaker_map
+        )
+        text_changed = new_text != self._transcript_text
 
         try:
-            Path(self._current_txt_path).write_text(text, encoding="utf-8")
+            Path(self._current_txt_path).write_text(new_text, encoding="utf-8")
         except Exception as exc:
+            self._set_speaker_save_status(
+                f"Save failed: {exc}", _SPEAKER_SAVE_COLOR_ERROR
+            )
+            logger.exception(
+                "[SpeakerLabels] write_text to %s failed",
+                self._current_txt_path,
+            )
             messagebox.showerror("Save Failed", str(exc))
             return
 
-        self._transcript_text = text
+        self._transcript_text = new_text
 
         # ── 2. Persist speaker_map to job_config.json → source_docs/ ─────────
-        if speaker_map:
-            self._ufm_fields["speaker_map"] = speaker_map
-            self._ufm_fields["speaker_map_verified"] = True
+        config_saved = False
+        config_error: str | None = None
+        self._ufm_fields["speaker_map"] = speaker_map
+        self._ufm_fields["speaker_map_verified"] = True
+        try:
+            from core.job_config_manager import (
+                load_job_config,
+                merge_and_save,
+            )
 
-            try:
-                from core.job_config_manager import load_job_config, merge_and_save
-
-                case_folder = str(Path(self._current_txt_path).parent.parent)
-                job_config_data = load_job_config(case_folder)
-                ufm = dict(job_config_data.get("ufm_fields", {}))
-                ufm["speaker_map"] = {str(k): v for k, v in speaker_map.items()}
-                ufm["speaker_map_verified"] = True
-                merge_and_save(case_folder, ufm_fields=ufm)
-                logger.info("[SpeakerLabels] Wrote speaker_map to job_config.json")
-            except Exception as exc:
-                logger.warning(
-                    "[SpeakerLabels] Could not update job_config.json: %s", exc
-                )
+            case_folder = str(Path(self._current_txt_path).parent.parent)
+            job_config_data = load_job_config(case_folder)
+            ufm = dict(job_config_data.get("ufm_fields", {}))
+            ufm["speaker_map"] = {str(k): v for k, v in speaker_map.items()}
+            ufm["speaker_map_verified"] = True
+            merge_and_save(case_folder, ufm_fields=ufm)
+            config_saved = True
+            logger.info(
+                "[SpeakerLabels] Wrote speaker_map (%d entries) to "
+                "job_config.json under %s",
+                len(speaker_map),
+                case_folder,
+            )
+        except Exception as exc:
+            config_error = str(exc)
+            logger.warning(
+                "[SpeakerLabels] Could not update job_config.json: %s", exc
+            )
 
         # ── 3. Update UI ──────────────────────────────────────────────────────
         self.load_transcript(self._current_txt_path)
-        self.set_status("Speaker labels applied", "#44FF44")
-        self.append_log(
-            f"Speaker labels applied: "
-            + ", ".join(f"Speaker {k} → {v}" for k, v in speaker_map.items())
+        labels_summary = ", ".join(
+            f"Speaker {k} -> {v}" for k, v in sorted(speaker_map.items())
         )
+        self.append_log(f"Speaker labels applied: {labels_summary}")
+        logger.info(
+            "[SpeakerLabels] Applied %d label(s); text_changed=%s; "
+            "job_config_saved=%s",
+            len(speaker_map),
+            text_changed,
+            config_saved,
+        )
+
+        # Inline status next to the button — visible without scrolling.
+        if not text_changed:
+            inline_status = (
+                f"Saved {len(speaker_map)} label(s), but no Speaker N: "
+                "patterns matched in the transcript. Map is still saved "
+                "to job_config.json."
+            )
+            inline_color = _SPEAKER_SAVE_COLOR_WARN
+        elif config_error:
+            inline_status = (
+                f"Transcript updated. job_config save failed: {config_error}"
+            )
+            inline_color = _SPEAKER_SAVE_COLOR_WARN
+        else:
+            inline_status = (
+                f"Applied {len(speaker_map)} label(s) to "
+                f"{Path(self._current_txt_path).name}"
+            )
+            inline_color = _SPEAKER_SAVE_COLOR_OK
+        self._set_speaker_save_status(inline_status, inline_color)
+
+        self.set_status("Speaker labels applied", "#44FF44")
         self._apply_save_btn.configure(
             text="\u2713  Labels Saved",
             fg_color="#1A5C1A",
@@ -4013,9 +4122,17 @@ class TranscribeTab(ctk.CTkFrame):
             2500,
             lambda: self._apply_save_btn.configure(
                 text="\u2713  Apply Speaker Labels",
-                fg_color=BTN_UTILITY_BLUE,
+                fg_color=BTN_SAFE_GREEN,
             ),
         )
+
+    def _set_speaker_save_status(self, text: str, color: str) -> None:
+        """Update the inline label next to the Apply button. Tolerant
+        of being called before _build_ui has run (no-op in that case)."""
+        label = getattr(self, "_speaker_save_status_label", None)
+        if label is None:
+            return
+        label.configure(text=text, text_color=color)
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
 
