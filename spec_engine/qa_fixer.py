@@ -58,24 +58,114 @@ def _directive_examiner_name(text: str) -> str:
     return cleaned.rstrip(":").strip()
 
 
+_FRAGMENT_MARKERS = (",.", ",", ";")
+_MIN_WORDS_FOR_QUESTION_WORD_START = 4
+
+
+def _is_likely_question(text: str) -> bool:
+    """Return True only when ``text`` strongly looks like a complete question.
+
+    Rules (all must hold):
+      * Trimmed text is non-empty.
+      * Trimmed text does NOT end with a fragment marker (``,`` ``,.`` ``;``).
+      * Either:
+          - Trimmed text ends with ``?``, OR
+          - Trimmed lowercased text starts with a known question word AND has
+            at least ``_MIN_WORDS_FOR_QUESTION_WORD_START`` words AND does not
+            end with ``,``.
+
+    Tighter than the prior implementation, which fired on EITHER an
+    ends-with-``?`` test OR a starts-with-question-word test with no
+    minimum length and no fragment-marker exclusion. The prior rule
+    produced 19–22% false-question rates on real production transcripts.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if any(stripped.endswith(marker) for marker in _FRAGMENT_MARKERS):
+        return False
+    if stripped.endswith("?"):
+        return True
+    lower = stripped.lower()
+    starts_with_q_word = any(
+        lower == word or lower.startswith(word + " ") for word in QUESTION_WORDS
+    )
+    if not starts_with_q_word:
+        return False
+    word_count = len(stripped.split())
+    return word_count >= _MIN_WORDS_FOR_QUESTION_WORD_START
+
+
+def _is_likely_answer(text: str, prior_type: str | None) -> bool:
+    """Return True only when ``text`` strongly looks like an answer.
+
+    Rules (all must hold):
+      * The immediately prior emitted block's type was ``question``.
+      * Trimmed lowercased text, with trailing sentence-ending
+        punctuation stripped, is in ``STANDALONE_ANSWER_WORDS``.
+
+    The trailing-punctuation strip lives here in the helper rather than
+    in the constant: ``"Yes."``, ``"Yes"``, and ``"Yes!"`` should all
+    match the canonical ``"yes"`` entry without polluting the constant
+    with every punctuation variant.
+
+    The prior implementation also accepted ``len(text.split()) <= 6`` as
+    sufficient grounds for re-typing as ``answer``. That clause is removed
+    here because it produced false answer typings on short colloquy lines
+    that happened to follow a true question.
+    """
+    if prior_type != "question":
+        return False
+    stripped = text.strip().lower().rstrip(".,!?;:")
+    return stripped in STANDALONE_ANSWER_WORDS
+
+
 def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
     """
     FINAL PASS: Enforce strict Q/A structure.
 
     This does NOT replace detection logic.
     It CORRECTS structure after detection.
+
+    Re-typing rules (Step 2A — Path A tightening):
+      * Pre-deposition gate: any non-``colloquy`` block opens the gate.
+        Classifier-assigned ``oath``, ``directive``, ``question``, and
+        ``answer`` all signal "we're past pre-deposition logistics."
+        Until the gate opens, blocks pass through with their
+        classifier-assigned type unchanged — preventing pre-deposition
+        pleasantries ("Hello, can you hear us?") from being mistyped
+        as testimony.
+      * After the gate opens, ``_is_likely_question`` and
+        ``_is_likely_answer`` decide re-typing with deterministic rules.
+        See those helpers for the exact criteria.
+
+    Existing behaviors preserved:
+      * ``directive`` and ``oath`` blocks pass through with no re-typing.
+      * The back-merge of a detected ``answer`` into a prior ``question``
+        when ``last_type != "question"`` is unchanged. (Currently
+        unreachable in linear walks; preserved pending separate audit.)
     """
     fixed: list[TranscriptBlock] = []
     last_type: str | None = None
+    seen_deposition_marker: bool = False
 
     for block in blocks:
-        text = block.text.strip().lower()
+        # Any non-colloquy classifier-assigned type opens the gate. This
+        # covers production (oath/directive arrive first) and synthetic
+        # test inputs that pre-classify question/answer from "\tQ.\t"
+        # markers without an explicit oath/directive block.
+        if block.type != "colloquy":
+            seen_deposition_marker = True
+
+        if block.type in {"directive", "oath"}:
+            fixed.append(block)
+            last_type = block.type
+            continue
+
         normalized = block
 
-        if block.type not in {"directive", "oath"}:
-            if any(text.startswith(word) for word in QUESTION_WORDS) or text.endswith(
-                "?"
-            ):
+        if seen_deposition_marker:
+            if _is_likely_question(block.text):
                 normalized = TranscriptBlock(
                     speaker=block.speaker,
                     text=block.text,
@@ -83,16 +173,16 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     source_type=block.source_type,
                     examiner=block.examiner,
                 )
-            elif text in STANDALONE_ANSWER_WORDS or len(text.split()) <= 6:
-                if last_type == "question":
-                    normalized = TranscriptBlock(
-                        speaker=block.speaker,
-                        text=block.text,
-                        type="answer",
-                        source_type=block.source_type,
-                        examiner=block.examiner,
-                    )
+            elif _is_likely_answer(block.text, last_type):
+                normalized = TranscriptBlock(
+                    speaker=block.speaker,
+                    text=block.text,
+                    type="answer",
+                    source_type=block.source_type,
+                    examiner=block.examiner,
+                )
 
+        # Currently unreachable in linear walks; preserved pending separate audit.
         if normalized.type == "answer" and last_type != "question":
             if fixed and fixed[-1].type == "question":
                 previous = fixed[-1]
