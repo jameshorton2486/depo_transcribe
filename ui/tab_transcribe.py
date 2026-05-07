@@ -1356,8 +1356,12 @@ class TranscribeTab(ctk.CTkFrame):
             text_color=_EMERALD,
         ).pack(side="right", padx=14, pady=4)
 
-        # ── Body: 3-column grid ────────────────────────────────────────────────
-        body = ctk.CTkFrame(self, fg_color="transparent")
+        # ── Body: 3-column grid, vertically scrollable ────────────────────────
+        # CTkScrollableFrame keeps the cards reachable when the speaker /
+        # word-review / corrections content stack below row 0 grows past
+        # the window height. Children grid into the inner frame as before;
+        # CTkScrollableFrame forwards grid configuration calls to it.
+        body = ctk.CTkScrollableFrame(self, fg_color="transparent")
         body.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 4))
         body.grid_columnconfigure(0, weight=2, uniform="cols")
         body.grid_columnconfigure(1, weight=3, uniform="cols")
