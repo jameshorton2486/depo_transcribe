@@ -17,7 +17,11 @@ from datetime import datetime
 from pathlib import Path
 
 from spec_engine.block_builder import build_blocks
-from spec_engine.processor import process_blocks
+from spec_engine.classifier import classify_blocks
+from spec_engine.corrections import apply_corrections
+from spec_engine.emitter import emit_blocks
+from spec_engine.qa_fixer import enforce_structure
+from spec_engine.speaker_mapper import normalize_speakers
 
 logger = logging.getLogger(__name__)
 
@@ -139,13 +143,25 @@ def _build_corrected_text(
     raw_data: dict,
     confirmed_spellings: dict,
     keyterms: list[str],
-) -> str:
+) -> tuple[str, list[str]]:
     """Run the ``spec_engine`` pipeline on assembled utterances.
 
     Uses the top-level ``utterances`` field from the wrapped raw JSON,
     feeding it to ``build_blocks`` as a synthetic Deepgram alternative.
     Adapts the saved-utterance shape (``transcript`` / ``speaker_label``)
     onto block_builder's expected shape (``text`` / ``speaker``) first.
+
+    Inlines the spec_engine pipeline (rather than calling
+    ``processor.process_blocks``) so that a strict-Q/A invariant
+    failure in ``enforce_structure`` doesn't abort the whole run —
+    it's caught, recorded as a warning, and the pipeline continues
+    with the un-validated corrected blocks. The proofreader needs an
+    output to look at even when real-world Q/A patterns violate the
+    no-consecutive-questions rule (a common pattern in fast attorney
+    follow-ups; observed first on the Caram and Cavazos runs).
+
+    Returns ``(text, warnings)`` so the caller can embed warnings in
+    the file header.
     """
     utterances = raw_data.get("utterances") or []
     if not utterances:
@@ -161,11 +177,31 @@ def _build_corrected_text(
             f"build_blocks returned no blocks from {len(utterances)} utterances"
         )
 
-    return process_blocks(
-        blocks,
+    warnings: list[str] = []
+    classified = classify_blocks(blocks)
+    corrected_blocks = apply_corrections(
+        classified,
         confirmed_spellings=confirmed_spellings,
         keyterms=keyterms,
     )
+    try:
+        fixed = enforce_structure(corrected_blocks)
+    except ValueError as exc:
+        # Strict Q/A invariants violated by real data. Log + record but
+        # don't abort — fall through with the corrected blocks so the
+        # proofreader has something to review.
+        message = (
+            f"spec_engine.enforce_structure rejected the transcript: "
+            f"{exc}. Q/A structure was not validated; output below is "
+            f"corrected but un-structured."
+        )
+        warnings.append(message)
+        logger.warning("[corrections_runner] %s", message)
+        fixed = corrected_blocks
+
+    mapped = normalize_speakers(fixed)
+    text = emit_blocks(mapped)
+    return text, warnings
 
 
 def run_corrections(raw_json_path: str | Path) -> Path:
@@ -205,14 +241,21 @@ def run_corrections(raw_json_path: str | Path) -> Path:
         len(keyterms),
     )
 
-    corrected_text = _build_corrected_text(
+    corrected_text, warnings = _build_corrected_text(
         raw_data, confirmed_spellings, keyterms
     )
 
     base_name = raw_json_path.name[: -len(_RAW_SUFFIX)]
     output_path = raw_json_path.parent / f"{base_name}{_CORRECTED_SUFFIX}"
     timestamp = datetime.now().isoformat(timespec="seconds")
-    header = f"# Corrected from {raw_json_path.name} on {timestamp}\n"
+    header_lines = [f"# Corrected from {raw_json_path.name} on {timestamp}"]
+    for warning in warnings:
+        # Wrap each warning line in a leading "# " so the file remains
+        # an unambiguous comment header that any downstream consumer
+        # can strip by dropping leading "#" lines.
+        for line in warning.splitlines() or [""]:
+            header_lines.append(f"# WARNING: {line}")
+    header = "\n".join(header_lines) + "\n"
     output_path.write_text(header + corrected_text, encoding="utf-8")
 
     logger.info("Wrote corrected transcript: %s", output_path)
