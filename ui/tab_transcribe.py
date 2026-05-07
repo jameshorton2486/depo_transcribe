@@ -1919,36 +1919,6 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._apply_save_btn.pack(side="right")
 
-        # ── Corrections card (gridded into body row 2 only after a run) ────────
-        # Created here but not gridded; _show_corrections_section places it.
-        self._corrections_card = _make_card(body)
-        make_section_header(
-            self._corrections_card,
-            "✎ Run Corrections",
-            font_size=14,
-        ).pack(fill="x", padx=12, pady=(6, 2))
-        ctk.CTkLabel(
-            self._corrections_card,
-            text=(
-                "Apply spec_engine corrections (Q/A classification, name "
-                "spellings, legal formatting) to the current transcript."
-            ),
-            font=body_font,
-            text_color=TEXT_SECONDARY,
-        ).pack(anchor="w", padx=16, pady=(0, 4))
-        self._run_corrections_btn = ctk.CTkButton(
-            self._corrections_card,
-            text="✎  Run Corrections",
-            height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            fg_color=BTN_SAFE_GREEN,
-            hover_color=BTN_SAFE_GREEN_HOVER,
-            text_color="white",
-            command=self._run_corrections,
-            corner_radius=8,
-        )
-        self._run_corrections_btn.pack(anchor="e", padx=16, pady=(0, 6))
-
         # ── Word-review panel (gridded only after a run produces words) ────────
         # Created here but not gridded; _show_word_review_section places it.
         self._word_review_card = _make_card(body)
@@ -3505,7 +3475,6 @@ class TranscribeTab(ctk.CTkFrame):
 
             # Show speaker labels section
             self._show_speaker_section()
-            self._show_corrections_section()
             # Phase 1: low-confidence word review panel populated from
             # the saved per-run JSON. Tolerant of missing/malformed
             # JSON — the panel renders an explanatory status string.
@@ -3870,13 +3839,13 @@ class TranscribeTab(ctk.CTkFrame):
 
         self._update_word_review_display()
 
-        # Place the card below the speaker + corrections cards. Speaker
-        # is row=1, corrections is row=2, so the word-review panel sits
-        # at row=3 to keep the workflow order: assign labels -> correct
-        # -> review.
+        # Place the card below the speaker card. Run Corrections lives
+        # in the always-visible utility_grid (row 0 of the body), so
+        # the word-review panel sits directly below speaker labels at
+        # row=2 — no scrolling required to reach the action buttons.
         body = self._speaker_card.master
         self._word_review_card.grid(
-            row=3,
+            row=2,
             column=0,
             columnspan=3,
             in_=body,
@@ -4187,16 +4156,6 @@ class TranscribeTab(ctk.CTkFrame):
         label.configure(text=text, text_color=color)
 
     # ── Run Corrections button ─────────────────────────────────────────────────
-
-    def _show_corrections_section(self):
-        """Place the corrections card into the body grid (row 2)."""
-        self._corrections_card.grid(
-            row=2,
-            column=0,
-            columnspan=3,
-            sticky="ew",
-            pady=(0, _SECTION_GAP_Y),
-        )
 
     def _run_corrections(self):
         """Spawn a background thread to call ``corrections_runner.run_corrections``.
