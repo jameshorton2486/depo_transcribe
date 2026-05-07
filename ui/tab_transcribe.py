@@ -1841,6 +1841,36 @@ class TranscribeTab(ctk.CTkFrame):
             row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0)
         )
 
+        # Run Splitter button: AI-driven utterance splitter for merged
+        # multi-exchange blocks. Distinct color (BTN_UTILITY_BLUE) signals
+        # "AI/repair operation" vs Run Corrections' deterministic green.
+        self._run_splitter_btn = ctk.CTkButton(
+            utility_grid,
+            text="✂  Resolve Merged Utterances",
+            height=30,
+            font=utility_font,
+            fg_color=BTN_UTILITY_BLUE,
+            hover_color=BTN_UTILITY_BLUE_HOVER,
+            text_color="white",
+            command=self._run_splitter,
+            corner_radius=8,
+        )
+        self._run_splitter_btn.grid(
+            row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+        )
+
+        # Opt-in checkbox: when checked, Run Corrections consumes
+        # the *_split_raw.json produced by Run Splitter instead of the
+        # original *_raw.json. Default unchecked. In-memory state only —
+        # does not persist across sessions.
+        self._use_split_file_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            utility_grid,
+            text="Use split file when available",
+            variable=self._use_split_file_var,
+            font=utility_font,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
         preview_label = ctk.CTkLabel(
             run_body,
             text="TRANSCRIPT PREVIEW",
@@ -4195,6 +4225,26 @@ class TranscribeTab(ctk.CTkFrame):
             )
             return
 
+        # Step 2D: opt-in path to consume the AI-split file.
+        # Step 2E will make the corrections runner consume split_utterances when present.
+        if self._use_split_file_var.get():
+            split_json = raw_json.with_name(
+                raw_json.name[: -len("_raw.json")] + "_split_raw.json"
+            )
+            if not split_json.is_file():
+                messagebox.showerror(
+                    "Split file not found",
+                    (
+                        "The 'Use split file when available' option is checked, "
+                        "but no split file was found at:\n"
+                        f"{split_json}\n\n"
+                        "Click 'Resolve Merged Utterances' first, or uncheck "
+                        "the option to run on the original raw file."
+                    ),
+                )
+                return
+            raw_json = split_json
+
         self._run_corrections_btn.configure(
             state="disabled", text="Running…"
         )
@@ -4234,6 +4284,71 @@ class TranscribeTab(ctk.CTkFrame):
         self.set_status("Corrections failed", "#FF4444")
         self.append_log(f"Corrections error: {error_message}")
         messagebox.showerror("Corrections Failed", error_message)
+
+    # ── Resolve Merged Utterances button ───────────────────────────────────────
+
+    def _run_splitter(self):
+        """Spawn a background thread to call ``utterance_splitter_runner.run_splitter``.
+
+        Surfaces any exception in a messagebox; the UI thread is only
+        touched via ``self.after``.
+        """
+        if not self._current_txt_path:
+            messagebox.showerror("No transcript", "Load a transcript first.")
+            return
+
+        raw_json = _resolve_raw_json_for_corrections(
+            Path(self._current_txt_path)
+        )
+        if raw_json is None:
+            messagebox.showerror(
+                "Raw JSON not found",
+                (
+                    "Could not locate the *_raw.json next to:\n"
+                    f"{self._current_txt_path}\n\n"
+                    "Re-run transcription so the raw JSON is written, "
+                    "then try again."
+                ),
+            )
+            return
+
+        self._run_splitter_btn.configure(state="disabled", text="Splitting…")
+        self.set_status("Splitting merged utterances…", "#FFD400")
+        self.append_log(f"Running splitter on {raw_json.name}")
+
+        def _worker(target_path: Path = raw_json) -> None:
+            try:
+                from core.utterance_splitter_runner import run_splitter
+
+                output_path = run_splitter(target_path)
+            except Exception as exc:  # noqa: BLE001 — surface any failure
+                message = str(exc) or exc.__class__.__name__
+                self.after(
+                    0, lambda msg=message: self._on_splitter_failed(msg)
+                )
+                return
+            self.after(
+                0, lambda p=output_path: self._on_splitter_done(p)
+            )
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_splitter_done(self, output_path: Path) -> None:
+        """Re-enable the button and show success in the status bar."""
+        self._run_splitter_btn.configure(
+            state="normal", text="✂  Resolve Merged Utterances"
+        )
+        self.set_status(f"Split file written: {output_path.name}", "#44FF44")
+        self.append_log(f"Splitter complete: {output_path}")
+
+    def _on_splitter_failed(self, error_message: str) -> None:
+        """Re-enable the button and show the error in a messagebox."""
+        self._run_splitter_btn.configure(
+            state="normal", text="✂  Resolve Merged Utterances"
+        )
+        self.set_status("Splitter failed", "#FF4444")
+        self.append_log(f"Splitter error: {error_message}")
+        messagebox.showerror("Splitter Failed", error_message)
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
 
