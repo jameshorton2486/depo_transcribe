@@ -1,220 +1,208 @@
-r"""Production bridge: saved Deepgram run JSON -> spec_engine -> corrected
-TXT + corrected JSON, sitting next to the originals.
+"""Run spec_engine corrections on a finished Deepgram run.
 
-This is the first wired path from production output into spec_engine.
-Read-only relative to all source files; never overwrites the original
-transcript or original JSON. No UI, no Deepgram I/O, no DOCX, no AI
-correction.
+Reads ``{base}_raw.json`` (written by ``core/job_runner.py``), pulls
+``confirmed_spellings`` and keyterms from ``source_docs/job_config.json``,
+and writes ``{base}_corrected.txt`` next to the input.
 
-Public entry point:
-    run_corrections_for_json(json_path) -> CorrectionResult
-
-What it does:
-    1. Load the saved per-run JSON produced by core/job_runner.py.
-    2. Convert its `utterances` list (Deepgram-shape: 'transcript' /
-       'speaker_label') into the {speaker, text, type} block-input shape
-       expected by spec_engine.classify_blocks.
-    3. Run the canonical spec_engine pipeline:
-           classify_blocks
-           apply_corrections (with confirmed_spellings + keyterms from
-                              the case folder's job_config.json, if any)
-           enforce_structure (Q/A invariants)
-           normalize_speakers (label canonicalization)
-           emit_blocks (UFM-strict text output)
-    4. Write `<base>_corrected.txt` (the emitted text) and
-       `<base>_corrected.json` (metadata + per-block dump) next to the
-       source. The source files are untouched.
-
-Manual invocation from PowerShell:
-    .\.venv\Scripts\python.exe -c "
-    from pathlib import Path
-    from core.corrections_runner import run_corrections_for_json
-    r = run_corrections_for_json(Path(r'<path-to-deepgram-run-json>'))
-    print(r)
-    "
+This is the deterministic post-Deepgram correction stage. It does not
+modify the original transcript files; it only adds a corrected ``.txt``
+next to them. Re-runs overwrite.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
-from app_logging import get_logger
-from spec_engine.classifier import classify_blocks
-from spec_engine.corrections import apply_corrections
-from spec_engine.emitter import emit_blocks
-from spec_engine.qa_fixer import enforce_structure
-from spec_engine.speaker_mapper import normalize_speakers
+from spec_engine.block_builder import build_blocks
+from spec_engine.processor import process_blocks
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
+
+_RAW_SUFFIX = "_raw.json"
+_CORRECTED_SUFFIX = "_corrected.txt"
 
 
-@dataclass
-class CorrectionResult:
-    """Returned to the caller. Paths are absolute strings; warnings /
-    errors capture any soft-failure from the spec_engine validation
-    pass without raising — callers can decide what to surface in UI.
+def _resolve_job_config(raw_json_path: Path) -> Path:
+    """Locate ``source_docs/job_config.json`` from the raw JSON path.
+
+    Expected case layout::
+
+        case_folder/
+          source_docs/
+            job_config.json
+          Deepgram/
+            {base}_raw.json
     """
-
-    source_json_path: str
-    corrected_txt_path: str
-    corrected_json_path: str
-    block_count: int
-    warnings: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
+    deepgram_dir = raw_json_path.parent
+    case_folder = deepgram_dir.parent
+    return case_folder / "source_docs" / "job_config.json"
 
 
-def _load_job_vocab(case_root: Path) -> tuple[dict, list[str]]:
-    """Best-effort load of confirmed_spellings + deepgram_keyterms from
-    `<case>/source_docs/job_config.json`. Missing or malformed file
-    yields empty defaults — corrections still run, just with no
-    per-case vocabulary layer (the global legal_dictionary still
-    applies via spec_engine.corrections._build_corrections_map).
+def _load_job_config(job_config_path: Path) -> tuple[dict, list[str]]:
+    """Read ``confirmed_spellings`` and keyterms from the top level.
+
+    Per project contract, ``confirmed_spellings`` lives at the top level
+    of ``job_config.json`` and is a sibling of ``ufm_fields``, never
+    nested inside it. Keyterms are read from ``deepgram_keyterms`` first,
+    falling back to ``keyterms``.
+
+    Missing file or malformed JSON → log a warning and return empties.
     """
-    cfg_path = case_root / "source_docs" / "job_config.json"
-    if not cfg_path.exists():
+    if not job_config_path.exists():
+        logger.warning(
+            "job_config.json not found at %s; running with empty corrections inputs",
+            job_config_path,
+        )
         return {}, []
+
     try:
-        with open(cfg_path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except Exception as exc:
-        logger.warning("[corrections_runner] could not read %s: %s", cfg_path, exc)
+        data = json.loads(job_config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Could not parse %s (%s); running with empty corrections inputs",
+            job_config_path,
+            exc,
+        )
         return {}, []
-    confirmed = data.get("confirmed_spellings") or {}
-    keyterms = list(data.get("deepgram_keyterms") or [])
-    return (confirmed if isinstance(confirmed, dict) else {}, keyterms)
+
+    confirmed_spellings = data.get("confirmed_spellings") or {}
+    keyterms = data.get("deepgram_keyterms")
+    if keyterms is None:
+        keyterms = data.get("keyterms") or []
+
+    if not isinstance(confirmed_spellings, dict):
+        logger.warning(
+            "confirmed_spellings is not a dict (got %s); ignoring",
+            type(confirmed_spellings).__name__,
+        )
+        confirmed_spellings = {}
+
+    if not isinstance(keyterms, list):
+        logger.warning(
+            "keyterms is not a list (got %s); ignoring",
+            type(keyterms).__name__,
+        )
+        keyterms = []
+
+    if not confirmed_spellings:
+        logger.warning(
+            "confirmed_spellings is empty — name corrections will be skipped"
+        )
+    if not keyterms:
+        logger.info("keyterms list is empty")
+
+    return confirmed_spellings, keyterms
 
 
-def _utterances_to_block_input(utterances: Any) -> list[dict[str, str]]:
-    """Map saved Deepgram-shape utterances (with 'transcript' + 'speaker_label')
-    onto the {speaker, text, type} input that classify_blocks expects.
+def _build_corrected_text(
+    raw_data: dict,
+    confirmed_spellings: dict,
+    keyterms: list[str],
+) -> str:
+    """Run the ``spec_engine`` pipeline on assembled utterances.
 
-    Mirrors what spec_engine/block_builder.build_blocks does, but reads
-    the Deepgram-canonical 'transcript' / 'speaker_label' keys that the
-    saved JSON actually uses (block_builder reads bare 'text' / numeric
-    'speaker', so feeding it raw saved utterances yields empty blocks).
+    Uses the top-level ``utterances`` field from the wrapped raw JSON,
+    feeding it to ``build_blocks`` as a synthetic Deepgram alternative.
     """
-    out: list[dict[str, str]] = []
-    for utt in utterances or []:
-        if not isinstance(utt, dict):
-            continue
-        text = (utt.get("transcript") or utt.get("text") or "").strip()
-        if not text:
-            continue
-        # Prefer the string label ("Speaker 0") so downstream
-        # normalize_speaker_label produces a clean "SPEAKER 0:" prefix
-        # rather than the raw int.
-        speaker = utt.get("speaker_label")
-        if not speaker:
-            raw = utt.get("speaker")
-            speaker = f"Speaker {raw}" if raw is not None else "UNKNOWN"
-        out.append({"speaker": str(speaker), "text": text, "type": "utterance"})
-    return out
-
-
-def _serialize_block(block) -> dict[str, Any]:
-    """Convert a TranscriptBlock dataclass into a plain dict for JSON.
-    Defensive against any future field additions via getattr fallbacks.
-    """
-    return {
-        "speaker": getattr(block, "speaker", ""),
-        "text": getattr(block, "text", ""),
-        "type": getattr(block, "type", ""),
-        "source_type": getattr(block, "source_type", ""),
-        "examiner": getattr(block, "examiner", None),
-    }
-
-
-def run_corrections_for_json(json_path: Path | str) -> CorrectionResult:
-    """Run the spec_engine pipeline against a saved per-run JSON.
-
-    Writes <base>_corrected.txt and <base>_corrected.json into the same
-    directory as the source. The source JSON, the source TXT, and the
-    raw_deepgram.json sibling are NEVER modified. No DOCX is produced
-    here; that is a separate downstream step.
-
-    Returns a CorrectionResult dataclass with the absolute paths of the
-    new files and any soft warnings / errors captured during the run.
-    Hard failures (missing file, bad JSON) raise; this function should
-    be called inside a try / except by the UI layer.
-    """
-    json_path = Path(json_path)
-    if not json_path.is_file():
-        raise FileNotFoundError(f"Input JSON not found: {json_path}")
-
-    with open(json_path, "r", encoding="utf-8") as fh:
-        source = json.load(fh)
-    if not isinstance(source, dict):
-        raise ValueError(
-            f"Input JSON root must be an object, got {type(source).__name__}"
+    utterances = raw_data.get("utterances") or []
+    if not utterances:
+        raise RuntimeError(
+            "Raw JSON has no utterances; cannot run corrections"
         )
 
-    # Resolve the case-root vocab: the saved per-run JSON sits in
-    # <case>/Deepgram/<file>.json, so the case folder is the parent's
-    # parent. Walk-up failures gracefully degrade to empty vocab.
-    case_root = json_path.parent.parent
-    confirmed_spellings, keyterms = _load_job_vocab(case_root)
+    alt = {"utterances": utterances}
+    blocks = build_blocks(alt)
+    if not blocks:
+        raise RuntimeError(
+            f"build_blocks returned no blocks from {len(utterances)} utterances"
+        )
 
-    block_input = _utterances_to_block_input(source.get("utterances"))
-
-    warnings: list[str] = []
-    errors: list[str] = []
-
-    classified = classify_blocks(block_input)
-    corrected_blocks = apply_corrections(
-        classified,
+    return process_blocks(
+        blocks,
         confirmed_spellings=confirmed_spellings,
         keyterms=keyterms,
     )
-    try:
-        fixed = enforce_structure(corrected_blocks)
-    except ValueError as exc:
-        # enforce_structure is strict — it raises on Q/A invariants
-        # like orphan answers or consecutive questions. Capture the
-        # error so the UI can surface it, but keep going with the
-        # un-validated list so the proofreader still gets *something*
-        # to look at.
-        errors.append(f"enforce_structure: {exc}")
-        fixed = corrected_blocks
-    mapped = normalize_speakers(fixed)
-    text = emit_blocks(mapped)
 
-    base = json_path.stem
-    txt_path = json_path.parent / f"{base}_corrected.txt"
-    out_json_path = json_path.parent / f"{base}_corrected.json"
 
-    txt_path.write_text(text, encoding="utf-8")
+def run_corrections(raw_json_path: str | Path) -> Path:
+    """Apply ``spec_engine`` corrections to a finished raw run.
 
-    serial_blocks = [_serialize_block(b) for b in mapped]
-    out_payload = {
-        "source_json_path": str(json_path),
-        "corrected_txt_path": str(txt_path),
-        "processed_at": datetime.now().isoformat(timespec="seconds"),
-        "block_count": len(mapped),
-        "blocks": serial_blocks,
-        "original_transcript": source.get("transcript", ""),
-        "warnings": warnings,
-        "errors": errors,
-    }
-    with open(out_json_path, "w", encoding="utf-8") as fh:
-        json.dump(out_payload, fh, indent=2, ensure_ascii=False)
+    Args:
+        raw_json_path: Path to ``{base}_raw.json`` written by
+            ``core/job_runner.py``.
+
+    Returns:
+        Path to the written ``{base}_corrected.txt`` file.
+
+    Raises:
+        FileNotFoundError: ``raw_json_path`` does not exist.
+        ValueError: ``raw_json_path`` does not end with ``_raw.json``.
+        RuntimeError: raw JSON has no utterances or ``spec_engine``
+            could not produce a transcript from them.
+    """
+    raw_json_path = Path(raw_json_path).resolve()
+
+    if not raw_json_path.exists():
+        raise FileNotFoundError(f"Raw JSON not found: {raw_json_path}")
+    if not raw_json_path.name.endswith(_RAW_SUFFIX):
+        raise ValueError(
+            f"Expected a *{_RAW_SUFFIX} file, got: {raw_json_path.name}"
+        )
+
+    raw_data = json.loads(raw_json_path.read_text(encoding="utf-8"))
+
+    job_config_path = _resolve_job_config(raw_json_path)
+    confirmed_spellings, keyterms = _load_job_config(job_config_path)
 
     logger.info(
-        "[corrections_runner] %s -> %s (%d blocks, %d errors)",
-        json_path.name,
-        txt_path.name,
-        len(mapped),
-        len(errors),
+        "Running corrections: utterances=%d  spellings=%d  keyterms=%d",
+        len(raw_data.get("utterances") or []),
+        len(confirmed_spellings),
+        len(keyterms),
     )
 
-    return CorrectionResult(
-        source_json_path=str(json_path),
-        corrected_txt_path=str(txt_path),
-        corrected_json_path=str(out_json_path),
-        block_count=len(mapped),
-        warnings=warnings,
-        errors=errors,
+    corrected_text = _build_corrected_text(
+        raw_data, confirmed_spellings, keyterms
     )
+
+    base_name = raw_json_path.name[: -len(_RAW_SUFFIX)]
+    output_path = raw_json_path.parent / f"{base_name}{_CORRECTED_SUFFIX}"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    header = f"# Corrected from {raw_json_path.name} on {timestamp}\n"
+    output_path.write_text(header + corrected_text, encoding="utf-8")
+
+    logger.info("Wrote corrected transcript: %s", output_path)
+    return output_path
+
+
+def _main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run spec_engine corrections on a finished raw transcript JSON."
+        )
+    )
+    parser.add_argument("raw_json", help="Path to {base}_raw.json")
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
+
+    try:
+        out = run_corrections(args.raw_json)
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    print(f"Wrote: {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
