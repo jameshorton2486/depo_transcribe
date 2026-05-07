@@ -97,6 +97,44 @@ def _load_job_config(job_config_path: Path) -> tuple[dict, list[str]]:
     return confirmed_spellings, keyterms
 
 
+def _adapt_saved_utterances(utterances: list) -> list[dict]:
+    """Bridge Deepgram-saved utterance shape onto the input shape that
+    ``spec_engine.block_builder.build_blocks`` expects.
+
+    Saved utterances (per ``core/job_runner.py``) carry the Deepgram-
+    canonical keys ``transcript`` and ``speaker_label``. block_builder's
+    utterance branch reads ``text`` and bare numeric ``speaker``, so
+    feeding raw saved utterances yields zero blocks. This adapter
+    rewrites each entry minimally so the existing build_blocks code
+    path handles real production data without modification.
+
+    Surfaced by the first smoke test against a real ``_raw.json``:
+    1164 utterances → 0 blocks. Fixed here in the runner instead of
+    in ``spec_engine`` to keep that module stable.
+    """
+    out: list[dict] = []
+    for u in utterances or []:
+        if not isinstance(u, dict):
+            continue
+        text = (u.get("transcript") or u.get("text") or "").strip()
+        if not text:
+            continue
+        # Prefer the assembler's pre-built "Speaker N" string label so
+        # downstream normalize_speaker_label produces clean "SPEAKER N:"
+        # prefixes; fall back to constructing one from the int speaker
+        # when the label key is missing.
+        speaker = u.get("speaker_label")
+        if not speaker:
+            raw_speaker = u.get("speaker")
+            speaker = (
+                f"Speaker {raw_speaker}"
+                if raw_speaker is not None
+                else "UNKNOWN"
+            )
+        out.append({"speaker": str(speaker), "text": text, "type": "utterance"})
+    return out
+
+
 def _build_corrected_text(
     raw_data: dict,
     confirmed_spellings: dict,
@@ -106,6 +144,8 @@ def _build_corrected_text(
 
     Uses the top-level ``utterances`` field from the wrapped raw JSON,
     feeding it to ``build_blocks`` as a synthetic Deepgram alternative.
+    Adapts the saved-utterance shape (``transcript`` / ``speaker_label``)
+    onto block_builder's expected shape (``text`` / ``speaker``) first.
     """
     utterances = raw_data.get("utterances") or []
     if not utterances:
@@ -113,7 +153,8 @@ def _build_corrected_text(
             "Raw JSON has no utterances; cannot run corrections"
         )
 
-    alt = {"utterances": utterances}
+    adapted = _adapt_saved_utterances(utterances)
+    alt = {"utterances": adapted}
     blocks = build_blocks(alt)
     if not blocks:
         raise RuntimeError(

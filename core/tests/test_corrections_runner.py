@@ -166,3 +166,81 @@ def test_run_corrections_falls_back_to_keyterms_key(tmp_path: Path) -> None:
     # Should run without raising and produce a corrected file.
     result_path = corrections_runner.run_corrections(raw_path)
     assert result_path.exists()
+
+
+def test_run_corrections_handles_production_utterance_shape(tmp_path: Path) -> None:
+    """Real saved utterances (per ``core/job_runner.py``) carry the
+    Deepgram-canonical ``transcript`` and ``speaker_label`` keys, not
+    ``text`` and a bare numeric ``speaker``. The runner must adapt this
+    shape so ``build_blocks`` produces non-empty output.
+
+    This test caught the first real-world failure: 1164 utterances ->
+    0 blocks because ``block_builder`` was reading ``text`` from a dict
+    that only had ``transcript``. The fix lives in
+    ``_adapt_saved_utterances`` inside the runner.
+    """
+    case = tmp_path / "case"
+    deepgram_dir = case / "Deepgram"
+    deepgram_dir.mkdir(parents=True)
+    raw_path = deepgram_dir / "depo_raw.json"
+
+    # Production-shape utterances: 'transcript' (not 'text'),
+    # 'speaker_label' (not just numeric speaker).
+    data = {
+        "utterances": [
+            {
+                "speaker": 0,
+                "speaker_label": "Speaker 0",
+                "transcript": "What is your name?",
+                "start": 0.0,
+                "end": 1.0,
+                "confidence": 0.99,
+                "words": [],
+            },
+            {
+                "speaker": 1,
+                "speaker_label": "Speaker 1",
+                "transcript": "My name is Coger.",
+                "start": 1.0,
+                "end": 2.0,
+                "confidence": 0.97,
+                "words": [],
+            },
+        ],
+    }
+    raw_path.write_text(json.dumps(data), encoding="utf-8")
+    _write_job_config(case / "source_docs" / "job_config.json")
+
+    result_path = corrections_runner.run_corrections(raw_path)
+
+    text = result_path.read_text(encoding="utf-8")
+    # Provenance header
+    assert text.startswith("# Corrected from depo_raw.json on ")
+    # Body must have non-trivial content — proves blocks were built.
+    body = "\n".join(text.splitlines()[1:])
+    assert body.strip(), f"corrected body is empty: {text!r}"
+
+
+def test_adapt_saved_utterances_handles_mixed_shapes() -> None:
+    """Direct unit test of the shape adapter, covering the variants we
+    expect on the wire."""
+    inputs = [
+        # Production shape: transcript + speaker_label
+        {"speaker": 0, "speaker_label": "Speaker 0", "transcript": "Real."},
+        # Older shape: text + numeric speaker (pre-assembler)
+        {"speaker": 1, "text": "Older."},
+        # Numeric speaker only, no label — should construct "Speaker N"
+        {"speaker": 2, "transcript": "No label."},
+        # Empty transcript — must be skipped
+        {"speaker": 3, "speaker_label": "Speaker 3", "transcript": ""},
+        # Whitespace-only transcript — must be skipped
+        {"speaker": 4, "speaker_label": "Speaker 4", "transcript": "   "},
+        # Non-dict garbage — must be skipped
+        "not-a-dict",
+        None,
+    ]
+    out = corrections_runner._adapt_saved_utterances(inputs)  # type: ignore[arg-type]
+    assert len(out) == 3
+    assert out[0] == {"speaker": "Speaker 0", "text": "Real.", "type": "utterance"}
+    assert out[1] == {"speaker": "Speaker 1", "text": "Older.", "type": "utterance"}
+    assert out[2] == {"speaker": "Speaker 2", "text": "No label.", "type": "utterance"}
