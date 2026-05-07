@@ -1828,6 +1828,25 @@ class TranscribeTab(ctk.CTkFrame):
         )
         self._open_transcript_btn.grid(row=1, column=1, sticky="ew", padx=(4, 0))
 
+        # Run Corrections button: full-width across both columns at the
+        # bottom of the utility grid. Always visible (this card is in
+        # the body's row=0, never scrolled off) and conceptually
+        # adjacent to View Document — the natural next post-run action.
+        self._run_corrections_btn = ctk.CTkButton(
+            utility_grid,
+            text="✎  Run Corrections",
+            height=30,
+            font=utility_font,
+            fg_color=BTN_SAFE_GREEN,
+            hover_color=BTN_SAFE_GREEN_HOVER,
+            text_color="white",
+            command=self._run_corrections,
+            corner_radius=8,
+        )
+        self._run_corrections_btn.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+        )
+
         preview_label = ctk.CTkLabel(
             run_body,
             text="TRANSCRIPT PREVIEW",
