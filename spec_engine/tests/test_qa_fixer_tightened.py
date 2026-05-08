@@ -289,3 +289,100 @@ class TestProbeRegressions:
 # stays in the code with an in-source comment pointing at this
 # observation; cleanup is deferred to a separate audit pass after
 # Step 2A's failure-count delta is in.
+
+
+# ── Step 2G: same-speaker consecutive-Q merging ──────────────────────────────
+
+
+class TestSameSpeakerQMerging:
+    """Step 2G: enforce_structure merges same-speaker consecutive Q blocks
+    into a single Q block, while preserving the strict raise for
+    different-speaker consecutive Qs."""
+
+    def test_two_same_speaker_questions_merge_pass1(self):
+        """Pass 1 (input blocks): same-speaker consecutive Qs merge."""
+        from spec_engine.qa_fixer import enforce_structure
+
+        blocks = [
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 1", "And was it after noon?", type_="question"),
+            _block("Speaker 2", "Yes.", type_="answer"),
+        ]
+        result = enforce_structure(blocks)
+        # First two merged into one Q block
+        question_blocks = [b for b in result if b.type == "question"]
+        assert len(question_blocks) == 1
+        assert question_blocks[0].speaker == "Speaker 1"
+        assert "Did you see it?" in question_blocks[0].text
+        assert "And was it after noon?" in question_blocks[0].text
+        # Answer preserved
+        answer_blocks = [b for b in result if b.type == "answer"]
+        assert len(answer_blocks) == 1
+
+    def test_three_same_speaker_questions_merge_to_one(self):
+        """N-way merges work — three same-speaker Qs collapse to one."""
+        from spec_engine.qa_fixer import enforce_structure
+
+        blocks = [
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 1", "Or hear it?", type_="question"),
+            _block("Speaker 1", "Or notice it later?", type_="question"),
+            _block("Speaker 2", "Yes.", type_="answer"),
+        ]
+        result = enforce_structure(blocks)
+        question_blocks = [b for b in result if b.type == "question"]
+        assert len(question_blocks) == 1
+        assert "Did you see it?" in question_blocks[0].text
+        assert "Or hear it?" in question_blocks[0].text
+        assert "Or notice it later?" in question_blocks[0].text
+
+    def test_different_speaker_consecutive_questions_still_raise(self):
+        """Different-speaker consecutive Qs remain a hard error."""
+        from spec_engine.qa_fixer import enforce_structure
+
+        blocks = [
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 2", "And was it after noon?", type_="question"),
+            _block("Speaker 3", "Yes.", type_="answer"),
+        ]
+        with pytest.raises(
+            ValueError, match="encountered consecutive question blocks"
+        ):
+            enforce_structure(blocks)
+
+    def test_legitimate_q_a_q_a_pattern_passes(self):
+        """The normal Q-A-Q-A flow is unaffected."""
+        from spec_engine.qa_fixer import enforce_structure
+
+        blocks = [
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 2", "Yes.", type_="answer"),
+            _block("Speaker 1", "When did you see it?", type_="question"),
+            _block("Speaker 2", "Around noon.", type_="answer"),
+        ]
+        result = enforce_structure(blocks)
+        question_blocks = [b for b in result if b.type == "question"]
+        answer_blocks = [b for b in result if b.type == "answer"]
+        assert len(question_blocks) == 2
+        assert len(answer_blocks) == 2
+
+    def test_merge_preserves_first_blocks_examiner(self):
+        """The merged block keeps the first Q's examiner attribution."""
+        from spec_engine.qa_fixer import enforce_structure
+
+        blocks = [
+            _block(
+                "Speaker 1",
+                "BY MR. SMITH:",
+                type_="directive",
+            ),
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 1", "And when?", type_="question"),
+            _block("Speaker 2", "Yes, at noon.", type_="answer"),
+        ]
+        result = enforce_structure(blocks)
+        question_blocks = [b for b in result if b.type == "question"]
+        assert len(question_blocks) == 1
+        # Examiner attribution from the directive flows to both Qs and the
+        # merged block keeps that attribution.
+        assert question_blocks[0].examiner == "MR. SMITH"

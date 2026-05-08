@@ -270,6 +270,25 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
 
         if block.type == "question":
             if pending_question is not None:
+                if pending_question.speaker == block.speaker:
+                    # Same-speaker continuation: merge into the prior Q.
+                    # Realistic case — attorneys split a compound question
+                    # across utterances; Deepgram diarization and the AI
+                    # splitter both produce these. Different-speaker
+                    # consecutive Qs still raise (genuine missing answer).
+                    merged_text = (
+                        f"{pending_question.text} {block.text}".strip()
+                    )
+                    merged = TranscriptBlock(
+                        speaker=pending_question.speaker,
+                        text=merged_text,
+                        type="question",
+                        source_type=pending_question.source_type,
+                        examiner=pending_question.examiner,
+                    )
+                    fixed[-1] = merged
+                    pending_question = merged
+                    continue
                 raise ValueError(
                     "No Q without A: encountered consecutive question blocks"
                 )
@@ -277,7 +296,6 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                 raise ValueError(
                     "No speaker text inside Q/A blocks: invalid question content"
                 )
-            pending_question = block
             fixed.append(
                 TranscriptBlock(
                     speaker=block.speaker,
@@ -287,6 +305,9 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     examiner=current_examiner,
                 )
             )
+            # Track the appended block (with examiner attribution), not the
+            # input block — same-speaker merges read pending_question.examiner.
+            pending_question = fixed[-1]
             continue
 
         if block.type == "answer":
@@ -319,24 +340,47 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
 
     fixed = enforce_qa_sequence(fixed)
 
-    pending_question = None
+    # Pass 2: applies the same same-speaker-merge rule as pass 1, this
+    # time to blocks whose types may have been changed by
+    # enforce_qa_sequence's loose Q/A re-detection.
+    pending_question: TranscriptBlock | None = None
+    final_fixed: list[TranscriptBlock] = []
     for block in fixed:
         if block.type == "question":
             if pending_question is not None:
+                if pending_question.speaker == block.speaker:
+                    merged_text = (
+                        f"{pending_question.text} {block.text}".strip()
+                    )
+                    merged = TranscriptBlock(
+                        speaker=pending_question.speaker,
+                        text=merged_text,
+                        type="question",
+                        source_type=pending_question.source_type,
+                        examiner=pending_question.examiner,
+                    )
+                    final_fixed[-1] = merged
+                    pending_question = merged
+                    continue
                 raise ValueError(
                     "No Q without A: encountered consecutive question blocks"
                 )
             pending_question = block
+            final_fixed.append(block)
         elif block.type == "answer":
             if pending_question is None:
                 raise ValueError(
                     "No orphan answers: answer encountered without a prior question"
                 )
             pending_question = None
+            final_fixed.append(block)
         else:
             pending_question = None
+            final_fixed.append(block)
 
     if pending_question is not None:
-        raise ValueError("No Q without A: transcript ended with an unanswered question")
+        raise ValueError(
+            "No Q without A: transcript ended with an unanswered question"
+        )
 
-    return fixed
+    return final_fixed
