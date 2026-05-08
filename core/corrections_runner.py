@@ -97,6 +97,60 @@ def _load_job_config(job_config_path: Path) -> tuple[dict, list[str]]:
     return confirmed_spellings, keyterms
 
 
+def _select_utterance_source(data: dict) -> tuple[list[dict], str]:
+    """Decide which utterance array the corrections runner should consume.
+
+    Preference:
+      1. ``split_utterances`` if present and valid (non-empty list of
+         dicts where each item has at least one of ``transcript`` or
+         ``text``).
+      2. ``utterances`` otherwise.
+
+    Raises:
+        RuntimeError: ``split_utterances`` is present but malformed.
+            Silent fallback would break the audit trail the
+            "Use split file when available" UI checkbox is meant to
+            preserve.
+
+    Returns:
+        ``(utterances, source_label)`` where ``source_label`` is either
+        ``"split_utterances"`` or ``"utterances"`` for logging.
+    """
+    raw_split = data.get("split_utterances")
+    if raw_split is not None:
+        if not isinstance(raw_split, list):
+            raise RuntimeError(
+                "split_utterances is present but malformed: expected a "
+                f"list, got {type(raw_split).__name__}. Re-run Resolve "
+                "Merged Utterances or uncheck 'Use split file when "
+                "available'."
+            )
+        if not raw_split:
+            raise RuntimeError(
+                "split_utterances is present but malformed: list is "
+                "empty. Re-run Resolve Merged Utterances or uncheck "
+                "'Use split file when available'."
+            )
+        for i, item in enumerate(raw_split):
+            if not isinstance(item, dict):
+                raise RuntimeError(
+                    "split_utterances is present but malformed: item "
+                    f"[{i}] is not a dict. Re-run Resolve Merged "
+                    "Utterances or uncheck 'Use split file when "
+                    "available'."
+                )
+            if "transcript" not in item and "text" not in item:
+                raise RuntimeError(
+                    "split_utterances is present but malformed: item "
+                    f"[{i}] has neither 'transcript' nor 'text'. "
+                    "Re-run Resolve Merged Utterances or uncheck "
+                    "'Use split file when available'."
+                )
+        return raw_split, "split_utterances"
+
+    return list(data.get("utterances") or []), "utterances"
+
+
 def _adapt_saved_utterances(utterances: list) -> list[dict]:
     """Bridge Deepgram-saved utterance shape onto the input shape that
     ``spec_engine.block_builder.build_blocks`` expects.
@@ -147,11 +201,16 @@ def _build_corrected_text(
     Adapts the saved-utterance shape (``transcript`` / ``speaker_label``)
     onto block_builder's expected shape (``text`` / ``speaker``) first.
     """
-    utterances = raw_data.get("utterances") or []
+    utterances, _utterance_source = _select_utterance_source(raw_data)
     if not utterances:
         raise RuntimeError(
             "Raw JSON has no utterances; cannot run corrections"
         )
+    logger.info(
+        "Loading from %s (%d entries)",
+        _utterance_source,
+        len(utterances),
+    )
 
     adapted = _adapt_saved_utterances(utterances)
     alt = {"utterances": adapted}

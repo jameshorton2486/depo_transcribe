@@ -244,3 +244,72 @@ def test_adapt_saved_utterances_handles_mixed_shapes() -> None:
     assert out[0] == {"speaker": "Speaker 0", "text": "Real.", "type": "utterance"}
     assert out[1] == {"speaker": "Speaker 1", "text": "Older.", "type": "utterance"}
     assert out[2] == {"speaker": "Speaker 2", "text": "No label.", "type": "utterance"}
+
+
+# ── Step 2E: split-utterances source selection ────────────────────────────────
+
+
+class TestUtteranceSourceSelection:
+    """Step 2E: corrections runner must prefer split_utterances when
+    present, fall back to utterances otherwise, and raise on malformed
+    split_utterances rather than silently falling back."""
+
+    def test_split_utterances_preferred_when_present(self):
+        from core.corrections_runner import _select_utterance_source
+
+        data = {
+            "utterances": [
+                {"transcript": "original A"},
+                {"transcript": "original B"},
+            ],
+            "split_utterances": [
+                {"transcript": "split A1"},
+                {"transcript": "split A2"},
+                {"transcript": "split B"},
+            ],
+        }
+        utts, source = _select_utterance_source(data)
+        assert source == "split_utterances"
+        assert len(utts) == 3
+        assert utts[0]["transcript"] == "split A1"
+
+    def test_falls_back_to_utterances_when_split_absent(self):
+        from core.corrections_runner import _select_utterance_source
+
+        data = {"utterances": [{"transcript": "original only"}]}
+        utts, source = _select_utterance_source(data)
+        assert source == "utterances"
+        assert utts == [{"transcript": "original only"}]
+
+    def test_raises_when_split_utterances_is_empty_list(self):
+        from core.corrections_runner import _select_utterance_source
+
+        data = {
+            "utterances": [{"transcript": "original"}],
+            "split_utterances": [],
+        }
+        with pytest.raises(RuntimeError, match="malformed"):
+            _select_utterance_source(data)
+
+    def test_raises_when_split_utterances_is_wrong_type(self):
+        from core.corrections_runner import _select_utterance_source
+
+        data = {
+            "utterances": [{"transcript": "original"}],
+            "split_utterances": "not a list",
+        }
+        with pytest.raises(RuntimeError, match="expected a list"):
+            _select_utterance_source(data)
+
+    def test_raises_when_split_utterance_item_missing_text(self):
+        from core.corrections_runner import _select_utterance_source
+
+        data = {
+            "utterances": [{"transcript": "original"}],
+            "split_utterances": [
+                {"transcript": "valid item"},
+                {"speaker": 1},  # missing both transcript and text
+            ],
+        }
+        with pytest.raises(RuntimeError, match="neither 'transcript' nor 'text'"):
+            _select_utterance_source(data)
