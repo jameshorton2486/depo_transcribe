@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import textwrap
 import threading
+import tkinter
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -1817,7 +1818,7 @@ class TranscribeTab(ctk.CTkFrame):
             hover_color=_CARD_BORDER,
             border_color=_CARD_BORDER,
             border_width=1,
-            command=self._open_transcript,
+            command=self._on_view_document_click,
             corner_radius=8,
         )
         self._open_transcript_btn.grid(row=1, column=1, sticky="ew", padx=(4, 0))
@@ -4349,6 +4350,84 @@ class TranscribeTab(ctk.CTkFrame):
         self.set_status("Splitter failed", "#FF4444")
         self.append_log(f"Splitter error: {error_message}")
         messagebox.showerror("Splitter Failed", error_message)
+
+    # ── View Document dropdown ─────────────────────────────────────────────────
+
+    def _find_viewable_documents(self) -> list[tuple[str, Path]]:
+        """Return ``(filename, full_path)`` tuples for every ``.txt`` and
+        ``.docx`` file in the parent folder of the currently loaded
+        transcript.
+
+        Returns an empty list when no case is loaded or the parent folder
+        no longer exists. Sorted alphabetically by filename so the menu
+        order is predictable.
+        """
+        if not self._current_txt_path:
+            return []
+        parent = Path(self._current_txt_path).parent
+        if not parent.is_dir():
+            return []
+        candidates: list[tuple[str, Path]] = []
+        for path in sorted(parent.iterdir(), key=lambda p: p.name.lower()):
+            if not path.is_file():
+                continue
+            if path.suffix.lower() in (".txt", ".docx"):
+                candidates.append((path.name, path))
+        return candidates
+
+    def _open_document(self, path: Path) -> None:
+        """Open a file in the OS-default application for its extension.
+
+        On Windows, ``os.startfile`` respects the user's default-app
+        choice (Notepad for .txt, MS Word for .docx, etc.). Surfaces a
+        messagebox on failure rather than failing silently.
+        """
+        try:
+            os.startfile(str(path))
+        except OSError as exc:
+            messagebox.showerror(
+                "Could not open document",
+                f"Failed to open {path.name}:\n\n{exc}",
+            )
+
+    def _on_view_document_click(self) -> None:
+        """Show a dropdown menu of viewable documents for the current case.
+
+        Empty-state handling:
+          * No case loaded → messagebox "Load a case first."
+          * No viewable files → messagebox "No documents available yet."
+          * Otherwise → pop a tkinter.Menu below the button.
+        """
+        if not self._current_txt_path:
+            messagebox.showinfo(
+                "No case loaded",
+                "Load a transcript first to view its documents.",
+            )
+            return
+
+        documents = self._find_viewable_documents()
+        if not documents:
+            messagebox.showinfo(
+                "No documents available",
+                "No corrected transcripts or DOCX files were found for "
+                "this case yet. Run corrections first to produce one.",
+            )
+            return
+
+        menu = tkinter.Menu(self, tearoff=False)
+        for label, path in documents:
+            menu.add_command(
+                label=label,
+                command=lambda p=path: self._open_document(p),
+            )
+
+        btn = self._open_transcript_btn
+        x = btn.winfo_rootx()
+        y = btn.winfo_rooty() + btn.winfo_height()
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     # ── Extraction callback (called externally when AI extraction finishes) ──
 
