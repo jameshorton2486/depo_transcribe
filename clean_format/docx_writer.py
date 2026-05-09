@@ -271,16 +271,22 @@ def _write_proceedings(
             paragraph.paragraph_format.first_line_indent = Inches(-1.0)
             paragraph.add_run(f"\t{block['label']}\t{block['text']}")
         elif block["kind"] == "speaker":
+            # Step 2J: non-Q/A lines render with a three-tab prefix that
+            # lands the content at the 1.5" tab stop. Left/first-line
+            # indents stay at zero so the tabs themselves carry the
+            # indentation; the tab stops above (0.5/1.0/1.5) absorb them.
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0)
             if block["label"]:
-                paragraph.add_run(f"{block['label']}  {block['text']}")
+                paragraph.add_run(f"\t\t\t{block['label']}  {block['text']}")
             else:
-                paragraph.add_run(_double_space_sentences(block["text"]))
+                paragraph.add_run(f"\t\t\t{_double_space_sentences(block['text'])}")
         else:
+            # Step 2J: header-kind blocks (e.g. "DEPOSITION:") also get
+            # the three-tab prefix.
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0)
-            run = paragraph.add_run(block["label"])
+            run = paragraph.add_run(f"\t\t\t{block['label']}")
             run.bold = True
 
 

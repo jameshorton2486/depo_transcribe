@@ -150,7 +150,8 @@ def test_write_proceedings_qa_run_text_preserves_leading_tab():
 
 def test_write_proceedings_speaker_paragraph_does_not_hang():
     """Speaker blocks (e.g. 'MR. SMITH:  Objection. Form.') stay at
-    the left margin — only Q/A bodies hang.
+    the left margin — only Q/A bodies hang. After Step 2J the run text
+    starts with three tabs so the content lands at the 1.5" tab stop.
     """
     document = build_deposition_document(
         "MR. SMITH:\tObjection. Form.", _case_meta()
@@ -163,6 +164,56 @@ def test_write_proceedings_speaker_paragraph_does_not_hang():
     pf = speaker_paragraph.paragraph_format
     assert (pf.left_indent or 0) == 0
     assert (pf.first_line_indent or 0) == 0
+
+
+# ── Step 2J: three-tab prefix on non-Q/A paragraphs ──────────────────────────
+
+
+def test_speaker_paragraph_text_starts_with_three_tabs():
+    """Step 2J: speaker (non-Q/A) paragraphs render with a leading
+    "\\t\\t\\t" so the content lands at the 1.5" tab stop."""
+    document = build_deposition_document(
+        "MR. SMITH:\tObjection. Form.", _case_meta()
+    )
+    speaker_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if "MR. SMITH" in paragraph.text
+    )
+    assert speaker_paragraph.text.startswith("\t\t\t"), (
+        f"speaker paragraph missing 3-tab prefix: {speaker_paragraph.text!r}"
+    )
+
+
+def test_speaker_paragraph_tab_stops_match_qa():
+    """Non-Q/A paragraphs share the same 0.5/1.0/1.5 tab stops with Q/A
+    paragraphs so the three-tab prefix lands at 1.5"."""
+    document = build_deposition_document(
+        "MR. SMITH:\tObjection. Form.", _case_meta()
+    )
+    speaker_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if "MR. SMITH" in paragraph.text
+    )
+    tab_positions = [tab.position for tab in speaker_paragraph.paragraph_format.tab_stops]
+    assert 457200 in tab_positions   # 0.5"
+    assert 914400 in tab_positions   # 1.0"
+    assert 1371600 in tab_positions  # 1.5"
+
+
+def test_no_arrow_characters_in_docx_output():
+    """No arrow characters should appear anywhere in the rendered DOCX."""
+    document = build_deposition_document(
+        "Q.\tDid you see it?\n\n"
+        "A.\tYes.\n\n"
+        "MR. SMITH:\tObjection. Form.\n\n"
+        "(Exhibit 1 marked.)",
+        _case_meta(),
+    )
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    for arrow in ("→", "⇒", "⟶", "►", "▶"):
+        assert arrow not in text, f"unexpected arrow {arrow!r} in DOCX output"
 
 
 def test_sanitize_filename_component_replaces_spaces_and_punctuation():

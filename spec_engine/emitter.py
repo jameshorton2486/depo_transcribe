@@ -9,6 +9,11 @@ from typing import List
 
 INDENT = "    "
 DOUBLE_SPACE = "\n\n"
+# Step 2J: non-Q/A transcript lines (colloquy, directives, fallback)
+# are prefixed with exactly three tabs so they land at the 1.5" tab
+# stop in the DOCX writer. Q/A lines remain "\tQ.\t{text}" /
+# "\tA.\t{text}" — they're at the 0.5"/1.0" stops.
+NON_QA_PREFIX = "\t\t\t"
 _LEADING_QA_RE = re.compile(r"^\s*[QA]\.\s*")
 _SENTENCE_RE = re.compile(r"[^.!?]+(?:[.!?]+|$)")
 
@@ -88,10 +93,15 @@ def format_qa(block) -> str:
 def format_colloquy(blocks: List, start_index: int):
     """
     Group consecutive same-speaker colloquy into one block.
+
+    Step 2J: every emitted line — speaker label and body — is prefixed
+    with three tabs, landing at the 1.5" tab stop. Prior versions used
+    4-space and 8-space soft indents; the new contract is tab-based so
+    the DOCX writer's tab stops control the visual layout.
     """
     speaker = normalize_speaker(blocks[start_index].speaker)
 
-    lines = [f"{INDENT}{speaker}"]
+    lines = [f"{NON_QA_PREFIX}{speaker}"]
 
     i = start_index
 
@@ -105,7 +115,7 @@ def format_colloquy(blocks: List, start_index: int):
             break
 
         text = normalize_time(double_space_after_punctuation(block.text.strip()))
-        lines.append(f"{INDENT*2}{text}")
+        lines.append(f"{NON_QA_PREFIX}{text}")
 
         i += 1
 
@@ -121,9 +131,12 @@ def format_directive(block) -> str:
     """
     Format directives like:
     BY MS. MALONEY:
+
+    Step 2J: prefixed with three tabs (1.5" tab stop). Outer newlines
+    preserved so directives still get their own paragraph in DOCX.
     """
     text = block.text.strip().upper()
-    return f"\n{text}\n"
+    return f"\n{NON_QA_PREFIX}{text}\n"
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -213,10 +226,11 @@ def format_blocks_to_text(blocks: List) -> str:
             continue
 
         # -----------------------------------
-        # FALLBACK
+        # FALLBACK — any non-Q/A block we don't have a specific handler
+        # for. Step 2J: same three-tab prefix as colloquy/directive.
         # -----------------------------------
         text = normalize_time(double_space_after_punctuation(block.text.strip()))
-        output.append(text)
+        output.append(f"{NON_QA_PREFIX}{text}")
         i += 1
 
     # Clean extra whitespace
