@@ -129,18 +129,26 @@ class TestIsLikelyAnswer:
             current_classifier_type="colloquy",
         ) is False
 
-    def test_question_shaped_colloquy_after_question_not_answer(self):
+    def test_question_shaped_response_after_question_typed_answer(self):
         # "Excuse me?" — colloquy ending with `?` from a different
-        # speaker after a question. _is_likely_question returns True
-        # for it, so the colloquy fallback's `not _is_likely_question`
-        # clause fires negatively. Not an answer.
+        # speaker after a question.
+        #
+        # Step 2A v2 originally asserted False here based on the
+        # `not _is_likely_question` guard inside the colloquy-fallback
+        # branch. Step 2H removed that guard because witness substantive
+        # answers (e.g. "Would clarify what you mean by large baby.")
+        # were being mistyped as questions on real production transcripts.
+        # The "Excuse me?" case is now in the same class as those
+        # substantive answers — both are treated as answer when they
+        # follow an attorney Q from a different speaker. Structurally
+        # cleaner; downstream enforce_structure is satisfied.
         assert _is_likely_answer(
             "Excuse me?",
             prior_type="question",
             prior_speaker="Speaker 1",
             current_speaker="Speaker 0",
             current_classifier_type="colloquy",
-        ) is False
+        ) is True
 
     def test_pre_classified_answer_not_via_colloquy_fallback(self):
         # Block already typed `answer` by the classifier. The colloquy
@@ -386,3 +394,120 @@ class TestSameSpeakerQMerging:
         # Examiner attribution from the directive flows to both Qs and the
         # merged block keeps that attribution.
         assert question_blocks[0].examiner == "MR. SMITH"
+
+
+# ── Step 2H: rules-side fixes for Categories A + C ────────────────────────────
+
+
+class TestCategoryAandCFixes:
+    """Step 2H: witness substantive answers (Category A) and objection
+    blocks (Category C) should not be typed as questions even when their
+    text superficially looks question-shaped."""
+
+    def test_witness_answer_starting_with_question_word_typed_answer(self):
+        """Cavazos pair 1 / Caram pair 1: 'would clarify...' answer
+        starting with 'would' after attorney Q from different speaker."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "What does large baby mean?", type_="question"),
+            _block("Speaker 2", "Would clarify what you mean by large baby.",
+                   type_="colloquy"),
+        ]
+        result = enforce_qa_sequence(blocks)
+        # The witness's substantive answer must be typed answer, not question.
+        assert result[2].type == "answer", (
+            f"Expected witness's 'would clarify...' to be typed answer, "
+            f"got {result[2].type}"
+        )
+
+    def test_witness_answer_ending_with_question_typed_answer(self):
+        """Caram pair 2: substantive answer that ends with a clarifying ?."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "When did she give you the date?",
+                   type_="question"),
+            _block(
+                "Speaker 2",
+                "From what she gave us per the phone call, "
+                "it was January 2. Or 22 weeks?",
+                type_="colloquy",
+            ),
+        ]
+        result = enforce_qa_sequence(blocks)
+        assert result[2].type == "answer", (
+            f"Expected witness's answer-with-tail-question to be typed "
+            f"answer, got {result[2].type}"
+        )
+
+    def test_objection_with_trailing_question_mark_typed_colloquy(self):
+        """Caram pair 8: 'Objection. Form. In regards to what?' is colloquy."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "Have we discussed your expert opinions?",
+                   type_="question"),
+            _block("Speaker 0", "Objection. Form. In regards to what?",
+                   type_="colloquy"),
+        ]
+        result = enforce_qa_sequence(blocks)
+        # The objection must NOT be typed question.
+        assert result[2].type != "question", (
+            f"Expected objection to NOT be typed question, got "
+            f"{result[2].type}"
+        )
+
+    def test_normal_q_a_q_a_flow_unchanged(self):
+        """The standard Q-A-Q-A pattern still works after the order swap."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 2", "Yes.", type_="colloquy"),
+            _block("Speaker 1", "When did you see it?", type_="question"),
+            _block("Speaker 2", "Around noon.", type_="colloquy"),
+        ]
+        result = enforce_qa_sequence(blocks)
+        # Find Q and A blocks (ignoring oath at index 0)
+        types = [b.type for b in result[1:]]
+        # Should be Q-A-Q-A
+        assert types == ["question", "answer", "question", "answer"], (
+            f"Expected [Q, A, Q, A], got {types}"
+        )
+
+    def test_same_speaker_continuation_q_still_typed_question(self):
+        """Same-speaker compound questions are unaffected by the order swap.
+        The answer-detection requires speaker change, so it can't fire here;
+        the question-detection still wins."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 1", "Did you also hear it?", type_="colloquy"),
+        ]
+        result = enforce_qa_sequence(blocks)
+        # Both Speaker 1 blocks should remain typed question.
+        assert result[1].type == "question"
+        assert result[2].type == "question"
+
+    def test_attorney_q_after_witness_a_typed_question(self):
+        """Attorney's next question after witness answer is still typed Q
+        (not accidentally typed A by the new order)."""
+        from spec_engine.qa_fixer import enforce_qa_sequence
+
+        blocks = [
+            _block("Court Reporter", "Do you swear...", type_="oath"),
+            _block("Speaker 1", "Did you see it?", type_="question"),
+            _block("Speaker 2", "Yes.", type_="colloquy"),
+            _block("Speaker 1", "When?", type_="colloquy"),
+        ]
+        result = enforce_qa_sequence(blocks)
+        # The "When?" from Speaker 1 should be Q (prior was A from Speaker 2,
+        # so answer-detection requires prior_type == question, doesn't fire).
+        assert result[3].type == "question"

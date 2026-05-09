@@ -82,6 +82,12 @@ def _is_likely_question(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return False
+    # Step 2H: objection blocks are colloquy regardless of trailing
+    # punctuation. Without this, "Objection. Form. In regards to what?"
+    # gets typed as a question because it ends with ?, then enforce_structure
+    # raises on the consecutive-Q pair created with the prior attorney Q.
+    if stripped.lower().startswith("objection"):
+        return False
     if any(stripped.endswith(marker) for marker in _FRAGMENT_MARKERS):
         return False
     if stripped.endswith("?"):
@@ -144,7 +150,13 @@ def _is_likely_answer(
     if stripped in STANDALONE_ANSWER_WORDS:
         return True
 
-    if current_classifier_type == "colloquy" and not _is_likely_question(text):
+    # Step 2H: removed `not _is_likely_question(text)` guard. The new
+    # check order in enforce_qa_sequence (answer-first) makes it
+    # unnecessary, and the guard was preventing witness substantive
+    # answers like "would clarify what you mean by large baby." from
+    # being typed as answers when they happened to start with a question
+    # word.
+    if current_classifier_type == "colloquy":
         return True
 
     return False
@@ -202,15 +214,12 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
         original_classifier_type = block.type
 
         if seen_deposition_marker:
-            if _is_likely_question(block.text):
-                normalized = TranscriptBlock(
-                    speaker=block.speaker,
-                    text=block.text,
-                    type="question",
-                    source_type=block.source_type,
-                    examiner=block.examiner,
-                )
-            elif _is_likely_answer(
+            # Step 2H: answer-detection runs first. When both helpers
+            # could fire (e.g. witness's substantive answer that
+            # happens to start with a question word), answer-detection
+            # wins. Same-speaker continuation Qs are unaffected because
+            # _is_likely_answer requires speaker change.
+            if _is_likely_answer(
                 block.text,
                 last_type,
                 prior_speaker,
@@ -221,6 +230,14 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     speaker=block.speaker,
                     text=block.text,
                     type="answer",
+                    source_type=block.source_type,
+                    examiner=block.examiner,
+                )
+            elif _is_likely_question(block.text):
+                normalized = TranscriptBlock(
+                    speaker=block.speaker,
+                    text=block.text,
+                    type="question",
                     source_type=block.source_type,
                     examiner=block.examiner,
                 )
