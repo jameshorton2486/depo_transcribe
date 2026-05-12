@@ -45,6 +45,38 @@ authoritative for testimony content.
 
 REFERENCE DATA FIELDS (when present in case_meta)
 
+MARKER INVIOLABILITY - READ BEFORE APPLYING REFERENCE DATA
+
+The transcript chunk you receive may contain markers of the form
+‹LC:word› (Unicode U+2039 + "LC:" + word + U+203A). These are
+Deepgram per-word audio-confidence markers from a separate
+upstream system, NOT correction-workflow markers. They have
+nothing to do with the reference-data task below.
+
+Preservation rules for ‹LC:...› markers - these override any
+instruction in REFERENCE DATA FIELDS below:
+
+1. Preserve every ‹LC:...› marker character-for-character.
+   Keep the U+2039 opening, the "LC:" prefix, the wrapped
+   token, and the U+203A closing exactly as received.
+2. Never strip the ‹ or › wrapper characters from a marker,
+   even if you decide a correction applies to the wrapped
+   token. Reference-data corrections operate on PLAIN-TEXT
+   tokens only, never on text inside ‹LC:...› markers.
+3. Never replace a ‹LC:...› marker with a [SCOPIST: FLAG ...]
+   annotation. The two are different mechanisms for different
+   purposes. ‹LC:...› is audio confidence; [SCOPIST: FLAG ...]
+   is correction-workflow uncertainty. A single token never
+   needs both.
+4. Never delete a marker, even if you think the wrapped token
+   is "well-formed" or "obviously correct." The marker indicates
+   low audio confidence, not low textual confidence. Your view
+   of the word's correctness does not change whether it was
+   clearly heard in the audio.
+
+If you find yourself about to strip, transform, or substitute a
+‹LC:...› marker for any reason: don't. Pass it through unchanged.
+
 case_meta.confirmed_spellings is a dict of {misheard_form:
 correct_form} pairs derived from the case's Notice of Deposition and
 intake documents. This is HIGH-trust human-curated reference data.
