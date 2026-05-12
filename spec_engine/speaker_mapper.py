@@ -2,10 +2,31 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Iterable
 
-from .models import TranscriptBlock
+from .models import TranscriptBlock, TranscriptWord
+
+
+def _propagate_speaker_to_words(
+    words: list[TranscriptWord] | None,
+    new_speaker: str,
+) -> list[TranscriptWord] | None:
+    """Rebuild a word list with each word's speaker set to `new_speaker`.
+
+    Step B.1 policy: when speaker_mapper reassigns a block's speaker,
+    the per-word `speaker` field is propagated so downstream consumers
+    see "who is speaking this word in the final transcript," not
+    Deepgram's pre-correction guess. Uses `dataclasses.replace` to
+    match the rebuild-not-mutate convention used elsewhere in
+    spec_engine.
+
+    See docs/plans/step_b1_word_carry_merge_split_2026-05-12.md.
+    """
+    if words is None:
+        return None
+    return [dataclasses.replace(w, speaker=new_speaker) for w in words]
 
 _TRAILING_PUNCT_RE = re.compile(r"[:.;,\s]+$")
 _MULTISPACE_RE = re.compile(r"\s+")
@@ -80,6 +101,9 @@ def smooth_speaker_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlo
                     type=current.type,
                     source_type=current.source_type,
                     examiner=current.examiner,
+                    words=_propagate_speaker_to_words(
+                        current.words, previous.speaker
+                    ),
                 )
 
     return smoothed
@@ -118,6 +142,7 @@ def normalize_speakers(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                 type=block.type,
                 source_type=block.source_type,
                 examiner=examiner,
+                words=_propagate_speaker_to_words(block.words, speaker),
             )
         )
     return normalized

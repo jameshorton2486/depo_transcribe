@@ -4,7 +4,26 @@ from __future__ import annotations
 
 import re
 
-from .models import TranscriptBlock
+from .models import TranscriptBlock, TranscriptWord
+
+
+def _concat_words(
+    a: list[TranscriptWord] | None,
+    b: list[TranscriptWord] | None,
+) -> list[TranscriptWord] | None:
+    """Merge two blocks' word lists per Step B.1 policy.
+
+    Concatenate when both lists are present. If either side is None,
+    the merged result is None — i.e., word-level data is dropped
+    rather than silently representing the merged block with only a
+    partial word array. Step C/D treats None as "no carried words,
+    render plain."
+
+    See docs/plans/step_b1_word_carry_merge_split_2026-05-12.md.
+    """
+    if a is None or b is None:
+        return None
+    return list(a) + list(b)
 
 _SPEAKER_IN_QA_RE = re.compile(
     r"^\s*(?:[A-Z][A-Z.\-'\s]+:|SPEAKER\s+\d+:|BY\s+[A-Z.\-'\s]+:)"
@@ -232,6 +251,7 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type="answer",
                     source_type=block.source_type,
                     examiner=block.examiner,
+                    words=block.words,
                 )
             elif _is_likely_question(block.text):
                 normalized = TranscriptBlock(
@@ -240,6 +260,7 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type="question",
                     source_type=block.source_type,
                     examiner=block.examiner,
+                    words=block.words,
                 )
 
         # Currently unreachable in linear walks; preserved pending separate audit.
@@ -252,6 +273,7 @@ def enforce_qa_sequence(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type=previous.type,
                     source_type=previous.source_type,
                     examiner=previous.examiner,
+                    words=_concat_words(previous.words, normalized.words),
                 )
                 last_type = fixed[-1].type
                 prior_speaker = fixed[-1].speaker
@@ -281,6 +303,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type=block.type,
                     source_type=block.source_type,
                     examiner=current_examiner,
+                    words=block.words,
                 )
             )
             continue
@@ -302,6 +325,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                         type="question",
                         source_type=pending_question.source_type,
                         examiner=pending_question.examiner,
+                        words=_concat_words(pending_question.words, block.words),
                     )
                     fixed[-1] = merged
                     pending_question = merged
@@ -320,6 +344,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type=block.type,
                     source_type=block.source_type,
                     examiner=current_examiner,
+                    words=block.words,
                 )
             )
             # Track the appended block (with examiner attribution), not the
@@ -340,6 +365,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                     type=block.type,
                     source_type=block.source_type,
                     examiner=current_examiner,
+                    words=block.words,
                 )
             )
             continue
@@ -352,6 +378,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                 type=block.type,
                 source_type=block.source_type,
                 examiner=current_examiner,
+                words=block.words,
             )
         )
 
@@ -375,6 +402,7 @@ def enforce_structure(blocks: list[TranscriptBlock]) -> list[TranscriptBlock]:
                         type="question",
                         source_type=pending_question.source_type,
                         examiner=pending_question.examiner,
+                        words=_concat_words(pending_question.words, block.words),
                     )
                     final_fixed[-1] = merged
                     pending_question = merged
