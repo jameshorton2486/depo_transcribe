@@ -27,6 +27,9 @@ from clean_format.formatter import format_transcript
 from clean_format.low_confidence_markers import (
     LOW_CONF_CLOSE,
     LOW_CONF_OPEN,
+    SYSTEMATIC_DRIFT_FLOOR,
+    SYSTEMATIC_DRIFT_PCT,
+    MarkerDriftError,
     count_markers,
     inject_markers,
     split_into_runs,
@@ -290,6 +293,90 @@ class TestValidateRoundTrip:
     def test_never_raises_on_empty_input(self):
         stats = validate_marker_round_trip("", "")
         assert stats == {"input_count": 0, "output_count": 0, "dropped": 0}
+
+
+# ----------------------------------------------------------------------------
+# Systematic-drift policy (5% / floor-of-5)
+# ----------------------------------------------------------------------------
+
+
+def _markers(n: int) -> str:
+    return " ".join(f"{LOW_CONF_OPEN}t{i}{LOW_CONF_CLOSE}" for i in range(n))
+
+
+class TestSystematicDriftPolicy:
+    """The follow-up policy after Step E: log small drops, raise on
+    systematic prompt-compliance failure."""
+
+    def test_constants_match_agreed_policy(self):
+        assert SYSTEMATIC_DRIFT_PCT == 5.0
+        assert SYSTEMATIC_DRIFT_FLOOR == 5
+
+    def test_drift_below_floor_logs_only(self, caplog):
+        # 4 markers in, 0 out — 100% drop but below the 5-marker floor.
+        with caplog.at_level(logging.WARNING):
+            validate_marker_round_trip(_markers(4), "")
+        # Logged but did not raise (else the assert wouldn't be reached).
+        assert any("dropped 4 of 4" in r.message.lower() for r in caplog.records)
+
+    def test_drift_at_floor_above_pct_raises(self):
+        # 5 markers in, 1 out — 80% drop with input == floor. Raises.
+        with pytest.raises(MarkerDriftError) as exc:
+            validate_marker_round_trip(_markers(5), _markers(1))
+        assert exc.value.stats == {
+            "input_count": 5,
+            "output_count": 1,
+            "dropped": 4,
+        }
+
+    def test_drift_above_floor_above_pct_raises(self):
+        # 100 in, 0 out — 100% drop. Raises.
+        with pytest.raises(MarkerDriftError):
+            validate_marker_round_trip(_markers(100), "")
+
+    def test_drift_above_floor_just_above_threshold_raises(self):
+        # 100 in, 94 out — 6% drop. Just above 5% threshold. Raises.
+        with pytest.raises(MarkerDriftError):
+            validate_marker_round_trip(_markers(100), _markers(94))
+
+    def test_drift_at_exact_threshold_does_not_raise(self, caplog):
+        # 100 in, 95 out — 5.0% drop. Strict > means this does NOT raise.
+        with caplog.at_level(logging.WARNING):
+            stats = validate_marker_round_trip(_markers(100), _markers(95))
+        assert stats["dropped"] == 5
+        assert any("5.0% drop" in r.message for r in caplog.records)
+
+    def test_drift_below_threshold_does_not_raise(self, caplog):
+        # 100 in, 97 out — 3% drop. Below 5% threshold.
+        with caplog.at_level(logging.WARNING):
+            stats = validate_marker_round_trip(_markers(100), _markers(97))
+        assert stats["dropped"] == 3
+
+    def test_raised_exception_carries_stats(self):
+        try:
+            validate_marker_round_trip(_markers(20), "")
+        except MarkerDriftError as exc:
+            assert exc.stats["input_count"] == 20
+            assert exc.stats["dropped"] == 20
+            assert "20 of 20 markers" in str(exc)
+            assert "5.0%" in str(exc)
+        else:
+            raise AssertionError("Expected MarkerDriftError")
+
+    def test_format_transcript_propagates_drift_error(self):
+        # End-to-end: a chunk with many markers and a model response
+        # that drops all of them should fail the whole call.
+        words = [
+            {"word": f"t{i}", "start": float(i), "end": float(i) + 0.1,
+             "confidence": 0.4}
+            for i in range(20)
+        ]
+        # The raw text must contain each word so inject_markers can wrap them.
+        raw_text = "Speaker 0: " + " ".join(w["word"] for w in words) + "."
+
+        client = _FakeClient(response_text="A.\tall the markers were dropped.")
+        with pytest.raises(MarkerDriftError):
+            format_transcript(raw_text, {}, client=client, deepgram_words=words)
 
 
 # ----------------------------------------------------------------------------

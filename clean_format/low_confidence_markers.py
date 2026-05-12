@@ -163,7 +163,40 @@ def split_into_runs(text: str) -> list[tuple[str, bool]]:
     return parts
 
 
-def validate_marker_round_trip(input_text: str, output_text: str) -> dict[str, int]:
+SYSTEMATIC_DRIFT_PCT = 5.0
+SYSTEMATIC_DRIFT_FLOOR = 5
+
+
+class MarkerDriftError(RuntimeError):
+    """Raised when an Anthropic chunk response shows systematic marker drift.
+
+    Per Step E follow-up: a marker drop above the systematic-drift
+    threshold means the model is not honoring the marker preservation
+    rule for the chunk. Failing the run loudly is preferable to
+    shipping a transcript with widespread silent un-highlighting; the
+    scopist's review surface is the load-bearing feature.
+
+    "Systematic" means the input had at least ``SYSTEMATIC_DRIFT_FLOOR``
+    markers AND more than ``SYSTEMATIC_DRIFT_PCT`` percent were dropped.
+    Below either condition, drift is logged as a quality signal and
+    the pipeline continues — the small-sample stats are too noisy to
+    fail on.
+
+    Carries the per-chunk stats dict on the exception for logging.
+    """
+
+    def __init__(self, message: str, *, stats: dict[str, int]) -> None:
+        super().__init__(message)
+        self.stats = stats
+
+
+def validate_marker_round_trip(
+    input_text: str,
+    output_text: str,
+    *,
+    raise_threshold_pct: float = SYSTEMATIC_DRIFT_PCT,
+    raise_floor: int = SYSTEMATIC_DRIFT_FLOOR,
+) -> dict[str, int]:
     """Compare marker counts before and after the Anthropic round-trip.
 
     Returns a stats dict with:
@@ -171,27 +204,53 @@ def validate_marker_round_trip(input_text: str, output_text: str) -> dict[str, i
       - ``output_count``: markers in the model's response.
       - ``dropped``: input_count - output_count (clamped at zero).
 
-    When markers are dropped, a warning is logged. The pipeline is not
-    aborted — Step D will simply render fewer highlights for the affected
-    chunk, which is preferred to crashing on what amounts to a soft
-    quality signal.
+    Drift handling:
+      - When ``input_count >= raise_floor`` AND ``dropped / input_count``
+        exceeds ``raise_threshold_pct``, raise ``MarkerDriftError``.
+        This catches systematic prompt-instruction failure (the model
+        ignoring the marker preservation rule).
+      - Otherwise, drift is logged as a warning and the function
+        returns normally. Yellow highlights for the dropped tokens
+        will be missing; the transcript text itself is still valid.
+
+    The floor (small-sample exemption) tolerates "Claude dropped one
+    marker out of two" while still failing on "Claude dropped all
+    twenty markers." Per the Step E follow-up policy decision.
     """
     input_count = count_markers(input_text)
     output_count = count_markers(output_text)
     dropped = max(0, input_count - output_count)
-    if dropped:
-        logger.warning(
-            "[low_confidence_markers] Anthropic dropped %d of %d markers "
-            "in cleanup round-trip (kept %d). Yellow highlights will be "
-            "missing for the dropped tokens. Marker form: %s...%s",
-            dropped,
-            input_count,
-            output_count,
-            LOW_CONF_OPEN,
-            LOW_CONF_CLOSE,
-        )
-    return {
+    stats = {
         "input_count": input_count,
         "output_count": output_count,
         "dropped": dropped,
     }
+    if not dropped:
+        return stats
+
+    drop_pct = (dropped / input_count) * 100 if input_count else 0.0
+    is_systematic = (
+        input_count >= raise_floor and drop_pct > raise_threshold_pct
+    )
+    if is_systematic:
+        raise MarkerDriftError(
+            f"Systematic marker drift in Anthropic response: dropped "
+            f"{dropped} of {input_count} markers ({drop_pct:.1f}%). "
+            f"Threshold is >{raise_threshold_pct}% drop when input has "
+            f">= {raise_floor} markers. Cleanup pass is not honoring "
+            f"the marker preservation rule for this chunk.",
+            stats=stats,
+        )
+    logger.warning(
+        "[low_confidence_markers] Anthropic dropped %d of %d markers "
+        "in cleanup round-trip (kept %d, %.1f%% drop). Yellow highlights "
+        "will be missing for the dropped tokens. Below systematic-drift "
+        "threshold (>%.1f%% with input >= %d).",
+        dropped,
+        input_count,
+        output_count,
+        drop_pct,
+        raise_threshold_pct,
+        raise_floor,
+    )
+    return stats
