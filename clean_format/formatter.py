@@ -368,3 +368,31 @@ def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
 def load_case_meta(path: str | Path) -> dict[str, Any]:
     with open(path, "r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_deepgram_words_from_json(
+    path: str | Path,
+) -> list[dict[str, Any]] | None:
+    """Load the Deepgram word array from a raw_deepgram.json file.
+
+    Returns the ``words`` list when present and non-empty; ``None`` in
+    every degraded case (file missing, JSON malformed, no ``words``
+    key, empty list). Never raises — callers can pass the result
+    directly to ``format_transcript(..., deepgram_words=...)`` and the
+    yellow-highlight pipeline degrades to "no markers" gracefully.
+
+    The schema expected matches what ``core/job_runner.py`` writes to
+    ``{case_dir}/Deepgram/raw_deepgram.json``: a dict with a top-level
+    ``"words"`` key holding a list of Deepgram word dicts.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    words = data.get("words")
+    if not isinstance(words, list) or not words:
+        return None
+    return words

@@ -3613,6 +3613,7 @@ class TranscribeTab(ctk.CTkFrame):
     def _run_clean_format_job(self, result: dict) -> None:
         try:
             from clean_format import format_transcript, write_deposition_docx
+            from clean_format.formatter import load_deepgram_words_from_json
 
             case_dir = Path(result.get("output_dir") or "")
             raw_path = Path(
@@ -3627,7 +3628,18 @@ class TranscribeTab(ctk.CTkFrame):
                 encoding="utf-8",
             )
 
-            formatted_text = format_transcript(raw_text, case_meta)
+            # Step E: load Deepgram word-level confidence data so the
+            # cleanup pass can wrap low-confidence tokens with markers
+            # that the DOCX writer renders as yellow highlights. The
+            # canonical raw_deepgram.json lives in {case_dir}/Deepgram/
+            # per core/job_runner.py. Missing/malformed file yields
+            # None and the pipeline degrades to plain rendering.
+            deepgram_words = load_deepgram_words_from_json(
+                case_dir / "Deepgram" / "raw_deepgram.json"
+            )
+            formatted_text = format_transcript(
+                raw_text, case_meta, deepgram_words=deepgram_words
+            )
             witness_last = (
                 case_meta.get("witness_name", "Witness").split() or ["Witness"]
             )[-1]
