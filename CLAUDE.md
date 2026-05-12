@@ -8,9 +8,15 @@ clean reading-copy Word document.
 Current flow:
 
 1. Audio/video file enters the `pipeline/` layer.
-2. Deepgram produces diarized raw transcript output.
-3. `clean_format/` sends the raw transcript plus case metadata to Anthropic.
-4. `clean_format/` writes a Texas-style deposition `.docx`.
+2. Deepgram produces diarized raw transcript output with word-level
+   confidence scores.
+3. `clean_format/` sends the raw transcript plus case metadata to
+   Anthropic. Tokens whose Deepgram confidence falls below
+   `LOW_CONFIDENCE_THRESHOLD` are wrapped with `‹LC:...›` markers
+   before the call; the system prompt instructs the model to preserve
+   them verbatim.
+4. `clean_format/` writes a Texas-style deposition `.docx` with marked
+   tokens rendered as yellow-highlighted runs for scopist review.
 
 This app does **not** produce a UFM-certified verbatim record. The output is a
 cleaned reading copy intended for downstream human review.
@@ -50,14 +56,15 @@ Non-responsibilities:
 
 ### UI
 
-The visible UI is the Transcribe tab only.
+The visible UI has two tabs:
 
-Responsibilities:
-
-- collect source file + case metadata
-- run the transcription job
-- trigger clean-format generation
-- report progress and open the output folder
+- **Transcribe** (`ui/tab_transcribe.py`) — the primary user-facing
+  workflow. Collects source file + case metadata, runs the
+  transcription job, triggers clean-format generation, reports
+  progress, and opens the output folder.
+- **Templates** (`ui/tab_templates.py`) — UFM template generation.
+  Loads case data and calls `ufm_engine/` to populate court-form
+  templates (witness index, certification pages, exhibit index, etc.).
 
 ## Key Files
 
@@ -69,10 +76,16 @@ Responsibilities:
 
 ### Active packages
 
+Primary production flow (audio → transcript → DOCX):
+
 - `pipeline/` — audio preprocessing, Deepgram transcription, assembly
-- `clean_format/` — Anthropic cleanup + DOCX writer
-- `ui/app_window.py` — single-tab app shell
-- `ui/tab_transcribe.py` — active user workflow
+- `clean_format/` — Anthropic cleanup pass + DOCX writer.
+  Includes `low_confidence_markers.py` (Step C marker injection /
+  validation), prompt at `clean_format/prompt.py` is strict-verbatim
+  with low-confidence preservation instructions.
+- `ui/app_window.py` — two-tab app shell
+- `ui/tab_transcribe.py` — Transcribe tab workflow
+- `ui/tab_templates.py` — Templates tab workflow
 - `ui/dialog_combine_audio.py` — multi-file combine dialog
 - `ui/_components.py` — shared UI constants/components
 - `core/file_manager.py` — case folder creation
@@ -83,6 +96,21 @@ Responsibilities:
 - `core/keyterm_extractor.py` — Deepgram keyterm extraction
 - `core/ufm_field_mapper.py` — maps intake data into saved case fields
 - `core/vlc_player.py` — VLC wrapper
+
+Parallel utility / offline pathways (not in the primary transcribe path):
+
+- `spec_engine/` — deterministic structural enforcement for transcript
+  blocks (classifier, Q/A enforcement, speaker normalization,
+  corrections). Carries Deepgram word-level metadata through its data
+  model via `TranscriptBlock.words`. Reachable from
+  `core/corrections_runner.py` and `core/utterance_splitter_runner.py`
+  — diagnostic/correction utilities, NOT called by `core/job_runner.py`.
+- `ufm_engine/` — UFM template generation. `generator/`,
+  `populator/`, `post_processor/`. Called from the Templates tab.
+- `core/corrections_runner.py` — CLI entry into the spec_engine
+  correction pipeline for offline re-processing of captured transcripts.
+- `core/utterance_splitter_runner.py` — CLI entry into the spec_engine
+  utterance splitter for offline transcript restructuring.
 
 ## Claude Cleanup Pass
 
@@ -96,13 +124,21 @@ It:
 - sends each chunk with case metadata
 - concatenates the returned clean text
 
-The cleanup prompt is intentionally narrow:
+The cleanup prompt is strict-verbatim. It instructs the model to:
 
-- remove filler and stutters when non-substantive
-- preserve substantive meaning
+- preserve filler words, stutters, false starts, and hedges exactly as
+  spoken (legal-record fidelity, not narrative readability)
+- preserve interruption markers (` -- `) and ellipses
+- never reword, paraphrase, or "improve" testimony
 - identify speaker roles from metadata and context
-- convert examination into `Q.` / `A.` lines
+- convert examination into `Q.` / `A.` lines once the witness is sworn
 - keep other speakers as labeled blocks
+- preserve `‹LC:...›` low-confidence markers exactly (Step C); marked
+  tokens are not reworded or re-cased
+
+Full prompt at `clean_format/prompt.py`. Authority for the verbatim
+posture: `docs/plans/verbatim_punctuation_plan_2026-05-12.md` and
+Morson's English Guide for Court Reporters.
 
 ## Runtime Paths
 
@@ -163,8 +199,13 @@ For targeted work:
 ## Change Rules
 
 1. Keep `pipeline/` focused on audio + Deepgram only.
-2. Keep `clean_format/` focused on cleanup + DOCX only.
-3. Do not reintroduce a second correction subsystem.
+2. Keep `clean_format/` focused on Anthropic cleanup + DOCX only. This
+   is the primary production correction path.
+3. Keep `spec_engine/` separate from the primary path. It's a parallel
+   offline correction utility reachable through the `core/*_runner.py`
+   scripts. Do not call into `spec_engine/` from `core/job_runner.py`
+   or the UI's `_run_clean_format_job`. Do not merge `spec_engine/`
+   concerns into `clean_format/`.
 4. Prefer additive, direct fixes over framework churn.
 5. Run compile/tests for files you touch.
 
