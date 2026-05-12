@@ -8,6 +8,13 @@ logs/
 # runtime outputs
 app_output.txt
 deepgram_output.txt
+# QA diagnostic outputs (accumulated under the repo root by the
+# diagnostic scripts organized in 6db4a6f). The scripts themselves
+# are tracked; their outputs are transient and pollute git status
+# when present.
+probe_*.txt
+corrections_run_*.txt
+splitter_run_*.txt
 output/
 jobs/*.json
 jobs/*.pkl
