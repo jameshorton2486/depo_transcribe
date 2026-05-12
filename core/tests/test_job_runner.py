@@ -92,7 +92,15 @@ def test_run_transcription_job_uses_and_persists_keyterms(monkeypatch, tmp_path)
     )
 
     assert "Matthew Coger" in captured["transcribe_kwargs"]["keyterms"]
-    assert captured["merge_kwargs"]["deepgram_keyterms"] == ["Matthew Coger"]
+    # Audit-trail contract (Phase 2A): the persisted list is the post-trim
+    # merged_keyterms that was ACTUALLY sent to Deepgram, not the pre-trim
+    # input. The merged list includes DEFAULT_KEYTERMS, so we assert the
+    # input appears in the persisted list AND that defaults expanded it.
+    persisted = captured["merge_kwargs"]["deepgram_keyterms"]
+    assert "Matthew Coger" in persisted
+    assert len(persisted) > 1, (
+        "merged list should include DEFAULT_KEYTERMS in addition to the input"
+    )
     assert results[0]["success"] is True
 
 

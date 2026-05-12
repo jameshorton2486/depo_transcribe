@@ -3595,7 +3595,18 @@ class TranscribeTab(ctk.CTkFrame):
                 "defense_counsel": [],
             }
 
-        return build_case_meta_from_ufm(ufm_fields)
+        case_meta = build_case_meta_from_ufm(ufm_fields)
+        # Phase 2: attach NOD-derived authoritative data so the cleanup
+        # prompt can apply spellings as wrong->right replacements and
+        # keyterms as canonical spellings for phonetic neighbors. Both
+        # fields live at the top level of job_config.json (not nested
+        # in ufm_fields) and are loaded into in-memory state by the
+        # intake flow at _reset_case_state / _apply_intake_result.
+        if self._confirmed_spellings:
+            case_meta["confirmed_spellings"] = dict(self._confirmed_spellings)
+        if self._pdf_keyterms:
+            case_meta["deepgram_keyterms"] = list(self._pdf_keyterms)
+        return case_meta
 
     def _start_clean_format(self, result: dict) -> None:
         self._status_progress.set(0.92)

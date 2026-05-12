@@ -410,7 +410,11 @@ def run_transcription_job(
             ufm_fields=ufm_fields if ufm_fields else None,
             confirmed_spellings=confirmed_spellings if confirmed_spellings else None,
             low_confidence_words=low_conf_words if low_conf_words else None,
-            deepgram_keyterms=keyterms if keyterms else None,
+            # Phase 2 audit fix: persist the post-trim merged list that
+            # was actually sent to Deepgram, not the pre-trim input
+            # `keyterms`. This keeps job_config.json's audit trail
+            # honest about what reached the API.
+            deepgram_keyterms=merged_keyterms if merged_keyterms else None,
         )
         _log("Saved job_config.json → source_docs/")
 

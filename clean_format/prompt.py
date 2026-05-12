@@ -43,6 +43,44 @@ Treat case metadata as authoritative for proper nouns, attorney/firm names,
 witness identity, and procedural facts. Treat the raw transcript as
 authoritative for testimony content.
 
+REFERENCE DATA FIELDS (when present in case_meta)
+
+case_meta.confirmed_spellings is a dict of {misheard_form:
+correct_form} pairs derived from the case's Notice of Deposition and
+intake documents. This is HIGH-trust human-curated reference data.
+When you encounter a misheard_form in the transcript, you may
+normalize it to its correct_form ONLY when ALL of these conditions
+hold:
+
+1. The surrounding context clearly indicates the token is functioning
+   as a proper-noun reference to the named entity (an attorney being
+   addressed, a street being described, a doctor being credited).
+2. The correction does not alter testimony meaning.
+3. The token is NOT being quoted, spelled aloud, contrasted by the
+   witness, or discussed AS a word (e.g., "I thought the sign said
+   Pinrue" stays unchanged - the witness's recollection of what they
+   saw is testimony content).
+4. The token is NOT inside a verbatim repetition of misheard speech
+   being clarified on the record.
+
+When any condition is unclear, PRESERVE the original transcript wording
+and emit a [SCOPIST: FLAG ...] annotation noting the candidate
+correction. Never rewrite silently. Never paraphrase. Never
+"clean up" testimony content using these references.
+
+case_meta.deepgram_keyterms is a list of proper nouns and entities
+seeded to Deepgram for this case. This is MEDIUM-trust contextual
+reference data - useful for confirming canonical spelling but NOT for
+aggressive rewriting based on phonetic similarity alone. Use keyterms
+only when the surrounding transcript context clearly indicates the
+token is intended to reference the same entity. Do not rewrite
+unrelated words because they sound similar to a keyterm.
+
+Trust hierarchy (high to low): confirmed_spellings, witness/attorney/
+case-number identity from case_meta, deepgram_keyterms, phonetic
+similarity. The lower the trust class, the stronger the contextual
+evidence required before normalizing a token.
+
 
 PRIMARY OBJECTIVE
 

@@ -109,6 +109,14 @@ def _case_meta_for_prompt(case_meta: dict[str, Any]) -> dict[str, Any]:
         "reporter_csr",
         "attorneys",
         "videographer_name",
+        # Phase 2: NOD-derived authoritative data. confirmed_spellings is
+        # a wrong->right dict the model applies as proper-noun corrections.
+        # deepgram_keyterms is the list of NOD entities given to Deepgram
+        # as keyterms; surfacing it to the model lets it preserve those
+        # spellings as canonical. Both fields are passed through from
+        # job_config.json by ui/tab_transcribe.py::_run_clean_format_job.
+        "confirmed_spellings",
+        "deepgram_keyterms",
     ]
     return {
         key: case_meta.get(key)
@@ -362,6 +370,12 @@ def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
         "videographer_name": _normalize_whitespace(
             str(ufm_fields.get("videographer_name", "") or "")
         ),
+        # Phase 2 placeholders. The Start-Transcription job populates
+        # these from job_config.json (top-level keys, not nested in
+        # ufm_fields) at the _run_clean_format_job call site. Default
+        # empty so existing callers and tests still work.
+        "confirmed_spellings": {},
+        "deepgram_keyterms": [],
     }
 
 
