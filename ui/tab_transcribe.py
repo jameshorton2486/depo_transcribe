@@ -3614,6 +3614,7 @@ class TranscribeTab(ctk.CTkFrame):
         try:
             from clean_format import format_transcript, write_deposition_docx
             from clean_format.formatter import load_deepgram_words_from_json
+            from clean_format.low_confidence_markers import MarkerDriftError
 
             case_dir = Path(result.get("output_dir") or "")
             raw_path = Path(
@@ -3658,6 +3659,24 @@ class TranscribeTab(ctk.CTkFrame):
                     "success": True,
                     "docx_path": saved_path,
                     "formatted_text": formatted_text,
+                },
+            )
+        except MarkerDriftError as exc:
+            # Systematic marker drift means the cleanup pass refused to
+            # honor the preservation rule and no DOCX was produced. This
+            # parallels the "Document Write Failed" no-output path and
+            # rates a popup, not just a status-bar line. exc.stats is
+            # logged separately at WARNING so the structured dict is
+            # grep-able for later threshold tuning.
+            logger.exception("[TranscribeTab] clean_format failed: marker drift")
+            logger.warning("marker_drift_stats: %s", exc.stats)
+            self.after(
+                0,
+                self._on_clean_format_done,
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "marker_drift": True,
                 },
             )
         except Exception as exc:
@@ -3742,6 +3761,15 @@ class TranscribeTab(ctk.CTkFrame):
             self._status_progress.set(0)
             self._append_transcript_log(f"Formatting failed: {error_msg}")
             self._set_transcript_status(f"Formatting failed: {error_msg}", "#FF4444")
+            if result.get("marker_drift"):
+                # Mirrors the "Document Write Failed" popup at the other
+                # no-output path so this failure mode is impossible to
+                # miss. Body keeps the raw exception text since it
+                # already carries the dropped-count, total, and percent.
+                messagebox.showerror(
+                    "Cleanup Failed: Marker Drift",
+                    error_msg,
+                )
 
     # ── Speaker Label Methods ────────────────────────────────────────────────
 
