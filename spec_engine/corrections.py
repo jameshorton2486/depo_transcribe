@@ -21,6 +21,9 @@ _QUESTION_STARTERS = (
     "were",
 )
 _INTRODUCTORY_COMMA_WORDS = ("yes", "no", "well", "so", "now", "correct")
+# Per Morson's Rule 170: spell out isolated numbers 1-10. Eleven and
+# twelve are kept as digits. Authority for this project's style is
+# Morson's English Guide for Court Reporters, Second Edition.
 _SMALL_NUMBER_WORDS = {
     "1": "One",
     "2": "Two",
@@ -32,8 +35,6 @@ _SMALL_NUMBER_WORDS = {
     "8": "Eight",
     "9": "Nine",
     "10": "Ten",
-    "11": "Eleven",
-    "12": "Twelve",
 }
 LEGAL_TERMS = {"objection", "form", "foundation", "privilege"}
 
@@ -68,9 +69,27 @@ def _fix_ellipses(text: str) -> str:
     return re.sub(r"\.{4,}", "...", text)
 
 
-def _fix_em_dashes(text: str) -> str:
-    text = re.sub(r"\s?--\s?", "  ", text)
-    return re.sub(r"\s-\s", "  ", text)
+def _normalize_em_dashes(text: str) -> str:
+    """Normalize all em-dash representations to spaced double-hyphen.
+
+    Per Morson's Rule 85 Note, the spaced double-hyphen ` -- ` is the
+    canonical court-reporting form. This function ONLY normalizes the
+    representation; it NEVER collapses an interruption marker into
+    spaces and NEVER removes one.
+
+    Conversions:
+    - U+2014 (em-dash) `—` -> ` -- `
+    - U+2013 (en-dash) `–` -> ` -- `
+    - ASCII `--` with inconsistent surrounding whitespace -> ` -- `
+
+    The function is idempotent: running it on already-normalized text
+    produces the same result.
+    """
+    # Unicode em-dash and en-dash with any surrounding whitespace.
+    text = re.sub(r"\s*[–—]\s*", " -- ", text)
+    # ASCII double-hyphen with any surrounding whitespace.
+    text = re.sub(r"\s*--\s*", " -- ", text)
+    return text
 
 
 def _fix_short_answer_commas(text: str) -> str:
@@ -94,14 +113,21 @@ def _fix_short_answer_commas(text: str) -> str:
 
 
 def _fix_ending_punctuation(text: str) -> str:
-    text = re.sub(r"(?:,\s*)?(you know|uh|um)\s*$", "", text, flags=re.IGNORECASE)
+    """Default missing terminal punctuation to a period.
+
+    Verbatim rule (Morson's; clean_format/prompt.py):
+    - Filler words (uh, um, you know) are spoken evidence and are
+      NEVER stripped from the transcript, including from end of an
+      utterance. The earlier regex that did so is removed.
+    - Inferring `?` from word order is unsafe. Morson's gives no rule
+      for it; the reporter is assumed to have heard the inflection.
+      This deterministic pass defaults to `.` and lets the human
+      reviewer flip the call to `?` after audio review.
+    """
     text = text.rstrip()
 
     if not re.search(r"[.?!]$", text):
-        if text.lower().startswith(_QUESTION_STARTERS):
-            text += "?"
-        else:
-            text += "."
+        text += "."
 
     return text
 
@@ -179,11 +205,27 @@ def _build_corrections_map(
 
 
 def apply_morsons_rules(text: str) -> str:
-    """Apply deterministic Morson's-style transcript rules."""
+    """Apply deterministic Morson's-style transcript rules.
+
+    Order is significant:
+    1. _fix_spacing collapses runs of whitespace.
+    2. _normalize_em_dashes converts unicode and inconsistent ASCII
+       em-dashes to canonical ` -- `. Runs after _fix_spacing so any
+       pre-existing whitespace anomalies are settled first.
+    3. _fix_sentence_start uppercases the first letter and spells out
+       sentence-initial digits 1-10 per Morson's Rule 170.
+    4. _fix_ellipses normalizes `. . .` and `....` to `...`.
+    5. _fix_stutters preserves repeated tokens with explicit spacing.
+    6. _fix_short_answer_commas inserts editorial commas after
+       'yes/no/well/so/now/correct' at the start of an answer and
+       before conjunctions in long sentences.
+    7. _fix_ending_punctuation defaults missing terminal punctuation
+       to `.`. Never strips fillers.
+    """
     text = _fix_spacing(text)
+    text = _normalize_em_dashes(text)
     text = _fix_sentence_start(text)
     text = _fix_ellipses(text)
-    text = _fix_em_dashes(text)
     text = _fix_stutters(text)
     text = _fix_short_answer_commas(text)
     text = _fix_ending_punctuation(text)
