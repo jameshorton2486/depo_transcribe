@@ -8,8 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from core.config import AI_MODEL
-from config import ANTHROPIC_API_KEY
+from config import ANTHROPIC_API_KEY, LOW_CONFIDENCE_THRESHOLD
 from clean_format.prompt import CLEAN_FORMAT_SYSTEM_PROMPT
+from clean_format.low_confidence_markers import (
+    inject_markers,
+    validate_marker_round_trip,
+)
 
 try:
     from anthropic import Anthropic
@@ -236,9 +240,27 @@ def format_transcript(
     client: Any | None = None,
     model: str | None = None,
     max_chunk_chars: int = CHUNK_CHAR_LIMIT,
+    deepgram_words: list[dict[str, Any]] | None = None,
+    low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> str:
-    """Format a raw Deepgram transcript into clean-format text."""
-    chunks = split_transcript(raw_text, max_chunk_chars=max_chunk_chars)
+    """Format a raw Deepgram transcript into clean-format text.
+
+    Step C: when ``deepgram_words`` is provided, tokens with confidence
+    below ``low_confidence_threshold`` are wrapped with ``‹LC:...›``
+    markers prior to the Anthropic cleanup pass. The system prompt
+    instructs the model to preserve those markers verbatim. Step D's
+    DOCX writer reads the markers to render yellow highlights.
+
+    When ``deepgram_words`` is None (default), behavior is unchanged.
+    """
+    marked_text = (
+        inject_markers(
+            raw_text, deepgram_words, threshold=low_confidence_threshold
+        )
+        if deepgram_words
+        else raw_text
+    )
+    chunks = split_transcript(marked_text, max_chunk_chars=max_chunk_chars)
     if not chunks:
         return ""
 
@@ -258,7 +280,10 @@ def format_transcript(
                 }
             ],
         )
-        rendered_chunks.append(_postprocess_formatted_text(_response_text(response)))
+        response_text = _response_text(response)
+        if deepgram_words:
+            validate_marker_round_trip(chunk, response_text)
+        rendered_chunks.append(_postprocess_formatted_text(response_text))
 
     return "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
 

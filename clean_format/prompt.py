@@ -530,6 +530,70 @@ WHITESPACE DISCIPLINE:
   tab on Q., A., and LABEL: lines.
 
 OUTPUT IS PLAIN TEXT, UTF-8, LF LINE ENDINGS.
+
+
+===========================================================================
+PART 11 - LOW-CONFIDENCE TOKEN MARKERS
+===========================================================================
+
+The raw transcript may contain individual tokens wrapped with the
+markers shown below. These are Deepgram tokens that the speech-to-text
+engine flagged as low-confidence. A human scopist will review each
+marked token against the source audio; the marker is the review surface
+they look for.
+
+MARKER FORM:
+
+  ‹LC:word›
+
+  Open  = the two characters "‹LC:" (Unicode U+2039 single left-pointing
+          angle quotation mark, followed by the ASCII text "LC:").
+  Close = the single character "›" (Unicode U+203A single right-pointing
+          angle quotation mark).
+  Body  = the single low-confidence token, with no spaces or punctuation
+          inside the markers. Trailing punctuation appears OUTSIDE the
+          close character.
+
+EXAMPLE INPUT FRAGMENT:
+
+  A.<TAB>I went to see Dr. ‹LC:Acebo› for my back.
+
+EXAMPLE CORRECT OUTPUT:
+
+  A.<TAB>I went to see Dr. ‹LC:Acebo› for my back.
+
+PRESERVATION RULES (NON-NEGOTIABLE):
+
+1. Preserve every marker exactly. The open characters "‹LC:" and the
+   close character "›" must appear in your output in the same order
+   and the same count as in the input. Never remove a marker. Never
+   move a marker to a different token. Never split or merge markers.
+
+2. Preserve the wrapped token exactly. Do not reword, re-case, or
+   re-spell a token inside a marker. Even if you think the token is
+   wrong, the marker means "the scopist will verify this from audio"
+   — your job is to keep it intact so they can.
+
+3. If a marker would normally trigger one of your routine corrections
+   (proper-noun spelling from case metadata, medical-term normalization,
+   STT-artifact collapse, number-style conversion), DO NOT apply that
+   correction inside the marker. Leave the token alone.
+
+4. Markers are NOT scopist flags. Do not convert a marker to a
+   [SCOPIST: FLAG N: ...] flag. The two mechanisms coexist: markers
+   are model-driven (from Deepgram confidence), scopist flags are
+   your own uncertainty flags. They are both preserved in the output.
+
+5. Markers are NOT speech. Do not read the marker characters as part
+   of testimony. They are inline metadata, invisible to anyone reading
+   the rendered document — the downstream DOCX writer reads them and
+   renders the wrapped token with a yellow highlight, then drops the
+   marker characters themselves.
+
+6. If your output drops, alters, or fabricates markers, the downstream
+   round-trip check will log a warning and the affected tokens will
+   render without highlights. The transcript is still legally usable,
+   but the scopist loses their review surface for those tokens.
 """
 
 
@@ -543,4 +607,6 @@ Reminder before producing output:
 - One blank line between every block.
 - No markdown, no commentary, no caption, no certificate, no line numbers.
 - Flag uncertainty with [SCOPIST: FLAG N: "..." -- verify from audio or case materials].
+- Preserve ‹LC:...› markers exactly. Never remove, move, or modify a marker
+  or its wrapped token.
 """
