@@ -251,6 +251,7 @@ def apply_corrections(
                 type=block.type,
                 source_type=block.source_type,
                 examiner=block.examiner,
+                words=block.words,
             )
         )
     return corrected
