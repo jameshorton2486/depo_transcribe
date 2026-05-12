@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
+
+from clean_format.low_confidence_markers import split_into_runs
 
 # Windows-illegal filename characters plus ASCII control bytes. NTFS
 # silently treats `:` as an alternate-data-stream separator, so a bad
@@ -117,6 +119,31 @@ def _format_date_for_filename(raw_date: str) -> str:
 
 def _double_space_sentences(text: str) -> str:
     return _SENTENCE_SPACE_RE.sub(r"\1  ", (text or "").strip())
+
+
+def _add_marked_runs(paragraph: Any, text: str) -> None:
+    """Append one or more runs to ``paragraph`` for ``text``, highlighting
+    any ``‹LC:...›``-wrapped chunks with yellow.
+
+    Step D of the verbatim-punctuation plan. Marker characters
+    themselves are stripped at render time — the paragraph's resulting
+    ``.text`` contains only the wrapped token text, not the marker
+    boundaries.
+
+    When ``text`` has no markers, this collapses to a single
+    default-styled run with the original text (no change in document
+    output for unmarked content).
+
+    When ``text`` is empty, no run is added — matches the prior
+    behavior of ``add_run("")``.
+    """
+    runs = split_into_runs(text)
+    if not runs:
+        return
+    for chunk, is_low_confidence in runs:
+        run = paragraph.add_run(chunk)
+        if is_low_confidence:
+            run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
 
 def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
@@ -269,7 +296,11 @@ def _write_proceedings(
             #                                pushes text to the 1.0" stop.
             paragraph.paragraph_format.left_indent = Inches(1.0)
             paragraph.paragraph_format.first_line_indent = Inches(-1.0)
-            paragraph.add_run(f"\t{block['label']}\t{block['text']}")
+            # Step D: prefix run holds the canonical "\tQ.\t" / "\tA.\t"
+            # shape; body text is split on low-confidence markers so each
+            # marked token renders as its own yellow-highlighted run.
+            paragraph.add_run(f"\t{block['label']}\t")
+            _add_marked_runs(paragraph, block["text"])
         elif block["kind"] == "speaker":
             # Step 2J: non-Q/A lines render with a three-tab prefix that
             # lands the content at the 1.5" tab stop. Left/first-line
@@ -278,9 +309,15 @@ def _write_proceedings(
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0)
             if block["label"]:
-                paragraph.add_run(f"\t\t\t{block['label']}  {block['text']}")
+                # Step D: split label+spacing into a non-highlighted prefix
+                # run, then body into possibly-highlighted run(s).
+                paragraph.add_run(f"\t\t\t{block['label']}  ")
+                _add_marked_runs(paragraph, block["text"])
             else:
-                paragraph.add_run(f"\t\t\t{_double_space_sentences(block['text'])}")
+                paragraph.add_run("\t\t\t")
+                _add_marked_runs(
+                    paragraph, _double_space_sentences(block["text"])
+                )
         else:
             # Step 2J: header-kind blocks (e.g. "DEPOSITION:") also get
             # the three-tab prefix.
