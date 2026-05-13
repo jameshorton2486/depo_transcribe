@@ -10,7 +10,7 @@ class TranscriptWord:
     """Single Deepgram word with timing, confidence, and speaker metadata.
 
     Added in Step B.0 of the verbatim-punctuation plan
-    (docs/plans/verbatim_punctuation_plan_2026-05-12.md) to enable
+    (docs/plans/_archive/verbatim_punctuation_plan_2026-05-12.md) to enable
     low-confidence highlighting (Steps C and D) and future audio-sync
     review.
 

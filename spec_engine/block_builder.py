@@ -5,8 +5,8 @@ Step B.0 extension: each returned block dict carries an optional
 to the block's text range. When the source data lacks the fields
 needed for safe partitioning, `words` is None.
 
-See docs/plans/verbatim_punctuation_plan_2026-05-12.md and
-docs/plans/step_b0_word_carry_2026-05-12.md.
+See docs/plans/_archive/verbatim_punctuation_plan_2026-05-12.md and
+docs/plans/_archive/step_b0_word_carry_2026-05-12.md.
 """
 
 from __future__ import annotations

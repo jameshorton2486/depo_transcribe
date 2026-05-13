@@ -22,7 +22,7 @@ def _propagate_speaker_to_words(
     match the rebuild-not-mutate convention used elsewhere in
     spec_engine.
 
-    See docs/plans/step_b1_word_carry_merge_split_2026-05-12.md.
+    See docs/plans/_archive/step_b1_word_carry_merge_split_2026-05-12.md.
     """
     if words is None:
         return None

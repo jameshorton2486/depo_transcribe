@@ -12,7 +12,7 @@ Coverage:
   6. speaker_mapper propagation returns None when block.words is None.
   7. Helpers tested directly for the boundary cases.
 
-Policy reference: docs/plans/step_b1_word_carry_merge_split_2026-05-12.md
+Policy reference: docs/plans/_archive/step_b1_word_carry_merge_split_2026-05-12.md
 """
 
 from __future__ import annotations

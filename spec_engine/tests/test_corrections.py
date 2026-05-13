@@ -12,7 +12,7 @@ def test_apply_morsons_rules_handles_basic_legal_cleanup():
     # Yes-comma insertion (Step A keeps this behavior).
     assert apply_morsons_rules("yes i went there") == "Yes, i went there."
     # Step A: terminal . default — no ? auto-append. See
-    # docs/plans/verbatim_punctuation_plan_2026-05-12.md Rule 2.
+    # docs/plans/_archive/verbatim_punctuation_plan_2026-05-12.md Rule 2.
     assert apply_morsons_rules("did you go there") == "Did you go there."
     # Stutter preservation (Step A keeps this behavior).
     assert apply_morsons_rules("i i went there") == "I  I went there."

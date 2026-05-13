@@ -19,7 +19,7 @@ def _concat_words(
     partial word array. Step C/D treats None as "no carried words,
     render plain."
 
-    See docs/plans/step_b1_word_carry_merge_split_2026-05-12.md.
+    See docs/plans/_archive/step_b1_word_carry_merge_split_2026-05-12.md.
     """
     if a is None or b is None:
         return None

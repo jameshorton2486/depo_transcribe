@@ -1,7 +1,7 @@
 """Low-confidence Deepgram token marking for the clean_format pipeline.
 
 Step C of the verbatim-punctuation plan
-(docs/plans/verbatim_punctuation_plan_2026-05-12.md). Wraps Deepgram
+(docs/plans/_archive/verbatim_punctuation_plan_2026-05-12.md). Wraps Deepgram
 tokens whose confidence falls below `LOW_CONFIDENCE_THRESHOLD` in
 inline markers that survive an Anthropic cleanup round-trip. Step D
 consumes the marker-bearing text in the DOCX writer to render those

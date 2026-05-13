@@ -137,7 +137,7 @@ The cleanup prompt is strict-verbatim. It instructs the model to:
   tokens are not reworded or re-cased
 
 Full prompt at `clean_format/prompt.py`. Authority for the verbatim
-posture: `docs/plans/verbatim_punctuation_plan_2026-05-12.md` and
+posture: `docs/plans/_archive/verbatim_punctuation_plan_2026-05-12.md` and
 Morson's English Guide for Court Reporters.
 
 ## Runtime Paths
