@@ -3652,6 +3652,11 @@ class TranscribeTab(ctk.CTkFrame):
             formatted_text = format_transcript(
                 raw_text, case_meta, deepgram_words=deepgram_words
             )
+
+            # Optional walkthrough capture (no-op when WALKTHROUGH_CAPTURE unset).
+            from tools.walkthrough import capture_stage
+            capture_stage(case_dir, "02_after_ai_cleanup", formatted_text)
+
             witness_last = (
                 case_meta.get("witness_name", "Witness").split() or ["Witness"]
             )[-1]
@@ -3662,6 +3667,7 @@ class TranscribeTab(ctk.CTkFrame):
             )
             docx_path = case_dir / f"{witness_last}_Deposition_{date_part}.docx"
             saved_path = write_deposition_docx(formatted_text, case_meta, docx_path)
+            capture_stage(case_dir, "03_docx_text", saved_path)
 
             self.after(
                 0,

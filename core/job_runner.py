@@ -349,6 +349,10 @@ def run_transcription_job(
         _safe_write_text(raw_txt_path, raw_transcript_text, _log)
         _safe_write_text(canonical_raw_txt_path, raw_transcript_text, _log)
 
+        # Optional walkthrough capture (no-op when WALKTHROUGH_CAPTURE unset).
+        from tools.walkthrough import capture_stage
+        capture_stage(out_dir, "01_deepgram_raw", raw_transcript_text)
+
         json_data = {
             "audio_file": audio_path,
             "model": model,
