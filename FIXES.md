@@ -48,3 +48,49 @@ the carry-through contract per Step B.0
 - Examiner-population bug surfaced by v5 probe (14 garbage values).
 - Speaker-mapper failing to apply `speaker_map_suggestion` on
   Thomas (numeric `SPEAKER 1:` instead of named attorneys).
+
+## Defect #11 — `_looks_like_directive` strict BY-line match
+
+**Date:** 2026-05-14
+**Branch:** `review/phase-a-production`
+**Layer:** `spec_engine/`
+**Files changed:** `spec_engine/classifier.py`, `spec_engine/tests/test_classifier.py`
+
+### Symptom
+v5 post-defect-#10 probe on Thomas: 14 question blocks had garbage
+examiner values like `'PUTTING AROUND 20 WINDOWS ON THE SHEET CART?'`.
+
+### Discovery
+Pre-implementation probe traced the cascade:
+1. `classifier._looks_like_directive` matched any `"BY "` prefix,
+   regardless of suffix.
+2. `qa_fixer._directive_examiner_name` extracted text after `"BY "`
+   as the examiner name.
+3. `qa_fixer.enforce_structure` propagated that bad examiner to
+   subsequent question blocks until a real directive replaced it.
+
+The fix lives at step 1. Tightening the trigger stops the cascade.
+
+### Fix
+Added trailing-colon requirement to `_looks_like_directive`. Match
+now requires both `text.startswith("BY ")` (or `"BY\t"`) AND
+`text.endswith(":")`. Aligns with the strict form
+`byline_resumption._is_section_header_directive` already documented
+as the canonical classifier output.
+
+### Verification
+- All 14 existing BY-line test fixtures across 7 test files use
+  colon-terminated form (audited via grep)
+- 4 new tests in `test_classifier.py`
+- Full suite: 986 passed / 6 skipped
+- Thomas baseline: 6/6
+
+### Unblocks
+- Defect #12 (attorney exam-time computation) — examiner field
+  now reliable enough to key totals by
+
+### Defers
+- Build speaker name-mapping (numeric `SPEAKER 1:` → `MR. NUNEZ`).
+  Future Next-A.
+- Loosen `is_question_loose` so it catches semantic questions, not
+  just `"Q."` prefix. Out of scope for #11.
