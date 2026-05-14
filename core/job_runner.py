@@ -85,6 +85,7 @@ def run_transcription_job(
     progress_callback=None,
     log_callback=None,
     done_callback=None,
+    allow_cause_mismatch_reuse: bool = False,
 ):
     """
     Run the full pipeline. Calls callbacks for UI updates.
@@ -170,6 +171,7 @@ def run_transcription_job(
             last_name,
             first_name,
             date_str,
+            allow_cause_mismatch_reuse=allow_cause_mismatch_reuse,
         )
         if folder_status["errors"]:
             raise RuntimeError(
@@ -177,6 +179,7 @@ def run_transcription_job(
             )
         if folder_status["created"]:
             _log(f"Created folders: {folder_status['created']}")
+        merge_and_save(case_path, original_cause_number=(cause_number or "").strip())
 
         _progress(8, "Analyzing audio quality…")
         analysis = analyze_audio(audio_path)

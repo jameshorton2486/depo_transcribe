@@ -70,8 +70,9 @@ recent Start-Transcription pass for the case.
 
 
 def _enabled() -> bool:
-    """Return True if WALKTHROUGH_CAPTURE is set to a non-empty value."""
-    return bool(os.environ.get(WALKTHROUGH_ENV, "").strip())
+    """Return True only for explicit opt-in values (1/true/yes/on)."""
+    value = os.environ.get(WALKTHROUGH_ENV, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def _coerce_text(content: Any) -> str:
