@@ -241,9 +241,89 @@ def test_adapt_saved_utterances_handles_mixed_shapes() -> None:
     ]
     out = corrections_runner._adapt_saved_utterances(inputs)  # type: ignore[arg-type]
     assert len(out) == 3
-    assert out[0] == {"speaker": "Speaker 0", "text": "Real.", "type": "utterance"}
-    assert out[1] == {"speaker": "Speaker 1", "text": "Older.", "type": "utterance"}
-    assert out[2] == {"speaker": "Speaker 2", "text": "No label.", "type": "utterance"}
+    assert out[0] == {"speaker": "Speaker 0", "text": "Real.", "type": "utterance", "words": None}
+    assert out[1] == {"speaker": "Speaker 1", "text": "Older.", "type": "utterance", "words": None}
+    assert out[2] == {"speaker": "Speaker 2", "text": "No label.", "type": "utterance", "words": None}
+
+
+def test_adapt_saved_utterances_preserves_words():
+    """Step B.0: adapter must carry the words field from saved utterances.
+
+    Surfaced by defect #10 v5 probe: blocks had words=None even though
+    raw_deepgram.json had 13,598 word objects. Root cause was this adapter
+    dropping the words field. Fixed by adding 'words': u.get('words') to
+    the output dict.
+    """
+    from core.corrections_runner import _adapt_saved_utterances
+
+    saved = [{
+        "transcript": "Yes I saw it.",
+        "speaker_label": "Speaker 0",
+        "speaker": 0,
+        "start": 0.0,
+        "end": 1.3,
+        "words": [
+            {"word": "yes", "start": 0.0, "end": 0.3, "confidence": 0.95,
+             "speaker": 0, "punctuated_word": "Yes"},
+            {"word": "i", "start": 0.4, "end": 0.5, "confidence": 0.97,
+             "speaker": 0, "punctuated_word": "I"},
+        ],
+    }]
+    adapted = _adapt_saved_utterances(saved)
+
+    assert len(adapted) == 1
+    assert "words" in adapted[0]
+    assert adapted[0]["words"] is not None
+    assert len(adapted[0]["words"]) == 2
+    assert adapted[0]["words"][0]["word"] == "yes"
+
+
+def test_adapt_saved_utterances_passes_through_missing_words_as_none():
+    """Pre-Step-B.0 saved utterances may have no 'words' key. Adapter must
+    not synthesize an empty list or any other placeholder; downstream
+    contract treats None as 'no carried words' and degrades gracefully.
+    """
+    from core.corrections_runner import _adapt_saved_utterances
+
+    saved = [{
+        "transcript": "Yes.",
+        "speaker_label": "Speaker 0",
+        "speaker": 0,
+        # no 'words' key
+    }]
+    adapted = _adapt_saved_utterances(saved)
+
+    assert len(adapted) == 1
+    assert adapted[0]["words"] is None
+
+
+def test_adapt_saved_utterances_end_to_end_words_reach_blocks():
+    """End-to-end: adapter -> build_blocks should produce blocks with
+    populated words. Catches future regressions where either side drops
+    the field again.
+    """
+    from core.corrections_runner import _adapt_saved_utterances
+    from spec_engine.block_builder import build_blocks
+
+    saved = [{
+        "transcript": "Yes I saw it.",
+        "speaker_label": "Speaker 0",
+        "speaker": 0,
+        "start": 0.0,
+        "end": 1.3,
+        "words": [
+            {"word": "yes", "start": 0.0, "end": 0.3, "confidence": 0.95,
+             "speaker": 0, "punctuated_word": "Yes"},
+        ],
+    }]
+    adapted = _adapt_saved_utterances(saved)
+    alt = {"utterances": adapted}
+    blocks = build_blocks(alt)
+
+    assert len(blocks) == 1
+    assert blocks[0]["words"] is not None
+    assert len(blocks[0]["words"]) == 1
+    assert blocks[0]["words"][0]["word"] == "yes"
 
 
 # ── Step 2E: split-utterances source selection ────────────────────────────────

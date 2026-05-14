@@ -185,7 +185,12 @@ def _adapt_saved_utterances(utterances: list) -> list[dict]:
                 if raw_speaker is not None
                 else "UNKNOWN"
             )
-        out.append({"speaker": str(speaker), "text": text, "type": "utterance"})
+        out.append({
+            "speaker": str(speaker),
+            "text": text,
+            "type": "utterance",
+            "words": u.get("words"),
+        })
     return out
 
 
