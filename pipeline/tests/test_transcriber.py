@@ -228,6 +228,35 @@ def test_enforce_required_deepgram_flags_overrides_invalid_values():
     assert params["utt_split"] == "0.8"
 
 
+def test_enforce_required_deepgram_flags_includes_filler_words_for_verbatim_compliance():
+    """Defect #12: filler_words must be structurally enforced as 'true'
+    to guarantee UFM §3.7/§3.8 verbatim legal compliance.
+
+    The prior implementation set filler_words=True in the per-request
+    params dict but did not include it in REQUIRED_DEEPGRAM_FLAGS.
+    This left verbatim compliance dependent on the per-request dict
+    rather than the enforcement layer. A future caller that passed
+    filler_words=False would have silently violated UFM compliance.
+    """
+    from pipeline.transcriber import (
+        REQUIRED_DEEPGRAM_FLAGS,
+        enforce_required_deepgram_flags,
+    )
+
+    # The constant itself must contain the verbatim guarantee.
+    assert REQUIRED_DEEPGRAM_FLAGS.get("filler_words") == "true"
+
+    # A caller attempting to disable filler_words must be overridden.
+    caller_params = {"filler_words": "false", "model": "nova-3"}
+    enforced = enforce_required_deepgram_flags(caller_params)
+    assert enforced["filler_words"] == "true"
+
+    # A caller omitting filler_words entirely must still get it.
+    caller_params_no_filler = {"model": "nova-3"}
+    enforced_no_filler = enforce_required_deepgram_flags(caller_params_no_filler)
+    assert enforced_no_filler["filler_words"] == "true"
+
+
 def test_transcribe_chunk_logs_params_and_utterance_count(
     monkeypatch, tmp_path, capsys
 ):

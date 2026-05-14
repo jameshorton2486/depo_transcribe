@@ -106,6 +106,7 @@ REQUIRED_DEEPGRAM_FLAGS = {
     "punctuate": "true",
     "smart_format": "true",
     "numerals": "true",
+    "filler_words": "true",
     "utt_split": "0.8",
 }
 
