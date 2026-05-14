@@ -6,6 +6,7 @@ from .block_builder import build_blocks
 from .byline_resumption import apply_byline_resumption
 from .classifier import classify_blocks
 from .corrections import apply_corrections
+from .date_normalization import normalize_dates_and_years
 from .emitter import emit_blocks
 from .exhibit_markers import emit_exhibit_markers
 from .objection_routing import split_misattributed_objections
@@ -31,6 +32,7 @@ def process_blocks(
     annotated = emit_exhibit_markers(mapped)
     annotated = split_misattributed_objections(annotated)
     annotated = apply_byline_resumption(annotated)
+    annotated = normalize_dates_and_years(annotated)
     return emit_blocks(annotated)
 
 
