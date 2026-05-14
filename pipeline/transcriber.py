@@ -483,6 +483,41 @@ def validate_deepgram_params(params: dict) -> dict:
 _KEYTERM_MAX_ENTRY_CHARS = 100
 
 
+def _looks_like_ocr_debris(term: str) -> bool:
+    """Return True if `term` looks like OCR debris from a PDF title page.
+
+    Drops single-token ALL-CAPS words >= 4 chars with no periods and no
+    digits. These are almost always individual words scooped from an
+    ALL-CAPS PDF heading (e.g. 'UNITED', 'STATES', 'DISTRICT', 'COURT'
+    from a federal court caption block).
+
+    Preserves:
+        - Multi-word phrases ('UNITED STATES DISTRICT COURT')
+        - Mixed-case proper nouns ('Heath Thomas')
+        - Short acronyms < 4 chars ('LLC', 'CSR')
+        - Acronyms with periods ('P.C.', 'U.S.A.')
+        - Tokens with digits ('25-cv--OLG')
+
+    Drops:
+        - 'UNITED', 'STATES', 'DISTRICT', 'COURT', 'WESTERN', 'DIVISION'
+        - 'HEATH', 'THOMAS' (uppercase variants — the mixed-case
+           'Heath Thomas' multi-word entry is preserved separately)
+    """
+    if not term:
+        return False
+    if " " in term:
+        return False
+    if not term.isupper():
+        return False
+    if len(term) < 4:
+        return False
+    if "." in term:
+        return False
+    if any(c.isdigit() for c in term):
+        return False
+    return True
+
+
 def trim_keyterms_for_deepgram(
         keyterms: list,
 ) -> tuple[list[str], dict]:
@@ -511,9 +546,20 @@ def trim_keyterms_for_deepgram(
 
     cleaned = [str(t).strip() for t in (keyterms or []) if str(t).strip()]
 
+    # Stage 1: drop OCR debris (ALL-CAPS single-word fragments from PDF
+    # title pages). Defect #13. Defensive sanitization at the Deepgram
+    # transport boundary — does not fix the upstream extractor (defect #14).
+    after_debris: list[str] = []
+    debris: list[str] = []
+    for term in cleaned:
+        if _looks_like_ocr_debris(term):
+            debris.append(term)
+        else:
+            after_debris.append(term)
+
     in_size: list[str] = []
     oversize: list[str] = []
-    for term in cleaned:
+    for term in after_debris:
         if len(term) > _KEYTERM_MAX_ENTRY_CHARS:
             oversize.append(term)
         else:
@@ -536,6 +582,8 @@ def trim_keyterms_for_deepgram(
         "dropped_oversize": len(oversize),
         "oversize_examples": oversize[:2],
         "dropped_budget": len(in_size) - len(sent),
+        "dropped_ocr_debris": len(debris),
+        "ocr_debris_examples": debris[:5],
     }
 
 

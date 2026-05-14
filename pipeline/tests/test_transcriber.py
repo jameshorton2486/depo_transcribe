@@ -749,3 +749,148 @@ def test_trim_keyterms_handles_empty_and_whitespace():
     sent2, stats2 = transcriber.trim_keyterms_for_deepgram(["", "  ", "real"])
     assert sent2 == ["real"]
     assert stats2["sent"] == 1
+
+
+def test_trim_keyterms_drops_ocr_debris_single_word_allcaps():
+    """Defect #13: single-word ALL-CAPS fragments from PDF title pages
+    are dropped before reaching Deepgram.
+
+    These fragments come from PDFs that have an ALL-CAPS heading like
+    'UNITED STATES DISTRICT COURT WESTERN DISTRICT OF TEXAS'. Some
+    extraction paths split this into individual word keyterms.
+    """
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = [
+        "Heath Thomas",
+        "UNITED", "STATES", "DISTRICT", "COURT", "WESTERN",
+        "Steven A. Nunez",
+        "DIVISION", "PLAINTIFF", "DEFENDANT",
+    ]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "Heath Thomas" in sent
+    assert "Steven A. Nunez" in sent
+    assert "UNITED" not in sent
+    assert "STATES" not in sent
+    assert "DISTRICT" not in sent
+    assert "COURT" not in sent
+    assert "WESTERN" not in sent
+    assert "DIVISION" not in sent
+    assert "PLAINTIFF" not in sent
+    assert "DEFENDANT" not in sent
+    assert stats["dropped_ocr_debris"] == 8
+
+
+def test_trim_keyterms_preserves_short_acronyms_under_four_chars():
+    """Defect #13: short acronyms like LLC, CSR, IBM, FBI are NOT
+    OCR debris and must be preserved. The length floor of 4 chars
+    protects them."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = ["LLC", "CSR", "IBM", "FBI"]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "LLC" in sent
+    assert "CSR" in sent
+    assert "IBM" in sent
+    assert "FBI" in sent
+    assert stats["dropped_ocr_debris"] == 0
+
+
+def test_trim_keyterms_preserves_acronyms_with_periods():
+    """Defect #13: acronyms with internal periods like 'P.C.' and
+    'U.S.A.' are legitimate keyterms even though they're ALL-CAPS."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = ["P.C.", "PLLC", "U.S.A.", "M.D."]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "P.C." in sent
+    assert "U.S.A." in sent
+    assert "M.D." in sent
+    # 'PLLC' is ALL-CAPS, 4 chars, no periods, no digits — would be
+    # caught by the filter. This is acceptable: PLLC the entity name
+    # would typically appear as part of a multi-word firm name like
+    # 'Cukjati Law Firm, PLLC' which preserves it via the multi-word rule.
+    assert stats["dropped_ocr_debris"] == 1
+    assert "PLLC" in stats["ocr_debris_examples"]
+
+
+def test_trim_keyterms_preserves_multi_word_allcaps_phrases():
+    """Defect #13: multi-word ALL-CAPS phrases are legitimate and
+    must be preserved. The single-token rule protects them."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = [
+        "UNITED STATES DISTRICT COURT",
+        "WESTERN DISTRICT OF TEXAS",
+        "BRAIN AND SPINE PERSONAL INJURY LAWYERS",
+    ]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "UNITED STATES DISTRICT COURT" in sent
+    assert "WESTERN DISTRICT OF TEXAS" in sent
+    assert "BRAIN AND SPINE PERSONAL INJURY LAWYERS" in sent
+    assert stats["dropped_ocr_debris"] == 0
+
+
+def test_trim_keyterms_preserves_tokens_with_digits():
+    """Defect #13: tokens with digits (e.g., '25-cv--OLG') are
+    case-identifier keyterms, not OCR debris."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = ["25-cv--OLG", "2025-CVA-001596D2", "COVID19"]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "25-cv--OLG" in sent
+    assert "2025-CVA-001596D2" in sent
+    assert "COVID19" in sent
+    assert stats["dropped_ocr_debris"] == 0
+
+
+def test_trim_keyterms_stats_include_ocr_debris_count():
+    """Defect #13: the returned stats dict must include the new
+    dropped_ocr_debris key and a sample of dropped examples."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = ["Heath Thomas", "UNITED", "STATES", "DISTRICT", "COURT"]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    assert "dropped_ocr_debris" in stats
+    assert "ocr_debris_examples" in stats
+    assert stats["dropped_ocr_debris"] == 4
+    assert len(stats["ocr_debris_examples"]) <= 5
+
+
+def test_trim_keyterms_real_failure_log_reconstruction():
+    """Defect #13: end-to-end regression test using the actual
+    keyterm list that produced the Deepgram 400 error. The filter
+    must drop the OCR debris while keeping all legitimate keyterms."""
+    from pipeline.transcriber import trim_keyterms_for_deepgram
+
+    keyterms = [
+        # Legitimate (selected from failure log)
+        "Heath Thomas", "Steven A. Nunez", "Cukjati Law Firm",
+        "Brain and Spine Personal Injury Lawyers of San Antonio",
+        "Karen M. Alvarado", "Tiffany Netcher", "P.C.",
+        "San Antonio Division", "25-cv--OLG",
+        # OCR debris (from failure log)
+        "UNITED", "STATES", "DISTRICT", "COURT", "WESTERN", "ANTONIO",
+        "DIVISION", "DELIA", "GARZA", "CIVIL", "ACTION", "HOME",
+        "DEPOT", "SHAWN", "PLAINTIFF", "NOTICE", "INTENTION", "TAKE",
+        "ORAL", "DEPOSITION", "HEATH", "THOMAS", "FURTHER", "GIVEN",
+        "FIRM", "BRAIN", "SPINE", "PERSONAL", "INJURY", "LAWYERS",
+        "STEVEN", "ATTORNEYS",
+    ]
+    sent, stats = trim_keyterms_for_deepgram(keyterms)
+
+    # All 9 legitimate keyterms preserved
+    for legit in ("Heath Thomas", "Steven A. Nunez", "Cukjati Law Firm",
+                  "Brain and Spine Personal Injury Lawyers of San Antonio",
+                  "Karen M. Alvarado", "Tiffany Netcher", "P.C.",
+                  "San Antonio Division", "25-cv--OLG"):
+        assert legit in sent, "Legitimate keyterm dropped: " + repr(legit)
+
+    # All 32 debris fragments dropped
+    assert stats["dropped_ocr_debris"] == 32
