@@ -10,6 +10,12 @@ The Phase B baseline (Thomas 5-minute fixture, captured at
 ``tests/fixtures/canonical_raw_fixture/``) is a separate regression
 target and is asserted by a different test module.
 
+This module intentionally stays on the historical schema-v1 live-run
+fixture. Current schema-v2 shape is asserted separately in
+``tests/transcript_integrity/test_raw_store_schema_v2.py`` so the
+historical forensic baseline does not get rewritten just to track an
+additive storage-schema bump.
+
 Required assertions (per the plan's word-object contract):
 
 - No word loss at the source (immutable raw chunk-sum matches

@@ -37,7 +37,8 @@ The current production schema is `2` (adds top-level `keyterms_sent`,
 tightens length validation). Do **not** regenerate this fixture using the
 v2 raw_store — that would change its meaning. If a Phase A re-validation
 is required at v2, capture into a sibling directory rather than
-overwriting this one.
+overwriting this one. The current schema-v2 contract is asserted by
+`tests/transcript_integrity/test_raw_store_schema_v2.py`.
 
 ## Do not regenerate without cause
 

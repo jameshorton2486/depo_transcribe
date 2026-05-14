@@ -89,67 +89,6 @@ def _is_short_answer(utterance: dict) -> bool:
     return text in SHORT_ANSWER_WHITELIST
 
 
-def _log_merge_stage(
-        *,
-        stage: str,
-        tag: str,
-        before: list[dict],
-        after: list[dict],
-        threshold: float,
-        override: bool = False,
-) -> None:
-    """Investigation log line for a single merge stage. Read-only side effect."""
-    before_count = len(before or [])
-    after_count = len(after or [])
-
-    def _avg_duration(items: list[dict]) -> float:
-        if not items:
-            return 0.0
-        total = 0.0
-        n = 0
-        for u in items:
-            try:
-                start = float(u.get("start", 0.0) or 0.0)
-                end = float(u.get("end", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                continue
-            total += max(0.0, end - start)
-            n += 1
-        return total / n if n else 0.0
-
-    def _max_duration(items: list[dict]) -> float:
-        m = 0.0
-        for u in items or []:
-            try:
-                start = float(u.get("start", 0.0) or 0.0)
-                end = float(u.get("end", 0.0) or 0.0)
-            except (TypeError, ValueError):
-                continue
-            m = max(m, end - start)
-        return m
-
-    reduction_pct = (
-        100.0 * (before_count - after_count) / before_count
-        if before_count
-        else 0.0
-    )
-    logger.info(
-        "[MERGE][%s] tag=%s raw=%d merged=%d reduction=%.1f%% "
-        "threshold=%.2fs avg_before=%.2fs avg_after=%.2fs "
-        "largest_after=%.2fs override=%s",
-        stage,
-        tag,
-        before_count,
-        after_count,
-        reduction_pct,
-        threshold,
-        _avg_duration(before),
-        _avg_duration(after),
-        _max_duration(after),
-        "yes" if override else "no",
-    )
-
-
 ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
 
 NEAR_SILENT_THRESHOLD_DB = -55.0
@@ -843,32 +782,12 @@ def _transcribe_direct(
             ]
             raw_utterances = [_annotate_confidence(u) for u in raw_utterances]
             raw_utterances = smooth_speakers(raw_utterances)
-            # Investigation hook (pipeline/merge_debug_config.py): the
-            # override returns None in production, so the effective gap
-            # is unchanged. Experimental runs set this temporarily.
-            from pipeline.merge_debug_config import (
-                get_in_chunk_gap_override,
-            )
-            _gap_override = get_in_chunk_gap_override()
-            _effective_in_chunk_gap = (
-                _gap_override
-                if _gap_override is not None
-                else MERGE_GAP_THRESHOLD_SECONDS
-            )
             utterances = merge_utterances(
                 raw_utterances,
-                gap_threshold_seconds=_effective_in_chunk_gap,
+                gap_threshold_seconds=MERGE_GAP_THRESHOLD_SECONDS,
                 min_word_count=MERGE_MIN_WORD_COUNT,
             )
             utterances = [_annotate_confidence(u) for u in utterances]
-            _log_merge_stage(
-                stage="TRANSCRIBER",
-                tag=chunk_name,
-                before=raw_utterances,
-                after=utterances,
-                threshold=_effective_in_chunk_gap,
-                override=_gap_override is not None,
-            )
 
             if not utterances:
                 raise ValueError("No utterances returned — pipeline failure")
@@ -901,13 +820,6 @@ def _transcribe_direct(
                 "words": words,
                 "utterances": utterances,
                 "merged_utterances": utterances,
-                # NOTE: this key is misnamed. These utterances have been through
-                # smooth_speakers() and per-chunk annotation and are NOT truly
-                # raw. The unmutated Deepgram response is in "raw". Renaming
-                # would ripple through assembler, correction_runner, the saved
-                # *_raw.json schema, and downstream tooling — deferred to
-                # Phase C/G. Do not fix in a Phase A commit. See
-                # ARCHITECTURAL_DEFERMENTS.md.
                 "raw_utterances": raw_utterances,
                 "transcript": alt.get("transcript", ""),
                 "raw": raw,

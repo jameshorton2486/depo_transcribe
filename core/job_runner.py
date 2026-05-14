@@ -182,61 +182,30 @@ def run_transcription_job(
         duration_min = v["duration"] / 60
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
-        # Deepgram keyterm sanitization — single active-path gate per
-        # docs/investigations/KEYTERM_REQUEST_AUDIT.md. The new
-        # ``pipeline.keyterm_sanitizer`` module replaces the legacy
-        # ``trim_keyterms_for_deepgram`` call here. The transcriber's
-        # per-chunk defensive ``trim_keyterms_for_deepgram`` invocation
-        # remains as a safety net but is now a no-op on the sanitized
-        # list this stage produces.
-        from pipeline.keyterm_sanitizer import (
-            format_log_line as _kt_log_line,
-            sanitize_for_deepgram,
-        )
+        from pipeline.transcriber import trim_keyterms_for_deepgram
 
-        raw_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
-        if raw_keyterms:
-            _log(f"Deepgram keyterms (raw): {len(raw_keyterms)} (includes defaults)")
-            sanitization = sanitize_for_deepgram(
-                raw_keyterms,
-                sources={"job_runner": list(keyterms or []), "defaults": list(DEFAULT_KEYTERMS)},
-            )
-            merged_keyterms = sanitization.accepted_terms
-            kt_stats = sanitization.stats
-            _log(_kt_log_line(sanitization))
+        merged_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
+        if merged_keyterms:
+            _log(f"Deepgram keyterms: {len(merged_keyterms)} (includes defaults)")
+            merged_keyterms, kt_stats = trim_keyterms_for_deepgram(merged_keyterms)
             _log(
-                f"Sending {kt_stats.get('accepted', 0)} sanitized keyterms to Deepgram "
-                f"(~{kt_stats.get('final_tokens', 0)}/{kt_stats.get('budget', 0)} tokens)"
+                f"Sending {kt_stats['sent']} keyterms to Deepgram "
+                f"(~{kt_stats['used_tokens']}/{kt_stats['budget']} tokens)"
             )
-            if kt_stats.get("ocr_fragments_removed"):
-                _log(
-                    f"  Dropped {kt_stats['ocr_fragments_removed']} OCR-tail fragments "
-                    f"(e.g. 'Original Standard', 'Trans Rush Due')"
+            if kt_stats["dropped_oversize"]:
+                examples = ", ".join(
+                    repr(s[:60] + ("..." if len(s) > 60 else ""))
+                    for s in kt_stats["oversize_examples"]
                 )
-            if kt_stats.get("single_all_caps_removed"):
                 _log(
-                    f"  Dropped {kt_stats['single_all_caps_removed']} single-word "
-                    f"ALL-CAPS tokens (non-acronym)"
+                    f"  Dropped {kt_stats['dropped_oversize']} oversize keyterms "
+                    f"(>{kt_stats['max_entry_chars']} chars, likely form-template "
+                    f"noise): {examples}"
                 )
-            if kt_stats.get("single_generic_removed"):
+            if kt_stats["dropped_budget"]:
                 _log(
-                    f"  Dropped {kt_stats['single_generic_removed']} single-word "
-                    f"generic legal boilerplate tokens"
-                )
-            if kt_stats.get("duplicates_removed"):
-                _log(
-                    f"  Collapsed {kt_stats['duplicates_removed']} duplicate / "
-                    f"subsumed fragments into longer forms"
-                )
-            if kt_stats.get("budget_trimmed"):
-                _log(
-                    f"  Trimmed {kt_stats['budget_trimmed']} low-score keyterms "
-                    f"to fit the {kt_stats['budget']}-token budget"
-                )
-            if kt_stats.get("oversize_removed"):
-                _log(
-                    f"  Dropped {kt_stats['oversize_removed']} oversize keyterms "
-                    f"(>100 chars, likely form-template noise)"
+                    f"  Dropped {kt_stats['dropped_budget']} keyterms to fit "
+                    f"the {kt_stats['budget']}-token budget"
                 )
         else:
             merged_keyterms = []
@@ -384,11 +353,10 @@ def run_transcription_job(
         # single run uses the same params and keyterms list, so the
         # first chunk's snapshot is representative.
         #
-        # Failure policy: log at ERROR, record the failure string in
-        # the output JSON (raw_store_failure field), but continue —
-        # the legacy raw_deepgram.json save below still produces a
-        # recoverable artifact, and aborting a successful Deepgram
-        # run on a filesystem hiccup wastes paid API calls.
+        # Failure policy: only filesystem/write failures are fail-soft.
+        # Contract/data errors from raw_store (for example the explicit
+        # length-mismatch ValueError) must abort so a broken forensic
+        # anchor cannot be silently downgraded into a "successful" run.
         try:
             from pipeline.raw_store import save_raw_response
 
@@ -411,7 +379,7 @@ def run_transcription_job(
                 f"(chunks={_raw_store_result.chunk_count}, "
                 f"keyterms={len(dg_keyterms_sent)})"
             )
-        except Exception as raw_store_exc:
+        except (FileExistsError, OSError) as raw_store_exc:
             raw_store_failure = f"{type(raw_store_exc).__name__}: {raw_store_exc}"
             _log(
                 f"[ERROR] [RAW_STORE] Immutable raw-response save FAILED: "
