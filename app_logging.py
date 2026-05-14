@@ -8,6 +8,9 @@ LOG_DIR = Path(__file__).resolve().parent / "logs"
 ARCHIVE_DIR = LOG_DIR / "archive"
 MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 3
+ARCHIVE_RETENTION_DAYS = 14
+RUNS_RETENTION_DAYS = 7
+EXTRA_LOG_RETENTION_DAYS = 3
 
 RESET = "\033[0m"
 RED = "\033[91m"
@@ -104,7 +107,74 @@ def rotate_startup_logs() -> list[Path]:
             continue
         archived_paths.append(archive_path)
 
+    prune_old_logs()
     return archived_paths
+
+
+def _delete_older_than(directory: Path, patterns: tuple[str, ...], max_age_days: int) -> int:
+    """Delete files matching patterns older than max_age_days."""
+    if max_age_days <= 0 or not directory.exists():
+        return 0
+
+    now_ts = datetime.now().timestamp()
+    max_age_seconds = max_age_days * 24 * 60 * 60
+    deleted = 0
+
+    for pattern in patterns:
+        for path in directory.glob(pattern):
+            if not path.is_file():
+                continue
+            try:
+                age_seconds = now_ts - path.stat().st_mtime
+                if age_seconds > max_age_seconds:
+                    path.unlink()
+                    deleted += 1
+            except OSError:
+                continue
+
+    return deleted
+
+
+def prune_old_logs() -> dict[str, int]:
+    """
+    Remove stale log artifacts so `logs/` does not grow unbounded.
+
+    Returns counts of removed files by bucket.
+    """
+    LOG_DIR.mkdir(exist_ok=True)
+    ARCHIVE_DIR.mkdir(exist_ok=True)
+    runs_dir = LOG_DIR / "runs"
+    runs_dir.mkdir(exist_ok=True)
+
+    archived_deleted = _delete_older_than(
+        ARCHIVE_DIR,
+        ("*.log",),
+        ARCHIVE_RETENTION_DAYS,
+    )
+    runs_deleted = _delete_older_than(
+        runs_dir,
+        ("*.log", "*.json", "*.txt", "*.out", "*.err"),
+        RUNS_RETENTION_DAYS,
+    )
+    misc_deleted = _delete_older_than(
+        LOG_DIR,
+        ("*.out", "*.err"),
+        EXTRA_LOG_RETENTION_DAYS,
+    )
+
+    if archived_deleted or runs_deleted or misc_deleted:
+        logging.getLogger("pipeline").info(
+            "[LOG_CLEANUP] archived=%s runs=%s misc=%s",
+            archived_deleted,
+            runs_deleted,
+            misc_deleted,
+        )
+
+    return {
+        "archive": archived_deleted,
+        "runs": runs_deleted,
+        "misc": misc_deleted,
+    }
 
 
 def get_logger(name: str) -> logging.Logger:
