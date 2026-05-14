@@ -94,3 +94,49 @@ as the canonical classifier output.
   Future Next-A.
 - Loosen `is_question_loose` so it catches semantic questions, not
   just `"Q."` prefix. Out of scope for #11.
+
+## Defect #12 — Structural enforcement of `filler_words=True` in `REQUIRED_DEEPGRAM_FLAGS`
+
+**Date:** 2026-05-14
+**Branch:** `review/phase-a-production`
+**Layer:** `pipeline/`
+**Files changed:** `pipeline/transcriber.py`, `pipeline/tests/test_transcriber.py`
+
+### Symptom
+None observed in production. Defect is preventive hardening, not bug fix.
+
+### Discovery
+Prior project memory recorded a hypothesis: "`smart_format=True` silently
+disables `filler_words=True`." Investigation surfaced:
+
+1. **Deepgram Nova-3 documentation** explicitly states `smart_format` and
+   `filler_words` are independent parameters. Neither overrides the other.
+   Filler words are suppressed when `filler_words=False` (the API default),
+   not as a side effect of `smart_format`.
+2. **Production probe on Thomas** showed filler words (`"Uh"`,
+   conversational hesitations) preserved in raw_deepgram.json.
+   Pipeline behavior is currently correct.
+3. **Source inspection** revealed `filler_words=True` is set in the
+   per-request params dict (line 611) but NOT in `REQUIRED_DEEPGRAM_FLAGS`
+   (lines 105-108). The `enforce_required_deepgram_flags()` function only
+   guarantees the four keys in that constant.
+
+### Fix
+Added `"filler_words": "true"` to `REQUIRED_DEEPGRAM_FLAGS`. Converts the
+verbatim-compliance convention into a structural guarantee. Zero behavioral
+change on current callers.
+
+### Verification
+- 1 new test in `test_transcriber.py`
+- Full suite: 987 passed / 6 skipped
+- Thomas baseline: 6/6
+
+### Closes prior hypothesis
+The "`smart_format=True` override" hypothesis is disproven and closed.
+Deepgram documentation + production evidence confirm the two parameters
+are independent. Project memory updated to prevent re-investigation.
+
+### Defers
+- NOD PDF witness-name corruption (next defect candidate)
+- Attorney exam time computation (rescoped — key by speaker, not examiner)
+- Speaker name-mapping investigation
