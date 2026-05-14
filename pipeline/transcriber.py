@@ -6,10 +6,25 @@ Sends audio chunks to Deepgram and returns structured word/utterance data.
 Supported models: nova-3, nova-3-medical
 
 All requests use direct HTTP via httpx.
+
+Phase A note
+------------
+The return dict from ``transcribe_chunk`` now carries two extra keys
+for forensic provenance:
+
+- ``deepgram_request_params``: the exact dict (post-validation,
+  post-keyterm-merge) that was URL-encoded into the request. Used by
+  ``pipeline.raw_store.save_raw_response`` to record what was sent.
+- ``keyterms_sent``: the post-sanitization keyterm list actually
+  transmitted to Deepgram.
+
+These keys are additive — every existing consumer continues to work.
+``_EMPTY_RESULT`` includes them too so silence-skip paths don't
+KeyError downstream.
 """
 
-import os
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -31,18 +46,18 @@ SKIP_SILENCE = False
 MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 10
 MERGE_GAP_THRESHOLD_SECONDS = 0.6
-# Lowered from 3 → 1 so a single-word legitimate witness response (e.g. "Yes.")
+# Lowered from 3 -> 1 so a single-word legitimate witness response (e.g. "Yes.")
 # is not absorbed into the surrounding attorney block during merge.
 MERGE_MIN_WORD_COUNT = 1
 LOW_CONFIDENCE_THRESHOLD = 0.85
-# Tightened from 0.5 → 0.2. True Deepgram speaker bounces are sub-200ms;
+# Tightened from 0.5 -> 0.2. True Deepgram speaker bounces are sub-200ms;
 # 0.5s is long enough for a real "Yes." or "No." witness response, which
 # this heuristic was wrongly erasing in depositions.
 SHORT_GLITCH_MAX_DURATION_SECONDS = 0.2
 SENTENCE_ENDINGS = (".", "?", "!")
 
 # Legitimate short witness responses — depositions are full of these. If the
-# middle utterance in an A→B→A pattern is one of these words, treat it as a
+# middle utterance in an A->B->A pattern is one of these words, treat it as a
 # real speaker turn, not a Deepgram glitch.
 SHORT_ANSWER_WHITELIST = frozenset(
     {
@@ -72,6 +87,67 @@ def _is_short_answer(utterance: dict) -> bool:
     text = (utterance.get("transcript") or "").strip().lower()
     text = text.rstrip(".,;:?!").strip()
     return text in SHORT_ANSWER_WHITELIST
+
+
+def _log_merge_stage(
+        *,
+        stage: str,
+        tag: str,
+        before: list[dict],
+        after: list[dict],
+        threshold: float,
+        override: bool = False,
+) -> None:
+    """Investigation log line for a single merge stage. Read-only side effect."""
+    before_count = len(before or [])
+    after_count = len(after or [])
+
+    def _avg_duration(items: list[dict]) -> float:
+        if not items:
+            return 0.0
+        total = 0.0
+        n = 0
+        for u in items:
+            try:
+                start = float(u.get("start", 0.0) or 0.0)
+                end = float(u.get("end", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            total += max(0.0, end - start)
+            n += 1
+        return total / n if n else 0.0
+
+    def _max_duration(items: list[dict]) -> float:
+        m = 0.0
+        for u in items or []:
+            try:
+                start = float(u.get("start", 0.0) or 0.0)
+                end = float(u.get("end", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            m = max(m, end - start)
+        return m
+
+    reduction_pct = (
+        100.0 * (before_count - after_count) / before_count
+        if before_count
+        else 0.0
+    )
+    logger.info(
+        "[MERGE][%s] tag=%s raw=%d merged=%d reduction=%.1f%% "
+        "threshold=%.2fs avg_before=%.2fs avg_after=%.2fs "
+        "largest_after=%.2fs override=%s",
+        stage,
+        tag,
+        before_count,
+        after_count,
+        reduction_pct,
+        threshold,
+        _avg_duration(before),
+        _avg_duration(after),
+        _max_duration(after),
+        "yes" if override else "no",
+    )
 
 
 ALLOWED_MODELS = {"nova-3", "nova-3-medical"}
@@ -107,7 +183,8 @@ _RETRYABLE_HTTPX_ERRORS = (
 )
 
 # Shape of the return dict shared by every code path (including silence-skip)
-# so downstream consumers never hit KeyError on merged_utterances/raw_utterances.
+# so downstream consumers never hit KeyError on merged_utterances/raw_utterances
+# or on the Phase A provenance keys.
 _EMPTY_RESULT: Dict[str, Any] = {
     "words": [],
     "utterances": [],
@@ -115,6 +192,8 @@ _EMPTY_RESULT: Dict[str, Any] = {
     "raw_utterances": [],
     "transcript": "",
     "raw": {},
+    "deepgram_request_params": {},
+    "keyterms_sent": [],
 }
 
 
@@ -180,7 +259,7 @@ def _utterance_duration(utterance: dict) -> float:
 
 
 def _is_short_glitch(
-    prev_item: dict | None, item: dict, next_item: dict | None
+        prev_item: dict | None, item: dict, next_item: dict | None
 ) -> bool:
     if not prev_item or not next_item:
         return False
@@ -206,8 +285,8 @@ def _is_short_glitch(
         item.get("end", 0.0)
     )
     return (
-        prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
-        and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
+            prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
+            and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
     )
 
 
@@ -253,8 +332,8 @@ def smooth_speakers(utterances: list) -> list:
             current.get("end", 0.0)
         )
         if (
-            prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
-            and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
+                prev_gap <= MERGE_GAP_THRESHOLD_SECONDS
+                and next_gap <= MERGE_GAP_THRESHOLD_SECONDS
         ):
             logger.debug(
                 "Smoothing speaker glitch index=%s speaker=%s -> %s text=%r",
@@ -269,9 +348,9 @@ def smooth_speakers(utterances: list) -> list:
 
 
 def merge_utterances(
-    raw_utterances: list,
-    gap_threshold_seconds: float = MERGE_GAP_THRESHOLD_SECONDS,
-    min_word_count: int = MERGE_MIN_WORD_COUNT,
+        raw_utterances: list,
+        gap_threshold_seconds: float = MERGE_GAP_THRESHOLD_SECONDS,
+        min_word_count: int = MERGE_MIN_WORD_COUNT,
 ) -> list:
     """
     Deterministically merge Deepgram utterances without crossing speakers.
@@ -290,9 +369,9 @@ def merge_utterances(
 
     for index, item in enumerate(ordered):
         if _is_short_glitch(
-            ordered[index - 1] if index > 0 else None,
-            item,
-            ordered[index + 1] if index + 1 < len(ordered) else None,
+                ordered[index - 1] if index > 0 else None,
+                item,
+                ordered[index + 1] if index + 1 < len(ordered) else None,
         ):
             logger.debug(
                 "Ignoring short speaker-glitch utterance at index=%s speaker=%s text=%r",
@@ -321,9 +400,9 @@ def merge_utterances(
         if not next_text:
             continue
         if (
-            current_speaker is None
-            or next_speaker is None
-            or current_speaker != next_speaker
+                current_speaker is None
+                or next_speaker is None
+                or current_speaker != next_speaker
         ):
             merged.append(current)
             current = next_item
@@ -354,8 +433,8 @@ def merge_utterances(
 
         if STRICT_MERGE:
             if (
-                current_confidence < LOW_CONFIDENCE_THRESHOLD
-                or next_confidence < LOW_CONFIDENCE_THRESHOLD
+                    current_confidence < LOW_CONFIDENCE_THRESHOLD
+                    or next_confidence < LOW_CONFIDENCE_THRESHOLD
             ):
                 merged.append(current)
                 current = next_item
@@ -386,7 +465,7 @@ def merge_utterances(
                 else min(current_confidence, next_confidence)
             ),
             "low_confidence": min(current_confidence, next_confidence)
-            < LOW_CONFIDENCE_THRESHOLD,
+                              < LOW_CONFIDENCE_THRESHOLD,
         }
 
     merged.append(current)
@@ -394,7 +473,7 @@ def merge_utterances(
 
 
 def _write_debug_snapshots(
-    audio_file_path: str, raw_utterances: list, merged_utterances: list
+        audio_file_path: str, raw_utterances: list, merged_utterances: list
 ) -> None:
     try:
         chunk_path = Path(audio_file_path)
@@ -465,7 +544,7 @@ _KEYTERM_MAX_ENTRY_CHARS = 100
 
 
 def trim_keyterms_for_deepgram(
-    keyterms: list,
+        keyterms: list,
 ) -> tuple[list[str], dict]:
     """Prepare a keyterm list for Deepgram: drop garbage entries and trim
     to fit the per-request token budget.
@@ -550,10 +629,10 @@ def _is_retryable_error(exc: Exception, status_code: int | None = None) -> bool:
 
 
 def _transcribe_direct(
-    audio_file_path: str,
-    model: str = "nova-3",
-    keyterms: list = None,
-    progress_callback=None,
+        audio_file_path: str,
+        model: str = "nova-3",
+        keyterms: list = None,
+        progress_callback=None,
 ) -> dict:
     """
     Direct HTTP POST to Deepgram API.
@@ -599,6 +678,19 @@ def _transcribe_direct(
 
     if normalized_keyterms:
         params.setdefault("keyterm", []).extend(normalized_keyterms)
+
+    # Phase A provenance snapshot. Captured *after* all params
+    # transformations and *after* keyterms are merged in — this is
+    # the dict that gets URL-encoded into the actual request. A
+    # defensive copy is used so any future mutation cannot leak
+    # into the saved forensic record.
+    deepgram_request_params_snapshot = {
+        # Lists get a shallow copy so the saved keyterm list does
+        # not later alias-mutate when params is reused or modified.
+        k: list(v) if isinstance(v, list) else v
+        for k, v in params.items()
+    }
+
     query = _parse.urlencode(params, doseq=True)
 
     url = f"https://api.deepgram.com/v1/listen?{query}"
@@ -630,7 +722,12 @@ def _transcribe_direct(
                 progress_callback(
                     f"Skipped silent chunk: {chunk_name} (safe skip mode)"
                 )
-            return dict(_EMPTY_RESULT)
+            # Preserve provenance even on the skip path so a downstream
+            # consumer can see what *would* have been sent.
+            skipped = dict(_EMPTY_RESULT)
+            skipped["deepgram_request_params"] = deepgram_request_params_snapshot
+            skipped["keyterms_sent"] = list(normalized_keyterms)
+            return skipped
         logger.info("Chunk included: YES")
     else:
         logger.info("Chunk included: YES")
@@ -746,12 +843,32 @@ def _transcribe_direct(
             ]
             raw_utterances = [_annotate_confidence(u) for u in raw_utterances]
             raw_utterances = smooth_speakers(raw_utterances)
+            # Investigation hook (pipeline/merge_debug_config.py): the
+            # override returns None in production, so the effective gap
+            # is unchanged. Experimental runs set this temporarily.
+            from pipeline.merge_debug_config import (
+                get_in_chunk_gap_override,
+            )
+            _gap_override = get_in_chunk_gap_override()
+            _effective_in_chunk_gap = (
+                _gap_override
+                if _gap_override is not None
+                else MERGE_GAP_THRESHOLD_SECONDS
+            )
             utterances = merge_utterances(
                 raw_utterances,
-                gap_threshold_seconds=MERGE_GAP_THRESHOLD_SECONDS,
+                gap_threshold_seconds=_effective_in_chunk_gap,
                 min_word_count=MERGE_MIN_WORD_COUNT,
             )
             utterances = [_annotate_confidence(u) for u in utterances]
+            _log_merge_stage(
+                stage="TRANSCRIBER",
+                tag=chunk_name,
+                before=raw_utterances,
+                after=utterances,
+                threshold=_effective_in_chunk_gap,
+                override=_gap_override is not None,
+            )
 
             if not utterances:
                 raise ValueError("No utterances returned — pipeline failure")
@@ -784,9 +901,22 @@ def _transcribe_direct(
                 "words": words,
                 "utterances": utterances,
                 "merged_utterances": utterances,
+                # NOTE: this key is misnamed. These utterances have been through
+                # smooth_speakers() and per-chunk annotation and are NOT truly
+                # raw. The unmutated Deepgram response is in "raw". Renaming
+                # would ripple through assembler, correction_runner, the saved
+                # *_raw.json schema, and downstream tooling — deferred to
+                # Phase C/G. Do not fix in a Phase A commit. See
+                # ARCHITECTURAL_DEFERMENTS.md.
                 "raw_utterances": raw_utterances,
                 "transcript": alt.get("transcript", ""),
                 "raw": raw,
+                # Phase A provenance — consumed by job_runner to populate
+                # save_raw_response. Snapshot is the post-validation,
+                # post-keyterm-merge dict actually URL-encoded into the
+                # outgoing request.
+                "deepgram_request_params": deepgram_request_params_snapshot,
+                "keyterms_sent": list(normalized_keyterms),
             }
 
         except Exception as exc:
@@ -833,10 +963,10 @@ def _transcribe_direct(
 
 
 def transcribe_chunk(
-    audio_file_path: str,
-    model: str = "nova-3",
-    keyterms: list = None,
-    progress_callback=None,
+        audio_file_path: str,
+        model: str = "nova-3",
+        keyterms: list = None,
+        progress_callback=None,
 ) -> Dict[str, Any]:
     """
     Transcribe one audio chunk via Deepgram.
@@ -847,9 +977,15 @@ def transcribe_chunk(
         {
             "words":          list of word dicts with timestamps,
             "utterances":     merged speaker-grouped utterance dicts,
-            "raw_utterances": Deepgram utterances before local merge heuristics,
+            "merged_utterances": same as "utterances" (legacy alias),
+            "raw_utterances": Deepgram utterances before local merge heuristics
+                              (note: smooth_speakers has run on these),
             "transcript":     full plain-text string,
-            "raw":            complete Deepgram response as dict,
+            "raw":            complete Deepgram response as dict (unmutated),
+            "deepgram_request_params": dict of params URL-encoded into the
+                              request (Phase A provenance),
+            "keyterms_sent":  post-sanitization keyterm list actually sent
+                              (Phase A provenance),
         }
 
     Raises:

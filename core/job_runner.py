@@ -5,15 +5,29 @@ Runs the full transcription pipeline:
   audio file -> normalize -> chunk -> transcribe -> assemble -> save
 
 Called from ui/tab_transcribe.py in a background thread.
+
+Phase A note
+------------
+The immutable raw-response save (``pipeline.raw_store.save_raw_response``)
+now receives full forensic provenance: the post-validation Deepgram
+request parameters and the post-sanitization keyterm list. Both come
+out of the first chunk's transcribe result, which is representative
+because every chunk in a single run uses the same params and keyterms.
+
+Failure policy for the raw-store save is fail-soft at the orchestrator
+level: a filesystem error here is logged at ERROR severity and recorded
+in the output JSON (``raw_store_failure``), but the run continues so
+that the merged transcript and the legacy ``raw_deepgram.json`` are
+still produced. Module-level errors propagate per the raw_store
+contract; the policy choice to continue is made here.
 """
 
 import json
 import os
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 from config import DEFAULT_KEYTERMS, LOW_CONFIDENCE_THRESHOLD
-
 from core.file_manager import resolve_or_create_case
 
 
@@ -21,7 +35,7 @@ def _build_transcript_from_utterances(utterances: list[dict]) -> str:
     lines: list[str] = []
     for utterance in utterances or []:
         speaker = (
-            utterance.get("speaker_label") or f"Speaker {utterance.get('speaker', 0)}"
+                utterance.get("speaker_label") or f"Speaker {utterance.get('speaker', 0)}"
         )
         text = (utterance.get("transcript") or "").strip()
         if text:
@@ -70,21 +84,46 @@ def _build_chunk_summaries(chunks: list) -> list[dict]:
     return summaries
 
 
+def _extract_request_provenance(
+        chunk_results: list[dict],
+        fallback_keyterms: list[str],
+) -> tuple[dict, list[str]]:
+    """Pull Phase A provenance out of the first successful chunk result.
+
+    Every chunk in a single run is sent with the same parameters and
+    keyterm list, so chunk[0] is representative. If for any reason the
+    expected keys are missing (older transcriber on disk, silence-skip
+    path that returned an empty result, etc.), we fall back to empty
+    params and the upstream-merged keyterm list — the saved record
+    will still parse, and the absence will be visible to a forensic
+    reader.
+    """
+    if not chunk_results:
+        return {}, list(fallback_keyterms or [])
+
+    first = chunk_results[0] if isinstance(chunk_results[0], dict) else {}
+    params = first.get("deepgram_request_params") or {}
+    keyterms = first.get("keyterms_sent")
+    if keyterms is None:
+        keyterms = list(fallback_keyterms or [])
+    return params, list(keyterms)
+
+
 def run_transcription_job(
-    audio_path: str,
-    model: str,
-    quality: str,
-    base_dir: str,
-    cause_number: str = "",
-    last_name: str = "",
-    first_name: str = "",
-    date_str: str = "",
-    keyterms: list = None,
-    confirmed_spellings: dict | None = None,
-    ufm_fields: dict = None,
-    progress_callback=None,
-    log_callback=None,
-    done_callback=None,
+        audio_path: str,
+        model: str,
+        quality: str,
+        base_dir: str,
+        cause_number: str = "",
+        last_name: str = "",
+        first_name: str = "",
+        date_str: str = "",
+        keyterms: list = None,
+        confirmed_spellings: dict | None = None,
+        ufm_fields: dict = None,
+        progress_callback=None,
+        log_callback=None,
+        done_callback=None,
 ):
     """
     Run the full pipeline. Calls callbacks for UI updates.
@@ -108,6 +147,11 @@ def run_transcription_job(
     # Tracked so that if anything after chunk_audio() raises, we can still
     # clean up the temp WAV files in the except block.
     chunks: list | None = None
+
+    # Phase A: if the immutable raw-store save fails, we surface it in
+    # both the main JSON and the raw JSON outputs so downstream
+    # consumers can detect the forensic gap. ``None`` means success.
+    raw_store_failure: str | None = None
 
     try:
         from pipeline.preprocessor import (
@@ -138,31 +182,64 @@ def run_transcription_job(
         duration_min = v["duration"] / 60
         _log(f"File valid: {v['format'].upper()}  {duration_min:.1f} minutes")
 
-        from pipeline.transcriber import trim_keyterms_for_deepgram
+        # Deepgram keyterm sanitization — single active-path gate per
+        # docs/investigations/KEYTERM_REQUEST_AUDIT.md. The new
+        # ``pipeline.keyterm_sanitizer`` module replaces the legacy
+        # ``trim_keyterms_for_deepgram`` call here. The transcriber's
+        # per-chunk defensive ``trim_keyterms_for_deepgram`` invocation
+        # remains as a safety net but is now a no-op on the sanitized
+        # list this stage produces.
+        from pipeline.keyterm_sanitizer import (
+            format_log_line as _kt_log_line,
+            sanitize_for_deepgram,
+        )
 
-        merged_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
-        if merged_keyterms:
-            _log(f"Deepgram keyterms: {len(merged_keyterms)} (includes defaults)")
-            merged_keyterms, kt_stats = trim_keyterms_for_deepgram(merged_keyterms)
-            _log(
-                f"Sending {kt_stats['sent']} keyterms to Deepgram "
-                f"(~{kt_stats['used_tokens']}/{kt_stats['budget']} tokens)"
+        raw_keyterms = list(dict.fromkeys((keyterms or []) + DEFAULT_KEYTERMS))
+        if raw_keyterms:
+            _log(f"Deepgram keyterms (raw): {len(raw_keyterms)} (includes defaults)")
+            sanitization = sanitize_for_deepgram(
+                raw_keyterms,
+                sources={"job_runner": list(keyterms or []), "defaults": list(DEFAULT_KEYTERMS)},
             )
-            if kt_stats["dropped_oversize"]:
-                examples = ", ".join(
-                    repr(s[:60] + ("…" if len(s) > 60 else ""))
-                    for s in kt_stats["oversize_examples"]
-                )
+            merged_keyterms = sanitization.accepted_terms
+            kt_stats = sanitization.stats
+            _log(_kt_log_line(sanitization))
+            _log(
+                f"Sending {kt_stats.get('accepted', 0)} sanitized keyterms to Deepgram "
+                f"(~{kt_stats.get('final_tokens', 0)}/{kt_stats.get('budget', 0)} tokens)"
+            )
+            if kt_stats.get("ocr_fragments_removed"):
                 _log(
-                    f"  Dropped {kt_stats['dropped_oversize']} oversize keyterms "
-                    f"(>{kt_stats['max_entry_chars']} chars, likely form-template "
-                    f"noise): {examples}"
+                    f"  Dropped {kt_stats['ocr_fragments_removed']} OCR-tail fragments "
+                    f"(e.g. 'Original Standard', 'Trans Rush Due')"
                 )
-            if kt_stats["dropped_budget"]:
+            if kt_stats.get("single_all_caps_removed"):
                 _log(
-                    f"  Dropped {kt_stats['dropped_budget']} keyterms to fit "
-                    f"the {kt_stats['budget']}-token budget"
+                    f"  Dropped {kt_stats['single_all_caps_removed']} single-word "
+                    f"ALL-CAPS tokens (non-acronym)"
                 )
+            if kt_stats.get("single_generic_removed"):
+                _log(
+                    f"  Dropped {kt_stats['single_generic_removed']} single-word "
+                    f"generic legal boilerplate tokens"
+                )
+            if kt_stats.get("duplicates_removed"):
+                _log(
+                    f"  Collapsed {kt_stats['duplicates_removed']} duplicate / "
+                    f"subsumed fragments into longer forms"
+                )
+            if kt_stats.get("budget_trimmed"):
+                _log(
+                    f"  Trimmed {kt_stats['budget_trimmed']} low-score keyterms "
+                    f"to fit the {kt_stats['budget']}-token budget"
+                )
+            if kt_stats.get("oversize_removed"):
+                _log(
+                    f"  Dropped {kt_stats['oversize_removed']} oversize keyterms "
+                    f"(>100 chars, likely form-template noise)"
+                )
+        else:
+            merged_keyterms = []
 
         case_path, folder_status = resolve_or_create_case(
             base_dir,
@@ -281,9 +358,9 @@ def run_transcription_job(
         chunk_offsets = []
         for i, chunk in enumerate(chunks):
             pct = 22 + int((i / max(1, len(chunks))) * 58)
-            _progress(pct, f"Transcribing chunk {i+1} of {len(chunks)}…")
+            _progress(pct, f"Transcribing chunk {i + 1} of {len(chunks)}…")
             _log(
-                f"Chunk {i+1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s"
+                f"Chunk {i + 1}/{len(chunks)}: {chunk.start_seconds:.0f}s – {chunk.end_seconds:.0f}s"
             )
             result = transcribe_chunk(
                 chunk.file_path,
@@ -294,11 +371,56 @@ def run_transcription_job(
             chunk_results.append(result)
             chunk_offsets.append(chunk.start_seconds)
             _log(
-                f"Chunk {i+1} data: "
+                f"Chunk {i + 1} data: "
                 f"{len(result.get('utterances', []))} utterances, "
                 f"{len(result.get('words', []))} words"
             )
 
+        # Phase A — immutable raw store. Writes the unmutated per-chunk
+        # Deepgram responses to a timestamped read-only JSON BEFORE
+        # any cross-chunk merge / smoothing / speaker-remap runs.
+        #
+        # Provenance pulled from chunk_results[0]: every chunk in a
+        # single run uses the same params and keyterms list, so the
+        # first chunk's snapshot is representative.
+        #
+        # Failure policy: log at ERROR, record the failure string in
+        # the output JSON (raw_store_failure field), but continue —
+        # the legacy raw_deepgram.json save below still produces a
+        # recoverable artifact, and aborting a successful Deepgram
+        # run on a filesystem hiccup wastes paid API calls.
+        try:
+            from pipeline.raw_store import save_raw_response
+
+            dg_request_params, dg_keyterms_sent = _extract_request_provenance(
+                chunk_results,
+                fallback_keyterms=merged_keyterms,
+            )
+
+            _raw_store_result = save_raw_response(
+                case_path,
+                chunk_results=chunk_results,
+                chunk_offsets=chunk_offsets,
+                audio_file=audio_path,
+                model=model,
+                request_params=dg_request_params,
+                keyterms=dg_keyterms_sent,
+            )
+            _log(
+                f"[VALIDATION] [RAW RESPONSE SAVED] {_raw_store_result.path.name} "
+                f"(chunks={_raw_store_result.chunk_count}, "
+                f"keyterms={len(dg_keyterms_sent)})"
+            )
+        except Exception as raw_store_exc:
+            raw_store_failure = f"{type(raw_store_exc).__name__}: {raw_store_exc}"
+            _log(
+                f"[ERROR] [RAW_STORE] Immutable raw-response save FAILED: "
+                f"{raw_store_failure}. Run continues; legacy raw save "
+                f"will still be attempted, but forensic regression-"
+                f"comparison may be impossible for this run."
+            )
+
+        _log("[VALIDATION] [TRANSCRIPT MUTATION BEGINS] cross-chunk assembler about to run")
         _progress(82, "Assembling transcript…")
         assembled = reassemble_chunks(chunk_results, chunk_offsets)
         _validate_assembled_result(assembled)
@@ -364,6 +486,7 @@ def run_transcription_job(
             "utterance_count": utterance_count,
             "chunk_count": len(chunks),
             "deepgram_keyterms_used": merged_keyterms,
+            "raw_store_failure": raw_store_failure,
             "transcript": transcript_text,
             "chunk_summaries": _build_chunk_summaries(chunks),
             "utterances": assembled.get("utterances", []),
@@ -381,6 +504,7 @@ def run_transcription_job(
             "created_at": datetime.now().isoformat(),
             "chunk_count": len(chunks),
             "deepgram_keyterms_used": merged_keyterms,
+            "raw_store_failure": raw_store_failure,
             "transcript": raw_transcript_text,
             "chunk_summaries": _build_chunk_summaries(chunks),
             "utterances": assembled.get("utterances", []),
@@ -440,6 +564,7 @@ def run_transcription_job(
                 "output_dir": str(out_dir),
                 "transcript_text": transcript_text,
                 "audio_tier": analysis.tier if analysis else "",
+                "raw_store_failure": raw_store_failure,
                 "error": None,
             }
         )

@@ -1,0 +1,37 @@
+{
+  "source_case": "etminan_mohammad",
+  "source_run_stamp": "20260513_134706",
+  "model": "nova-3",
+  "audio_file": "C:/Users/james/Downloads/04-24-26 Dr Mohammed Etminan, MD - Audio (1).mp3",
+  "request_params_snapshot": {
+    "model": "nova-3",
+    "language": "en",
+    "smart_format": "true",
+    "diarize": "true",
+    "punctuate": "true",
+    "paragraphs": "true",
+    "utterances": "true",
+    "utt_split": "0.8",
+    "filler_words": "true",
+    "numerals": "true"
+  },
+  "preprocessing_settings": {
+    "tier": "ENHANCED (fair audio)",
+    "vad_trim": true,
+    "highpass_freq": 80,
+    "loudnorm": true
+  },
+  "chunk_settings": {
+    "chunk_duration_seconds": 600,
+    "chunk_overlap_seconds": 20,
+    "chunk_count": 9
+  },
+  "native_word_total": 12212,
+  "native_utterance_total": 1148,
+  "canonical_assembled_words": 11795,
+  "canonical_assembled_utterances": 337,
+  "canonical_raw_utterances": 1113,
+  "validation_status": "phase_a_complete",
+  "phase_a_validation_doc": "docs/validation/IMMUTABILITY_RESULTS.md",
+  "captured_at_utc": "2026-05-13T18:47:06Z"
+}
