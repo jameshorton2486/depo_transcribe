@@ -9,3 +9,4 @@
 2026-05-14 - Defect #6 age and time normalization - commit a94e00c
 2026-05-14 - Defect #7 DOCX writer Q/A parse and continuation geometry - commit d07336d
 2026-05-14 - Defect #8 recess and off-record pair collapsing - commit 0302202
+2026-05-14 - Defect #9 reporter's certificate page from UFM template - commit 53a4941
