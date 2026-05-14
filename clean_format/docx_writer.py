@@ -147,31 +147,123 @@ def _add_marked_runs(paragraph: Any, text: str) -> None:
 
 
 def _parse_blocks(formatted_text: str) -> list[dict[str, str]]:
+    """Parse emitter output into structured blocks for rendering.
+
+    Recognizes the emitter's tab-prefixed shapes:
+
+      * ``\tQ.\t<body>`` and ``\tA.\t<body>`` -> kind="qa".
+      * A multi-line emitter block whose first line is
+        ``\t\t\t<SPEAKER>:`` followed by ``\t\t\t<body>``
+        lines -> kind="colloquy_block" with merged body.
+      * A single-line ``\t\t\t<text>`` block (no colon-ended
+        speaker label) -> kind="directive".
+      * A bare ``<HEADER>:`` line with no tab prefix ->
+        kind="header" (manually-added section headers like
+        "EXAMINATION:" in _write_proceedings).
+
+    Returns the legacy ``kind="speaker"`` form only for content
+    that doesn't match any of the above patterns - defensive
+    fallback that shouldn't fire in practice with the current
+    emitter output.
+    """
     blocks: list[dict[str, str]] = []
-    for block in (formatted_text or "").split("\n\n"):
-        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
+    for raw_block in (formatted_text or "").split("\n\n"):
+        lines = [line.rstrip() for line in raw_block.splitlines() if line.strip()]
         if not lines:
             continue
-        line = lines[0]
-        if line.startswith("Q.\t"):
-            blocks.append({"kind": "qa", "label": "Q.", "text": line[3:]})
-        elif line.startswith("A.\t"):
-            blocks.append({"kind": "qa", "label": "A.", "text": line[3:]})
-        elif ":\t" in line:
-            label, text = line.split(":\t", 1)
+
+        first = lines[0]
+
+        if first.startswith("\tQ.\t"):
+            blocks.append({"kind": "qa", "label": "Q.", "text": first[4:]})
+            for extra in lines[1:]:
+                tail = extra.lstrip("\t").strip()
+                if tail:
+                    blocks[-1]["text"] += " " + tail
+            continue
+        if first.startswith("Q.\t"):
+            blocks.append({"kind": "qa", "label": "Q.", "text": first[3:]})
+            for extra in lines[1:]:
+                tail = extra.lstrip("\t").strip()
+                if tail:
+                    blocks[-1]["text"] += " " + tail
+            continue
+        if first.startswith("\tA.\t"):
+            blocks.append({"kind": "qa", "label": "A.", "text": first[4:]})
+            for extra in lines[1:]:
+                tail = extra.lstrip("\t").strip()
+                if tail:
+                    blocks[-1]["text"] += " " + tail
+            continue
+        if first.startswith("A.\t"):
+            blocks.append({"kind": "qa", "label": "A.", "text": first[3:]})
+            for extra in lines[1:]:
+                tail = extra.lstrip("\t").strip()
+                if tail:
+                    blocks[-1]["text"] += " " + tail
+            continue
+
+        if first.startswith("\t\t\t") and first.rstrip().endswith(":"):
+            label = first[3:].rstrip()
+            body_lines: list[str] = []
+            for extra in lines[1:]:
+                body_lines.append(extra.lstrip("\t"))
+            text = "\n".join(body_lines).strip()
+            blocks.append(
+                {"kind": "colloquy_block", "label": label, "text": text}
+            )
+            continue
+
+        if ":\t" in first:
+            label, text = first.split(":\t", 1)
             blocks.append({"kind": "speaker", "label": label + ":", "text": text})
-        elif line.endswith(":"):
-            blocks.append({"kind": "header", "label": line, "text": ""})
-        else:
-            blocks.append({"kind": "speaker", "label": "", "text": line})
+            continue
+
+        if first.startswith("\t\t\t"):
+            text = first.lstrip("\t").strip()
+            for extra in lines[1:]:
+                tail = extra.lstrip("\t").strip()
+                if tail:
+                    text += "\n" + tail
+            blocks.append({"kind": "directive", "label": "", "text": text})
+            continue
+
+        if first.endswith(":"):
+            blocks.append({"kind": "header", "label": first, "text": ""})
+            continue
+
+        blocks.append({"kind": "directive", "label": "", "text": first})
+
     return _merge_consecutive_speaker_blocks(blocks)
 
 
 def _merge_consecutive_speaker_blocks(
     blocks: list[dict[str, str]],
 ) -> list[dict[str, str]]:
+    """Merge consecutive same-speaker colloquy_block entries.
+
+    With the new tab-prefixed parser, the legacy ``kind="speaker"``
+    merging path is no longer the primary case. Consecutive same-
+    speaker colloquy still benefits from merging when the emitter
+    produces them as separate emitter blocks (rare in current
+    output but possible).
+
+    Legacy ``kind="speaker"`` blocks are still merged the same way
+    for backward compatibility, in case any caller produces them.
+    """
     merged: list[dict[str, str]] = []
     for block in blocks:
+        if (
+            merged
+            and block["kind"] == "colloquy_block"
+            and merged[-1]["kind"] == "colloquy_block"
+            and block["label"]
+            and block["label"] == merged[-1]["label"]
+        ):
+            prior_text = merged[-1]["text"].rstrip()
+            current_text = block["text"].lstrip()
+            merged[-1]["text"] = f"{prior_text}\n{current_text}"
+            continue
         if (
             merged
             and block["kind"] == "speaker"
@@ -301,16 +393,48 @@ def _write_proceedings(
             # marked token renders as its own yellow-highlighted run.
             paragraph.add_run(f"\t{block['label']}\t")
             _add_marked_runs(paragraph, block["text"])
+        elif block["kind"] == "colloquy_block":
+            # Colloquy: speaker label line plus one or more body
+            # lines within a single paragraph. Hanging indent at
+            # 1.5" so the leading "\t\t\t" lands first-line content
+            # at the 1.5" tab stop and wrap continuation also
+            # lands at 1.5".
+            #
+            # Body lines after the label are emitted as soft line
+            # breaks (run.add_break) inside the same paragraph, so
+            # they share the same indent geometry.
+            paragraph.paragraph_format.left_indent = Inches(1.5)
+            paragraph.paragraph_format.first_line_indent = Inches(-1.5)
+            paragraph.add_run(f"\t\t\t{block['label']}")
+            body = (block.get("text") or "").strip()
+            if body:
+                for body_line in body.split("\n"):
+                    line_text = body_line.strip()
+                    if not line_text:
+                        continue
+                    break_run = paragraph.add_run()
+                    break_run.add_break()
+                    paragraph.add_run("\t\t\t")
+                    _add_marked_runs(
+                        paragraph, _double_space_sentences(line_text)
+                    )
+        elif block["kind"] == "directive":
+            # Directive: single text line at 1.5", hanging indent
+            # so any wrap continuation also lands at 1.5".
+            paragraph.paragraph_format.left_indent = Inches(1.5)
+            paragraph.paragraph_format.first_line_indent = Inches(-1.5)
+            paragraph.add_run("\t\t\t")
+            _add_marked_runs(
+                paragraph, _double_space_sentences(block.get("text") or "")
+            )
         elif block["kind"] == "speaker":
-            # Step 2J: non-Q/A lines render with a three-tab prefix that
-            # lands the content at the 1.5" tab stop. Left/first-line
-            # indents stay at zero so the tabs themselves carry the
-            # indentation; the tab stops above (0.5/1.0/1.5) absorb them.
-            paragraph.paragraph_format.left_indent = Inches(0)
-            paragraph.paragraph_format.first_line_indent = Inches(0)
+            # Legacy speaker kind - retained for backward compat
+            # with any caller producing the old shape. Geometry
+            # uses the new 1.5" hanging indent so wrap continuation
+            # matches the visible first-line position.
+            paragraph.paragraph_format.left_indent = Inches(1.5)
+            paragraph.paragraph_format.first_line_indent = Inches(-1.5)
             if block["label"]:
-                # Step D: split label+spacing into a non-highlighted prefix
-                # run, then body into possibly-highlighted run(s).
                 paragraph.add_run(f"\t\t\t{block['label']}  ")
                 _add_marked_runs(paragraph, block["text"])
             else:
@@ -319,8 +443,8 @@ def _write_proceedings(
                     paragraph, _double_space_sentences(block["text"])
                 )
         else:
-            # Step 2J: header-kind blocks (e.g. "DEPOSITION:") also get
-            # the three-tab prefix.
+            # header kind - manually-added section headers like
+            # "EXAMINATION:" rendered without indent. Unchanged.
             paragraph.paragraph_format.left_indent = Inches(0)
             paragraph.paragraph_format.first_line_indent = Inches(0)
             run = paragraph.add_run(f"\t\t\t{block['label']}")
