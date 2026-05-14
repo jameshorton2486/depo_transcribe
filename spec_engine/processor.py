@@ -13,12 +13,14 @@ from .exhibit_markers import emit_exhibit_markers
 from .money_and_percent import normalize_money_and_percent
 from .objection_routing import split_misattributed_objections
 from .qa_fixer import enforce_structure
+from .recess_pairing import pair_recess_directives
 from .speaker_mapper import normalize_speakers
 
 
 def process_blocks(
     blocks: list[dict],
     *,
+    case_meta: dict | None = None,
     confirmed_spellings: dict | None = None,
     keyterms: list[str] | None = None,
 ) -> str:
@@ -33,6 +35,7 @@ def process_blocks(
     mapped = normalize_speakers(fixed)
     annotated = emit_exhibit_markers(mapped)
     annotated = split_misattributed_objections(annotated)
+    annotated = pair_recess_directives(annotated, case_meta)
     annotated = apply_byline_resumption(annotated)
     annotated = normalize_dates_and_years(annotated)
     annotated = normalize_money_and_percent(annotated)
