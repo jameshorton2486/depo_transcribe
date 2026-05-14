@@ -40,3 +40,63 @@ def test_classify_assigns_structural_types():
 
 def test_normalize_speaker_label_uppercases_and_normalizes_colon():
     assert normalize_speaker_label("Ms. Maloney;; ") == "MS. MALONEY:"
+
+
+def test_directive_requires_trailing_colon_for_by_prefix():
+    """Defect #11: 'By' as English preposition (no trailing colon) must
+    not be classified as directive. Previously this cascaded through
+    qa_fixer._directive_examiner_name to corrupt examiner attribution
+    on subsequent question blocks.
+    """
+    blocks = classify_blocks([
+        {"speaker": "speaker 1",
+         "text": "By putting around 20 windows on the sheet cart?",
+         "type": "paragraph"},
+    ])
+    assert len(blocks) == 1
+    assert blocks[0].type != "directive"
+
+
+def test_directive_byline_with_colon_still_classified():
+    """Canonical BY-line section headers (with trailing colon) must
+    still classify as directive. Protects the legitimate path.
+    """
+    blocks = classify_blocks([
+        {"speaker": "speaker 1", "text": "BY MR. NUNEZ:", "type": "paragraph"},
+        {"speaker": "speaker 2", "text": "BY MS. ZHAN:", "type": "paragraph"},
+        {"speaker": "speaker 3", "text": "by mr. ragan:", "type": "paragraph"},
+    ])
+    assert blocks[0].type == "directive"
+    assert blocks[1].type == "directive"
+    assert blocks[2].type == "directive"
+
+
+def test_directive_rejects_by_prefix_without_colon():
+    """Various 'By <something>' constructions that are English prose,
+    not BY-line directives. None should classify as directive.
+    """
+    inputs = [
+        "By the way, what's your name?",
+        "By any chance, did you see it?",
+        "By all means, please continue.",
+        "By definition, that's not possible.",
+    ]
+    for text in inputs:
+        blocks = classify_blocks([
+            {"speaker": "speaker 1", "text": text, "type": "paragraph"},
+        ])
+        assert blocks[0].type != "directive", (
+            f"{text!r} was incorrectly classified as directive"
+        )
+
+
+def test_directive_accepts_tab_separator_with_colon():
+    """The BY\t variant (tab instead of space) is preserved from the
+    original implementation. Must still require trailing colon.
+    """
+    blocks = classify_blocks([
+        {"speaker": "speaker 1", "text": "BY\tMR. NUNEZ:", "type": "paragraph"},
+        {"speaker": "speaker 2", "text": "BY\tMR. NUNEZ", "type": "paragraph"},
+    ])
+    assert blocks[0].type == "directive"
+    assert blocks[1].type != "directive"

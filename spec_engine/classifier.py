@@ -15,8 +15,23 @@ _OATH_RE = re.compile(
 
 
 def _looks_like_directive(text: str) -> bool:
+    """True only for canonical BY-line section headers (e.g. 'BY MR. NUNEZ:').
+
+    Both conditions required:
+    - Text starts with "BY " or "BY\t" (case-insensitive via prior upper())
+    - Text ends with ":"
+
+    The trailing-colon requirement filters false positives like
+    "By the way..." or "By putting around 20 windows..." (English
+    preposition usage) that previously cascaded through
+    qa_fixer._directive_examiner_name to produce garbage examiner
+    attributions. Matches the strict definition already used by
+    byline_resumption._is_section_header_directive.
+    """
     cleaned = str(text or "").strip().upper()
-    return cleaned.startswith("BY ") or cleaned.startswith("BY\t")
+    if not (cleaned.startswith("BY ") or cleaned.startswith("BY\t")):
+        return False
+    return cleaned.endswith(":")
 
 
 def _is_colloquy_speaker(speaker: str) -> bool:
