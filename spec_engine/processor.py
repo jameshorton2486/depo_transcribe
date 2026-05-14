@@ -6,6 +6,7 @@ from .block_builder import build_blocks
 from .classifier import classify_blocks
 from .corrections import apply_corrections
 from .emitter import emit_blocks
+from .exhibit_markers import emit_exhibit_markers
 from .qa_fixer import enforce_structure
 from .speaker_mapper import normalize_speakers
 
@@ -25,7 +26,8 @@ def process_blocks(
     )
     fixed = enforce_structure(corrected)
     mapped = normalize_speakers(fixed)
-    return emit_blocks(mapped)
+    annotated = emit_exhibit_markers(mapped)
+    return emit_blocks(annotated)
 
 
 def process_alt(alt: dict) -> str:

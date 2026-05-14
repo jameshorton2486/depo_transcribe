@@ -58,7 +58,18 @@ def normalize_examiner_name(name: str) -> str:
 
 
 def normalize_directive_text(text: str) -> str:
-    """Normalize BY-line formatting without changing identity."""
+    """Normalize BY-line formatting without changing identity.
+
+    Directive blocks come in two semantic flavors that share the
+    same type tag: BY-lines (e.g. "BY MR. NUNEZ:") and standalone
+    parenthetical directives (e.g. "(Exhibit 1 marked)",
+    "(Recess from X to Y)"). Only BY-lines get rewritten here.
+    Standalone parenthetical directives - text that begins with
+    "(" and ends with ")" - pass through unchanged.
+    """
+    stripped = text.strip()
+    if stripped.startswith("(") and stripped.endswith(")"):
+        return text
     examiner = normalize_examiner_name(text)
     return f"BY {examiner}:" if examiner else "BY UNKNOWN:"
 
