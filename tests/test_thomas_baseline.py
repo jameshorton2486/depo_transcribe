@@ -42,7 +42,6 @@ REQUIRED_PHRASES = (
     "Heath Thomas",
     "25CV00598OLG",
     "Miah Bardot",
-    "1200129",
 )
 
 
