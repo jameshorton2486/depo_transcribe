@@ -516,3 +516,369 @@ def test_docx_colloquy_paragraph_contains_label_and_body():
     assert target is not None
     assert "MS. ZHAN:" in target
     assert "Objection" in target
+
+
+# ============================================================
+# Defect #9 - Reporter's Certificate page tests
+# ============================================================
+
+import re as _re_d9
+import zipfile as _zipfile_d9
+
+
+def _build_docx_with_cert(case_meta: dict) -> str:
+    """Build a deposition DOCX with the cert page appended."""
+    formatted_text = "\tQ.\tDid you visit the property?\n\n\tA.\tYes."
+    document = build_deposition_document(formatted_text, case_meta)
+    tmp_path = Path(tempfile.gettempdir()) / "defect9_test.docx"
+    document.save(tmp_path)
+    return str(tmp_path)
+
+
+def _full_text(path: str) -> str:
+    """Concatenate all paragraph text in the .docx for content checks."""
+    with _zipfile_d9.ZipFile(path) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    texts = _re_d9.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml)
+    return "\n".join(texts)
+
+
+def test_cert_page_contains_required_header():
+    """The cert page header text appears in the document."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [
+            {"role": "plaintiff", "name": "Mr. Nunez", "city": "San Antonio"},
+        ],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "REPORTER'S CERTIFICATION" in text
+
+
+def test_cert_page_contains_reporter_name():
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Miah Bardot" in text
+    assert "Certified Shorthand Reporter" in text
+
+
+def test_cert_page_contains_witness_name():
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Heath Thomas",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Heath Thomas" in text
+    assert "duly sworn" in text
+
+
+def test_cert_page_renders_csr_number_when_provided():
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+        "reporter_csr": "12129",
+        "reporter_credentials": "CSR, RPR, CRR",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Texas CSR 12129" in text
+    assert "CSR, RPR, CRR" in text
+
+
+def test_cert_page_renders_firm_when_provided():
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+        "firm_name": "SA LEGAL SOLUTIONS",
+        "firm_registration": "10698",
+        "firm_address_line1": "100 Main Street, Suite 200",
+        "firm_city": "San Antonio",
+        "firm_state": "Texas",
+        "firm_zip": "78205",
+        "firm_phone": "(210) 555-0100",
+        "firm_email": "miah@example.com",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "SA LEGAL SOLUTIONS" in text
+    assert "10698" in text
+    assert "100 Main Street" in text
+    assert "San Antonio" in text
+    assert "78205" in text
+    assert "(210) 555-0100" in text
+    assert "miah@example.com" in text
+
+
+def test_cert_page_uses_blank_placeholders_for_missing_fields():
+    """When reporter/firm fields are missing, render blank placeholders
+    (visible blanks > silent fabrication)."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "_______" in text
+    assert "[CSR Number]" not in text
+    assert "[Firm Name]" not in text
+    assert "[Credentials]" not in text
+
+
+def test_cert_page_renders_time_used_per_attorney_block():
+    """Time-used block contains one line per attorney with blank time
+    placeholder."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [
+            {"role": "plaintiff", "name": "Mr. Nunez", "city": "San Antonio"},
+            {"role": "defendant", "name": "Ms. Zhan", "city": "San Antonio"},
+        ],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Mr. Nunez (______ hours ______ minutes)" in text
+    assert "Ms. Zhan (______ hours ______ minutes)" in text
+
+
+def test_cert_page_renders_attorney_party_pairs_block():
+    """Attorney/party pairs block lists each attorney with role+party."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "ACME CORP",
+        "defendant_names": ["XYZ INC"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [
+            {"role": "plaintiff", "name": "Mr. Nunez", "city": "San Antonio"},
+            {"role": "defendant", "name": "Ms. Zhan", "city": "San Antonio"},
+        ],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Mr. Nunez, Attorney for Plaintiff, ACME CORP" in text
+    assert "Ms. Zhan, Attorney for Defendant, XYZ INC" in text
+
+
+def test_cert_page_contains_trcp_boilerplate():
+    """The fixed TRCP boilerplate appears unmodified."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "neither counsel for" in text
+    assert "Rule 203" in text or "Rule 203 of TRCP" in text
+
+
+def test_cert_page_contains_always_blank_certification_date():
+    """The 'Certified to by me this ___ day of ___, ___' line uses
+    a blank placeholder, never a fabricated date."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Certified to by me this" in text
+    assert "_____ day of" in text
+
+
+def test_cert_page_no_bracketed_placeholders_leak_through():
+    """No paragraph in the output retains a [...] placeholder."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [
+            {"role": "plaintiff", "name": "Mr. Nunez"},
+        ],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+        "reporter_csr": "12129",
+        "firm_name": "SA LEGAL SOLUTIONS",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    leaked = _re_d9.findall(r"\[[A-Z][^\]]*\]", text)
+    assert not leaked, f"Bracketed placeholders leaked: {leaked}"
+
+
+def test_cert_page_includes_page_break_before():
+    """A page break separates the proceedings from the cert page."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    with _zipfile_d9.ZipFile(path) as z:
+        xml = z.read("word/document.xml").decode("utf-8")
+    cert_marker = "REPORTER'S CERTIFICATION"
+    cert_position = xml.find(cert_marker)
+    assert cert_position > 0, "Cert page not found in output"
+    preceding = xml[:cert_position]
+    assert 'w:br w:type="page"' in preceding
+
+
+def test_cert_page_renders_state_as_texas_in_caption():
+    """The caption [State] resolves to TEXAS even without firm_state."""
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "TEXAS" in text
+
+
+def test_cert_page_renders_firm_state_when_provided():
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+        "firm_city": "San Antonio",
+        "firm_state": "Texas",
+        "firm_zip": "78205",
+    }
+    path = _build_docx_with_cert(case_meta)
+    text = _full_text(path)
+    assert "Texas" in text
+
+
+def test_cert_page_skips_gracefully_when_template_missing(monkeypatch):
+    """If the cert template is absent at build time, the writer
+    skips the cert page rather than crashing."""
+    from clean_format import docx_writer
+
+    monkeypatch.setattr(
+        docx_writer,
+        "_CERT_TEMPLATE_PATH",
+        Path(tempfile.gettempdir()) / "nonexistent_cert.docx",
+    )
+
+    case_meta = {
+        "cause_number": "TEST-001",
+        "plaintiff_name": "PLAINTIFF",
+        "defendant_names": ["DEFENDANT"],
+        "judicial_district": "37TH",
+        "county": "BEXAR",
+        "witness_name": "Test Witness",
+        "deposition_date": "May 7, 2026",
+        "attorneys": [],
+        "videographer_name": "",
+        "reporter_name": "Miah Bardot",
+    }
+    formatted_text = "\tQ.\tHello.\n\n\tA.\tHi."
+    document = build_deposition_document(formatted_text, case_meta)
+    tmp_path = Path(tempfile.gettempdir()) / "defect9_no_template.docx"
+    document.save(tmp_path)
+    assert Path(tmp_path).exists()

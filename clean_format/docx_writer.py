@@ -24,6 +24,33 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 _TRAILING_AT_SUFFIX = re.compile(r"\s+at\s+.*$", re.IGNORECASE)
 _SENTENCE_SPACE_RE = re.compile(r"([.!?])\s+")
 
+# Reporter's Certificate template (Texas, signature required).
+# Sourced from ufm_engine/templates/figures/. The template is
+# treated as read-only; defect #9 copies its paragraphs into
+# the deposition document with field substitution.
+#
+# Signature-waived variant deferred to a future defect.
+_CERT_TEMPLATE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "ufm_engine"
+    / "templates"
+    / "figures"
+    / "cert_tx_sig_required.docx"
+)
+
+# Always-blank placeholders per Shaw convention. These represent
+# reporter-fillable values that aren't known at transcript
+# generation time.
+_ALWAYS_BLANK_PLACEHOLDERS = {
+    "[Submitted Date]": "____________________",
+    "[Return-By Date]": "____________________",
+    "[Certification Date]": "_____ day of ___________, _____",
+}
+
+# Default placeholder for missing reporter/firm fields. Visible
+# blank > silent fabrication for legal documents.
+_BLANK_FIELD_PLACEHOLDER = "_______"
+
 
 def sanitize_filename_component(value: str) -> str:
     """
@@ -451,6 +478,256 @@ def _write_proceedings(
             run.bold = True
 
 
+def _derive_court_designation(judicial_district: str) -> str:
+    """Map a judicial district string to a court designation phrase.
+
+    Texas district court captions use the form 'IN THE DISTRICT
+    COURT OF' for Texas state courts. If a numeric district like
+    '37TH' is present, return 'IN THE 37TH JUDICIAL DISTRICT'.
+    Otherwise return the bare 'IN THE DISTRICT COURT' fallback.
+    """
+    district = (judicial_district or "").strip()
+    if not district:
+        return "IN THE DISTRICT COURT"
+    return f"IN THE {district.upper()} JUDICIAL DISTRICT"
+
+
+def _derive_judicial_district_phrase(judicial_district: str) -> str:
+    """Return the right-side caption phrase, e.g. '115TH JUDICIAL DISTRICT'."""
+    district = (judicial_district or "").strip()
+    if not district:
+        return "JUDICIAL DISTRICT"
+    return f"{district.upper()} JUDICIAL DISTRICT"
+
+
+def _render_time_used_per_attorney(attorneys: list[dict] | None) -> str:
+    """Render the multi-line 'time used' block per Shaw convention.
+
+    One line per attorney with name + blank time placeholder. If
+    no attorneys, render a single placeholder line.
+    """
+    if not attorneys:
+        return (
+            f"{_BLANK_FIELD_PLACEHOLDER}_______________ "
+            "(______ hours ______ minutes)"
+        )
+    lines = []
+    for entry in attorneys:
+        name = (entry.get("name") or "").strip() or _BLANK_FIELD_PLACEHOLDER
+        lines.append(f"{name} (______ hours ______ minutes)")
+    return "\n".join(lines)
+
+
+def _render_attorney_party_pairs(
+    attorneys: list[dict] | None,
+    plaintiff_name: str,
+    defendant_names: list[str] | None,
+) -> str:
+    """Render the multi-line attorney/party block.
+
+    One line per attorney with format 'NAME, Attorney for ROLE PARTY'.
+    Plaintiff attorneys are paired with the plaintiff_name.
+    Defendant attorneys are paired with the defendant_names
+    (first one if multiple, since per-attorney mapping isn't tracked).
+    """
+    if not attorneys:
+        return "_______________________________"
+    plaintiff = (plaintiff_name or "").strip()
+    defendants = defendant_names or []
+    primary_defendant = (defendants[0] if defendants else "").strip()
+
+    lines = []
+    for entry in attorneys:
+        name = (entry.get("name") or "").strip() or _BLANK_FIELD_PLACEHOLDER
+        role = (entry.get("role") or "").strip().lower()
+        if role == "plaintiff":
+            party_label = f"Plaintiff, {plaintiff}" if plaintiff else "Plaintiff"
+        else:
+            party_label = (
+                f"Defendant, {primary_defendant}"
+                if primary_defendant
+                else "Defendant"
+            )
+        lines.append(f"{name}, Attorney for {party_label}")
+    return "\n".join(lines)
+
+
+def _substitute_case_placeholders(text: str, case_meta: dict[str, Any]) -> str:
+    """Substitute case-level and reporter/firm placeholders.
+
+    Applied in order. The order matters: longer/more-specific
+    placeholders are substituted before shorter ones to avoid
+    partial replacement.
+    """
+    attorneys = case_meta.get("attorneys") or []
+    defendant_names = case_meta.get("defendant_names") or []
+
+    substitutions = [
+        ("[Plaintiff Name(s)]", case_meta.get("plaintiff_name", "") or ""),
+        (
+            "[Court Designation]",
+            _derive_court_designation(case_meta.get("judicial_district", "")),
+        ),
+        (
+            "[Judicial District Phrase]",
+            _derive_judicial_district_phrase(case_meta.get("judicial_district", "")),
+        ),
+        ("[Defendant Names]", "\n".join(defendant_names) if defendant_names else ""),
+        ("[Witness Name]", case_meta.get("witness_name", "") or ""),
+        ("[Deposition Date]", case_meta.get("deposition_date", "") or ""),
+        ("[Reporter Name]", case_meta.get("reporter_name", "") or ""),
+        ("[Cause Number]", case_meta.get("cause_number", "") or ""),
+        ("[County]", case_meta.get("county", "") or ""),
+        (
+            "[Time Used Per Attorney (multi-line)]",
+            _render_time_used_per_attorney(attorneys),
+        ),
+        ("[Time Used Per Attorney]", _render_time_used_per_attorney(attorneys)),
+        (
+            "[Attorney/Party Pairs (multi-line)]",
+            _render_attorney_party_pairs(
+                attorneys,
+                case_meta.get("plaintiff_name", ""),
+                defendant_names,
+            ),
+        ),
+        (
+            "[Attorney/Party Pairs]",
+            _render_attorney_party_pairs(
+                attorneys,
+                case_meta.get("plaintiff_name", ""),
+                defendant_names,
+            ),
+        ),
+        (
+            "[Credentials]",
+            case_meta.get("reporter_credentials") or _BLANK_FIELD_PLACEHOLDER,
+        ),
+        ("[CSR Number]", case_meta.get("reporter_csr") or _BLANK_FIELD_PLACEHOLDER),
+        (
+            "[CSR Expiration]",
+            case_meta.get("reporter_csr_expiration") or _BLANK_FIELD_PLACEHOLDER,
+        ),
+        ("[Firm Name]", case_meta.get("firm_name") or _BLANK_FIELD_PLACEHOLDER),
+        (
+            "[Firm Reg No.]",
+            case_meta.get("firm_registration") or _BLANK_FIELD_PLACEHOLDER,
+        ),
+        (
+            "[Address Line 1]",
+            case_meta.get("firm_address_line1") or _BLANK_FIELD_PLACEHOLDER,
+        ),
+        ("[City]", case_meta.get("firm_city") or _BLANK_FIELD_PLACEHOLDER),
+        ("[ZIP]", case_meta.get("firm_zip") or _BLANK_FIELD_PLACEHOLDER),
+        ("[Phone]", case_meta.get("firm_phone") or _BLANK_FIELD_PLACEHOLDER),
+        ("[Email]", case_meta.get("firm_email") or _BLANK_FIELD_PLACEHOLDER),
+    ]
+
+    out = text
+    for placeholder, replacement in substitutions:
+        if placeholder in out:
+            out = out.replace(placeholder, replacement)
+
+    for placeholder, replacement in _ALWAYS_BLANK_PLACEHOLDERS.items():
+        if placeholder in out:
+            out = out.replace(placeholder, replacement)
+
+    if "[State]" in out:
+        if "COUNTY," in out.upper():
+            out = out.replace("[State]", "TEXAS")
+        else:
+            firm_state = case_meta.get("firm_state") or _BLANK_FIELD_PLACEHOLDER
+            out = out.replace("[State]", firm_state)
+
+    return out
+
+
+def _extract_paragraph_text(paragraph: Any) -> str:
+    """Concatenate all text runs in a paragraph, including those
+    inside structured-document-tag (SDT) content controls.
+
+    python-docx's ``paragraph.text`` only returns text from
+    top-level runs and misses content-control wrapped text.
+    Reach into the XML and grab every <w:t> directly.
+    """
+    paragraph_element = getattr(paragraph, "_p", paragraph)
+    texts = []
+    for t_element in paragraph_element.iter(qn("w:t")):
+        if t_element.text:
+            texts.append(t_element.text)
+    return "".join(texts)
+
+
+def _extract_paragraph_formatting(paragraph: Any) -> dict[str, Any]:
+    """Extract alignment and bold flags from a template paragraph.
+
+    Returns a dict with 'alignment' (WD_ALIGN_PARAGRAPH or None)
+    and 'bold' (bool). These match the formatting hints the
+    deposition document writer can reproduce.
+    """
+    paragraph_element = getattr(paragraph, "_p", paragraph)
+
+    alignment = None
+    jc_element = next(paragraph_element.iter(qn("w:jc")), None)
+    if jc_element is not None:
+        jc_value = jc_element.get(qn("w:val"))
+        alignment_map = {
+            "center": WD_ALIGN_PARAGRAPH.CENTER,
+            "left": WD_ALIGN_PARAGRAPH.LEFT,
+            "right": WD_ALIGN_PARAGRAPH.RIGHT,
+            "both": WD_ALIGN_PARAGRAPH.JUSTIFY,
+            "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+        }
+        alignment = alignment_map.get(jc_value)
+
+    bold = next(paragraph_element.iter(qn("w:b")), None) is not None
+
+    return {"alignment": alignment, "bold": bold}
+
+
+def _write_reporters_certificate(
+    document: Document, case_meta: dict[str, Any]
+) -> None:
+    """Append a Texas TRCP-compliant reporter's certificate page
+    (signature required) to the deposition document.
+
+    Reads the canonical template at
+    ``ufm_engine/templates/figures/cert_tx_sig_required.docx``
+    and copies each paragraph into the main document with
+    case_meta field substitution.
+
+    The signature-waived variant
+    (``cert_tx_sig_waived.docx``) is intentionally out of
+    scope for defect #9. A future defect can add it via a
+    case_meta flag.
+
+    Missing reporter/firm fields render as visible blank
+    placeholders per Shaw convention; never fabricate values.
+    """
+    if not _CERT_TEMPLATE_PATH.exists():
+        return
+
+    document.add_page_break()
+    template_doc = Document(str(_CERT_TEMPLATE_PATH))
+
+    for template_paragraph in template_doc.element.body.iter(qn("w:p")):
+        raw_text = _extract_paragraph_text(template_paragraph)
+        substituted = _substitute_case_placeholders(raw_text, case_meta)
+        formatting = _extract_paragraph_formatting(template_paragraph)
+
+        for line in substituted.split("\n"):
+            new_paragraph = document.add_paragraph()
+            new_paragraph.paragraph_format.line_spacing_rule = (
+                WD_LINE_SPACING.DOUBLE
+            )
+            new_paragraph.paragraph_format.space_after = Pt(0)
+            if formatting["alignment"] is not None:
+                new_paragraph.alignment = formatting["alignment"]
+            run = new_paragraph.add_run(line)
+            if formatting["bold"]:
+                run.bold = True
+
+
 def build_deposition_document(
     formatted_text: str, case_meta: dict[str, Any]
 ) -> Document:
@@ -479,6 +756,7 @@ def build_deposition_document(
     _write_appearances(document, case_meta)
     document.add_page_break()
     _write_proceedings(document, formatted_text, case_meta)
+    _write_reporters_certificate(document, case_meta)
     return document
 
 
