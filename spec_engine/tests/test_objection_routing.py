@@ -150,9 +150,11 @@ def test_colloquy_block_eligible_for_split():
 
 
 def test_answer_block_never_split():
-    """An answer block that happens to contain 'objection' is
-    never split. This is enforced by block type, not by any
-    assumption that a witness would never say the word."""
+    """Answer blocks are excluded by TYPE, not by content.
+    Witnesses do use the word 'objection' in their answers —
+    discussing prior objections, reciting events, etc. — but
+    those uses are not merge defects. The type check in
+    _SPLIT_TARGET_TYPES is what prevents the split."""
     block = TranscriptBlock(
         speaker="THE WITNESS",
         text="Well, I would have raised an objection if I had been there. Objection. Form.",
@@ -223,6 +225,10 @@ def test_word_boundary_objections_plural_no_match_with_punctuation():
 
 
 def test_no_objection_phrase_does_not_split():
+    """The phrase 'no objection' is normal colloquy, not a
+    merged-objection defect. The block must pass through
+    unchanged regardless of how much preceding text it has or
+    whether a sentence boundary precedes the match."""
     blocks = [
         _q(
             "Counsel reviewed exhibit one in detail. "
@@ -247,6 +253,8 @@ def test_without_objection_at_start_filtered_by_offset():
 
 
 def test_without_objection_mid_block_does_not_split():
+    """'Without objection' mid-block (not at start, past the
+    offset threshold) is suppressed by the phrase window."""
     blocks = [
         _colloquy(
             "THE COURT",
@@ -261,6 +269,8 @@ def test_without_objection_mid_block_does_not_split():
 
 
 def test_subject_to_objection_does_not_split():
+    """'Subject to objection' is normal legal colloquy. The
+    phrase window suppresses the split."""
     blocks = [
         _colloquy(
             "MS. ZHAN",
@@ -270,6 +280,41 @@ def test_subject_to_objection_does_not_split():
     result = split_misattributed_objections(blocks)
     assert len(result) == 1
     assert result[0].text == "The witness may answer subject to objection on form."
+
+
+def test_merged_block_with_nearby_colloquy_phrase_suppressed():
+    """Trade-off pin. If a real merged block happens to contain
+    'no objection' within the phrase window of the first match,
+    the split is suppressed. This is rare in practice; we accept
+    it to avoid splitting normal colloquy.
+
+    If review evidence shows real merges being missed because
+    of this trade-off, tighten the phrase check (e.g. require
+    the phrase to immediately precede the match) rather than
+    removing the exclusion."""
+    blocks = [
+        _q("Did you see the car? Objection. No objection here.")
+    ]
+    result = split_misattributed_objections(blocks)
+    assert len(result) == 1
+
+
+def test_distant_colloquy_phrase_does_not_suppress_split():
+    """A 'no objection' phrase far enough from the first match
+    (outside the +-25 char window) does NOT suppress the split.
+    The real merge is still caught."""
+    blocks = [
+        _q(
+            "Did you see the vehicle? Objection. Form and foundation. "
+            "But on a different point, plaintiff has no objection to "
+            "the next exhibit."
+        )
+    ]
+    result = split_misattributed_objections(blocks)
+    assert len(result) == 2
+    assert result[0].text == "Did you see the vehicle?"
+    assert result[1].speaker == SENTINEL_SPEAKER
+    assert result[1].text.startswith("Objection. Form and foundation.")
 
 
 def test_split_with_question_mark_boundary():

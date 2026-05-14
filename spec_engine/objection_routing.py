@@ -48,14 +48,24 @@ A note on the regex and what it does (and does not) filter:
 The regex ``\\bobjection\\b[\\.\\,:]?`` requires "objection" as a
 whole word, optionally followed by ``.``, ``,``, or ``:``. This
 alone does NOT filter out phrases like "no objection",
-"subject to objection", or "without objection" - those still
+"subject to objection", or "without objection" — those still
 contain "objection" as a whole word.
 
-Those phrases are explicitly excluded before split logic runs:
+Two filtering layers handle those phrases:
 
-  * "no objection"
-  * "without objection"
-  * "subject to objection"
+  1. The 10-char offset threshold catches phrases at the very
+     start of a block (e.g. "Without objection, the exhibit is
+     admitted." — "objection" at position 8, below the
+     threshold).
+  2. The phrase-window exclusion (``_EXCLUDED_OBJECTION_PHRASES``)
+     catches mid-block uses by checking a ±_PHRASE_WINDOW-character
+     window around the match for known colloquy phrases. When
+     a phrase is found in the window, the split is suppressed.
+
+Trade-off accepted: a genuinely merged block whose first match
+sits within the phrase window of one of these strings will also
+be suppressed. Rare in practice; the alternative (firing on
+normal colloquy) produces output that reads as a system bug.
 
 The 10 and 20 thresholds are conservative first-pass values. If
 review feedback shows false positives or missed splits, tune
@@ -99,6 +109,13 @@ _EXCLUDED_OBJECTION_PHRASES = (
     "without objection",
     "subject to objection",
 )
+
+# Half-width of the lookaround window around the match position
+# (in characters). 25 is enough to catch "subject to objection"
+# (11 chars before the match) with margin, while staying narrow
+# enough that distant uses elsewhere in the block don't
+# accidentally suppress a real merge.
+_PHRASE_WINDOW = 25
 
 # Sentence boundary: ., ?, or ! followed by one or more
 # whitespace characters.
@@ -147,8 +164,20 @@ def _split_block(block: TranscriptBlock) -> list[TranscriptBlock] | None:
     if match_start < _MIN_OBJECTION_OFFSET:
         return None
 
+    # Phrase-based exclusion. If "objection" here is part of a
+    # normal colloquy phrase ("no objection", "without objection",
+    # "subject to objection"), this is not a merged-objection
+    # defect - it is the block's speaker discussing the concept
+    # of objection. Suppress the split.
+    #
+    # Trade-off: a genuinely merged block whose first match
+    # happens to sit within _PHRASE_WINDOW chars of one of these
+    # phrases will also be suppressed. Rare in practice; pinned
+    # by test_merged_block_with_nearby_colloquy_phrase_suppressed.
     lowered = text.lower()
-    window = lowered[max(0, match_start - 25):match_start + 25]
+    window = lowered[
+        max(0, match_start - _PHRASE_WINDOW) : match_start + _PHRASE_WINDOW
+    ]
     for phrase in _EXCLUDED_OBJECTION_PHRASES:
         if phrase in window:
             return None
