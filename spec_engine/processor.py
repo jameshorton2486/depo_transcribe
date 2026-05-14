@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .age_and_time import normalize_ages_and_times
 from .block_builder import build_blocks
 from .byline_resumption import apply_byline_resumption
 from .classifier import classify_blocks
@@ -35,6 +36,7 @@ def process_blocks(
     annotated = apply_byline_resumption(annotated)
     annotated = normalize_dates_and_years(annotated)
     annotated = normalize_money_and_percent(annotated)
+    annotated = normalize_ages_and_times(annotated)
     return emit_blocks(annotated)
 
 
