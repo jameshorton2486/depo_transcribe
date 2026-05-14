@@ -140,3 +140,48 @@ are independent. Project memory updated to prevent re-investigation.
 - NOD PDF witness-name corruption (next defect candidate)
 - Attorney exam time computation (rescoped — key by speaker, not examiner)
 - Speaker name-mapping investigation
+
+## Defect #13 — Drop OCR debris from Deepgram keyterms
+
+**Date:** 2026-05-14
+**Branch:** `review/phase-a-production`
+**Layer:** `pipeline/`
+**Files changed:** `pipeline/transcriber.py`, `pipeline/tests/test_transcriber.py`
+
+### Symptom
+Production transcription failed with HTTP 400 from Deepgram on the Thomas
+regeneration attempt. Full request URL was 2,264 chars with 98 keyterm
+parameters.
+
+### Discovery
+The discovery probe reconstructed the failed request and analyzed the
+keyterm list:
+- 34/98 keyterms (35%) were single-word ALL-CAPS OCR debris from the NOD
+  PDF's title page (UNITED, STATES, DISTRICT, COURT, etc.)
+- 12/98 keyterms (12%) were concatenated/nonsense phrases from the
+  upstream extractor (Spine Personal Heath Thomas, Cukjati State Bar)
+- 1 keyterm was the reporter's last name (Bardot)
+
+The trim_keyterms_for_deepgram function was a budget filter only, with no
+quality filter for OCR-style debris.
+
+### Fix
+Added _looks_like_ocr_debris() filter at the Deepgram transport boundary.
+Defensive sanitization — does not fix the upstream extractor (deferred to
+defect #14). Single-file change in pipeline/transcriber.py.
+
+### Verification
+- 7 new tests in test_transcriber.py
+- Full suite: 994 passed / 6 skipped
+- Thomas baseline check skipped — case folder was deleted prior to this defect's implementation and will be reconstituted when the audio is re-transcribed. Skip is expected and does not indicate regression. The 6 skipped tests in the full suite (994 passed / 6 skipped) are these same Thomas-dependent tests.
+
+### Defers
+- Defect #14: Upstream keyterm extractor pollution. Root-cause fix.
+  Requires probe of core/intake_parser.py and core/keyterm_extractor.py.
+- Reporter-name filtering: requires case_meta threading. Will be a tiny
+  separate defect if 'Bardot' contamination persists post-extractor-fix.
+
+### Next action
+Regenerate Thomas. Deepgram request will now send ~64 legitimate keyterms
+instead of ~98 with 34 debris fragments. URL drops from 2,264 chars to
+approximately 1,400 chars, well clear of any proxy/CDN limits.
