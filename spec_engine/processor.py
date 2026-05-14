@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .block_builder import build_blocks
+from .byline_resumption import apply_byline_resumption
 from .classifier import classify_blocks
 from .corrections import apply_corrections
 from .emitter import emit_blocks
@@ -27,6 +28,7 @@ def process_blocks(
     fixed = enforce_structure(corrected)
     mapped = normalize_speakers(fixed)
     annotated = emit_exhibit_markers(mapped)
+    annotated = apply_byline_resumption(annotated)
     return emit_blocks(annotated)
 
 
