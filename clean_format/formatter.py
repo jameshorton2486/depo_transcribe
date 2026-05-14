@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,12 @@ from clean_format.low_confidence_markers import (
     inject_markers,
     validate_marker_round_trip,
 )
+from clean_format.speaker_turn_repair import (
+    format_summary_log_line as _speaker_repair_log_line,
+    repair_transcript_blocks,
+)
+
+logger = logging.getLogger(__name__)
 
 try:
     from anthropic import Anthropic
@@ -250,6 +257,7 @@ def format_transcript(
     max_chunk_chars: int = CHUNK_CHAR_LIMIT,
     deepgram_words: list[dict[str, Any]] | None = None,
     low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
+    enable_speaker_turn_repair: bool = True,
 ) -> str:
     """Format a raw Deepgram transcript into clean-format text.
 
@@ -260,7 +268,28 @@ def format_transcript(
     DOCX writer reads the markers to render yellow highlights.
 
     When ``deepgram_words`` is None (default), behavior is unchanged.
+
+    Speaker-turn repair: when ``enable_speaker_turn_repair`` is True
+    (default), the raw transcript is first run through
+    ``clean_format.speaker_turn_repair.repair_transcript_blocks`` so
+    obviously merged Q/A blocks become separate transcript paragraphs
+    before they reach the Anthropic cleanup pass. The repair is
+    deterministic, conservative, and never invents speaker ownership.
+    Set ``enable_speaker_turn_repair=False`` to bypass it (tests, A/B
+    comparisons).
     """
+    logger.info(
+        "[VALIDATION] [STRUCTURED LAYER START] speaker_turn_repair + Anthropic cleanup about to run"
+    )
+    if enable_speaker_turn_repair and raw_text:
+        repaired_text, repair_summary = repair_transcript_blocks(raw_text)
+        if repair_summary.blocks_repaired:
+            logger.info(_speaker_repair_log_line(repair_summary))
+        raw_text = repaired_text
+    logger.info(
+        "[VALIDATION] [FORMATTING LAYER START] low-confidence markers + Anthropic POST about to begin"
+    )
+
     marked_text = (
         inject_markers(
             raw_text, deepgram_words, threshold=low_confidence_threshold

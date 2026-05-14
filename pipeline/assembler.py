@@ -41,6 +41,65 @@ def _count_utterance_words(utterance: Dict) -> int:
     return len((utterance.get("transcript") or "").split())
 
 
+def _log_merge_stage_assembler(
+    *,
+    tag: str,
+    before: List[Dict],
+    after: List[Dict],
+    threshold: float,
+    override: bool = False,
+) -> None:
+    """Investigation log line for the cross-chunk merge. Read-only side effect."""
+    before_count = len(before or [])
+    after_count = len(after or [])
+
+    def _avg(items: List[Dict]) -> float:
+        if not items:
+            return 0.0
+        total = 0.0
+        n = 0
+        for u in items:
+            try:
+                s = float(u.get("start", 0.0) or 0.0)
+                e = float(u.get("end", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            total += max(0.0, e - s)
+            n += 1
+        return total / n if n else 0.0
+
+    def _max(items: List[Dict]) -> float:
+        m = 0.0
+        for u in items or []:
+            try:
+                s = float(u.get("start", 0.0) or 0.0)
+                e = float(u.get("end", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            m = max(m, e - s)
+        return m
+
+    reduction_pct = (
+        100.0 * (before_count - after_count) / before_count
+        if before_count
+        else 0.0
+    )
+    _logger.info(
+        "[MERGE][ASSEMBLER] tag=%s raw=%d merged=%d reduction=%.1f%% "
+        "threshold=%.2fs avg_before=%.2fs avg_after=%.2fs "
+        "largest_after=%.2fs override=%s",
+        tag,
+        before_count,
+        after_count,
+        reduction_pct,
+        threshold,
+        _avg(before),
+        _avg(after),
+        _max(after),
+        "yes" if override else "no",
+    )
+
+
 def _normalize_utterance(utterance: Dict) -> Dict | None:
     text = " ".join((utterance.get("transcript") or "").split()).strip()
     if not text:
@@ -539,7 +598,23 @@ def reassemble_chunks(
     if len(chunk_results) == 1:
         result = chunk_results[0]
         source_utterances = result.get("raw_utterances") or result.get("utterances", [])
-        merged_utterances = merge_utterances(source_utterances)
+        # Investigation hook: cross-chunk gap override (no-op in production).
+        from pipeline.merge_debug_config import get_cross_chunk_gap_override
+        _gap_override = get_cross_chunk_gap_override()
+        _effective_gap = (
+            _gap_override if _gap_override is not None else GAP_THRESHOLD_SECONDS
+        )
+        merged_utterances = merge_utterances(
+            source_utterances,
+            gap_threshold_seconds=_effective_gap,
+        )
+        _log_merge_stage_assembler(
+            tag="single_chunk",
+            before=source_utterances,
+            after=merged_utterances,
+            threshold=_effective_gap,
+            override=_gap_override is not None,
+        )
         labeled_utterances = _attach_speaker_labels(merged_utterances)
         labeled_raw_utterances = _attach_speaker_labels(source_utterances)
         transcript = build_transcript_text(labeled_utterances)
@@ -660,7 +735,23 @@ def reassemble_chunks(
             all_raw_utterances.append(candidate_utterance)
 
     all_raw_utterances.sort(key=lambda u: u["start"])
-    all_utterances = merge_utterances(all_raw_utterances)
+    # Investigation hook: cross-chunk gap override (no-op in production).
+    from pipeline.merge_debug_config import get_cross_chunk_gap_override
+    _gap_override = get_cross_chunk_gap_override()
+    _effective_gap = (
+        _gap_override if _gap_override is not None else GAP_THRESHOLD_SECONDS
+    )
+    all_utterances = merge_utterances(
+        all_raw_utterances,
+        gap_threshold_seconds=_effective_gap,
+    )
+    _log_merge_stage_assembler(
+        tag=f"{len(chunk_results)}_chunks",
+        before=all_raw_utterances,
+        after=all_utterances,
+        threshold=_effective_gap,
+        override=_gap_override is not None,
+    )
     labeled_utterances = _attach_speaker_labels(all_utterances)
     labeled_raw_utterances = _attach_speaker_labels(all_raw_utterances)
     full_transcript = build_transcript_text(labeled_utterances)

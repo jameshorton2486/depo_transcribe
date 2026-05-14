@@ -1,0 +1,144 @@
+{
+  "runs": [
+    {
+      "config": {
+        "name": "TEST_A_CURRENT",
+        "in_chunk_gap": 0.6,
+        "cross_chunk_gap": 1.25,
+        "description": "Production defaults. Matches what ships today. Reference point — every other run is compared against this."
+      },
+      "input_utterance_count_pre_per_chunk_merge": 1141,
+      "post_per_chunk_merge_count": 767,
+      "structure": {
+        "utterance_count": 354,
+        "long_duration_threshold": 30.0,
+        "duration_seconds": {
+          "avg": 12.168,
+          "median": 7.895,
+          "max": 101.63,
+          "min": 0.08
+        },
+        "words_per_utterance": {
+          "avg": 34.35,
+          "median": 21.0,
+          "max": 296
+        },
+        "long_utterance_count": 35,
+        "over_100_words_count": 20,
+        "merged_qa_candidates": 77,
+        "speaker_transition_inside_utterance": 101,
+        "standalone_short_answers": 4
+      },
+      "classifier": {
+        "total_blocks": 354,
+        "colloquy": 353,
+        "oath": 1
+      }
+    },
+    {
+      "config": {
+        "name": "TEST_B_MODERATE",
+        "in_chunk_gap": 0.6,
+        "cross_chunk_gap": 0.9,
+        "description": "Same per-chunk merge; cross-chunk gap reduced to 0.9s. Goal: tighten the cross-chunk pass without disturbing the in-chunk pass."
+      },
+      "input_utterance_count_pre_per_chunk_merge": 1141,
+      "post_per_chunk_merge_count": 767,
+      "structure": {
+        "utterance_count": 419,
+        "long_duration_threshold": 30.0,
+        "duration_seconds": {
+          "avg": 10.115,
+          "median": 7.36,
+          "max": 101.63,
+          "min": 0.08
+        },
+        "words_per_utterance": {
+          "avg": 29.02,
+          "median": 19,
+          "max": 296
+        },
+        "long_utterance_count": 19,
+        "over_100_words_count": 11,
+        "merged_qa_candidates": 85,
+        "speaker_transition_inside_utterance": 105,
+        "standalone_short_answers": 4
+      },
+      "classifier": {
+        "total_blocks": 419,
+        "colloquy": 418,
+        "oath": 1
+      }
+    },
+    {
+      "config": {
+        "name": "TEST_C_TIGHT",
+        "in_chunk_gap": 0.6,
+        "cross_chunk_gap": 0.6,
+        "description": "Both stages aligned at 0.6s. Symmetric, conservative. Both gaps now agree with the Deepgram-side cadence (utt_split=0.8 yields utterances broken at ~0.8s silence)."
+      },
+      "input_utterance_count_pre_per_chunk_merge": 1141,
+      "post_per_chunk_merge_count": 767,
+      "structure": {
+        "utterance_count": 523,
+        "long_duration_threshold": 30.0,
+        "duration_seconds": {
+          "avg": 7.957,
+          "median": 5.44,
+          "max": 84.125,
+          "min": 0.08
+        },
+        "words_per_utterance": {
+          "avg": 23.25,
+          "median": 16,
+          "max": 242
+        },
+        "long_utterance_count": 6,
+        "over_100_words_count": 5,
+        "merged_qa_candidates": 92,
+        "speaker_transition_inside_utterance": 110,
+        "standalone_short_answers": 4
+      },
+      "classifier": {
+        "total_blocks": 523,
+        "colloquy": 522,
+        "oath": 1
+      }
+    },
+    {
+      "config": {
+        "name": "TEST_D_VERY_TIGHT",
+        "in_chunk_gap": 0.4,
+        "cross_chunk_gap": 0.5,
+        "description": "Aggressive tightening of both stages. Edge of the exploration. Expected to expose Deepgram diarization errors as separate small utterances rather than absorb them into larger blocks."
+      },
+      "input_utterance_count_pre_per_chunk_merge": 1141,
+      "post_per_chunk_merge_count": 846,
+      "structure": {
+        "utterance_count": 576,
+        "long_duration_threshold": 30.0,
+        "duration_seconds": {
+          "avg": 7.174,
+          "median": 5.28,
+          "max": 84.125,
+          "min": 0.08
+        },
+        "words_per_utterance": {
+          "avg": 21.11,
+          "median": 15.0,
+          "max": 242
+        },
+        "long_utterance_count": 5,
+        "over_100_words_count": 4,
+        "merged_qa_candidates": 93,
+        "speaker_transition_inside_utterance": 110,
+        "standalone_short_answers": 4
+      },
+      "classifier": {
+        "total_blocks": 576,
+        "colloquy": 575,
+        "oath": 1
+      }
+    }
+  ]
+}

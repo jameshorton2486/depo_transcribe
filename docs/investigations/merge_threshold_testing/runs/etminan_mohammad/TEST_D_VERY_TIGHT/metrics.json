@@ -1,0 +1,35 @@
+{
+  "config": {
+    "name": "TEST_D_VERY_TIGHT",
+    "in_chunk_gap": 0.4,
+    "cross_chunk_gap": 0.5,
+    "description": "Aggressive tightening of both stages. Edge of the exploration. Expected to expose Deepgram diarization errors as separate small utterances rather than absorb them into larger blocks."
+  },
+  "input_utterance_count_pre_per_chunk_merge": 1141,
+  "post_per_chunk_merge_count": 846,
+  "structure": {
+    "utterance_count": 576,
+    "long_duration_threshold": 30.0,
+    "duration_seconds": {
+      "avg": 7.174,
+      "median": 5.28,
+      "max": 84.125,
+      "min": 0.08
+    },
+    "words_per_utterance": {
+      "avg": 21.11,
+      "median": 15.0,
+      "max": 242
+    },
+    "long_utterance_count": 5,
+    "over_100_words_count": 4,
+    "merged_qa_candidates": 93,
+    "speaker_transition_inside_utterance": 110,
+    "standalone_short_answers": 4
+  },
+  "classifier": {
+    "total_blocks": 576,
+    "colloquy": 575,
+    "oath": 1
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "metrics": {
+    "threshold": 1.25,
+    "utterance_count": 340,
+    "merged_qa_candidates": 77,
+    "speaker_switch_inside_count": 102,
+    "standalone_short_answers": 3,
+    "long_attorney_turns_with_short_answer_phrases": 82,
+    "utterances_over_100_words": 19,
+    "avg_words_per_utterance": 34.61,
+    "median_words_per_utterance": 21.0,
+    "max_words_per_utterance": 337,
+    "classifier": {
+      "total_blocks": 340,
+      "colloquy": 339,
+      "oath": 1
+    },
+    "bad_sample_count": 5,
+    "good_sample_count": 5
+  },
+  "bad_samples": [
+    {
+      "kind": "speaker_switch_inside_block",
+      "speaker": "Speaker 0",
+      "word_count": 40,
+      "start": 0.0,
+      "end": 21.505,
+      "text": "Good afternoon. We are on the record. Today's date is 04/24/2026, and the time is now 01:27PM. This is the beginning of the deposition of Doctor. Mohammad Etminan, MD. Court Reporter, Ms. Warren wins. Yes, this is cause…"
+    },
+    {
+      "kind": "speaker_switch_inside_block",
+      "speaker": "Speaker 1",
+      "word_count": 43,
+      "start": 70.825,
+      "end": 83.225,
+      "text": "Thank you. Doctor. Edinburg, would you please raise your right hand, sir. Do you solemnly swear to tell the truth, the whole truth and nothing but the truth so help you God? I do. Thank you, sir. You may proceed with th…"
+    },
+    {
+      "kind": "speaker_switch_inside_block",
+      "speaker": "Speaker 3",
+      "word_count": 27,
+      "start": 129.435,
+      "end": 137.675,
+      "text": "where is your practice located at, Doctor? I'm in Houston and in Houston. I have 2 offices and 1 in Memorial City and 1 in Sugar Land."
+    },
+    {
+      "kind": "speaker_switch_inside_block",
+      "speaker": "Speaker 2",
+      "word_count": 53,
+      "start": 138.075,
+      "end": 157.08,
+      "text": "Okay. And in your own private practice, you do treat patients, correct? Yes. What kind of a doctor are you? I'm a board certified orthopedic spine surgeon. Do you do shoulder surgeries? No. Are you offering any opinions…"
+    },
+    {
+      "kind": "speaker_switch_inside_block",
+      "speaker": "Speaker 2",
+      "word_count": 31,
+      "start": 159.745,
+      "end": 169.985,
+      "text": "Are you licensed to practice medicine in the state of Texas? Yes. Are you licensed in state other than Texas? No. What year did you get your medical license in Texas?"
+    }
+  ],
+  "good_samples": [
+    {
+      "kind": "isolated_short_answer",
+      "speaker": "Speaker 0",
+      "word_count": 1,
+      "start": 2723.985,
+      "end": 2724.625,
+      "text": "Yes."
+    },
+    {
+      "kind": "isolated_short_answer",
+      "speaker": "Speaker 1",
+      "word_count": 1,
+      "start": 4368.77,
+      "end": 4369.33,
+      "text": "Yes."
+    },
+    {
+      "kind": "isolated_question",
+      "speaker": "Speaker 2",
+      "word_count": 17,
+      "start": 176.09,
+      "end": 182.65,
+      "text": "And about how many spine surgeries do you do per year cervical in your own private practice?"
+    },
+    {
+      "kind": "isolated_question",
+      "speaker": "Speaker 2",
+      "word_count": 19,
+      "start": 196.71,
+      "end": 205.75,
+      "text": "who have made complaints of lumbar and cervical pain to you following trauma sustained in a motor vehicle crash?"
+    },
+    {
+      "kind": "isolated_colloquy",
+      "speaker": "Speaker 2",
+      "word_count": 16,
+      "start": 55.56,
+      "end": 61.64,
+      "text": "Good afternoon. Dennis Malley for the plaintiff Procedure of Vargas located in San Antonio, Texas. Agreed."
+    }
+  ]
+}

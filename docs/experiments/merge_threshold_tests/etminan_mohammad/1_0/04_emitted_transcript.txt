@@ -1,0 +1,751 @@
+Speaker 0: Good afternoon. We are on the record. Today's date is 04/24/2026, and the time is now 01:27PM. This is the beginning of the deposition of Doctor. Mohammad Etminan, MD. Court Reporter, Ms. Warren wins. Yes, this is cause number C-5722-24L.
+
+Speaker 1: Rico Laura Elizondo Vargas, plaintiff versus Leonardo Isaias Rodriguez Sandy Dean Koepke and Standing Seam and Specialty Company, Inc. In the District Court, 464th Judicial District, Hidalgo County, Texas. This deposition is taking place via Zoom in accordance with the Texas Rules of Civil Procedure. I am the court for a license in Texas number 12129. Counsel, will you please state your agreement for this form of deposition and remotes for his witness by saying your name, who you're representing, and the name of the city you're currently in beginning with the notice and attorney.
+
+Speaker 2: Good afternoon. Dennis Malley for the plaintiff Procedure of Vargas located in San Antonio, Texas. Agreed.
+
+Speaker 2: Good afternoon. Ramon for Defendant Koepke and Defendants Standing Steam located in McAllen, Texas.
+
+Speaker 1: Thank you. Doctor. Edinburg, would you please raise your right hand, sir.
+
+Speaker 1: Do you solemnly swear to tell the truth, the whole truth and nothing but the truth so help you God? I do. Thank you, sir. You may proceed with the examination.
+
+Speaker 3: Good afternoon, doctor. Can you please state your name for the record? Uh, my name is Doctor Mohammad Etminan.
+
+Speaker 2: And Doctor. Etminan, my name is Dennis Bentley. I represent the plaintiff in this case in a civil action filed in Hidalgo County, Texas to recover for damages that were sustained in a motor vehicle crash on 09/15/2023. Do you understand that? Yes. And my understanding is you were hired by the defendants to perform some expert services in this case, correct? Yes. What specifically were you asked to do?
+
+Speaker 3: I was hired to look at the totality of the medical records and information regarding the case and given an opinion regarding causation and also the necessity of the treatment that was provided for the spine.
+
+Speaker 2: And
+
+Speaker 3: where is your practice located at, Doctor? I'm in Houston and in Houston. I have 2 offices and 1 in Memorial City and 1 in Sugar Land.
+
+Speaker 2: Okay. And in your own private practice, you do treat patients, correct? Yes. What kind of a doctor are you? I'm a board certified orthopedic spine surgeon. Do you do shoulder surgeries? No. Are you offering any opinions about any shoulder complaints or shoulder injuries alleged by Miss Vargas in this case? No.
+
+Speaker 2: Are you licensed to practice medicine in the state of Texas? Yes. Are you licensed in state other than Texas? No. What year did you get your medical license in Texas?
+
+Speaker 3: 1991. No, no, no, I'm sorry, 2001.
+
+Speaker 2: And about how many spine surgeries do you do per year cervical in your own private practice?
+
+Speaker 3: Probably cervical and lumbar separated, probably about 70 to 100 surgeries a year. And that's total cervical and lumbar? Yes.
+
+Speaker 2: And in your own private practice, do you treat patients
+
+Speaker 2: who have made complaints of lumbar and cervical pain to you following trauma sustained in a motor vehicle crash?
+
+Speaker 3: Dr. If they come my way, yes. Dr. Okay and as a
+
+Speaker 2: physician who treats patients in your own practice, are you of the opinion that individual can sustain trauma to the disc in their spine that resulted from a motor vehicle crash?
+
+Speaker 3: It's my best clinical judgment based on my experience is that absence any surrounding other damage, it is unlikely that you have an isolated cervical or lumbar disc pathology as a function of an accident. But can it happen? Anything can happen.
+
+Speaker 2: So I don't can you please unpack that a little bit? What do you mean by the fact that
+
+Speaker 2: can you explain I guess explain that because I think you said quite a bit of information Bentley:] there, but I'd like to unpack that. You please explain yourself?
+
+Speaker 3: Sure. So in my experience treating patients for the past 24, 25 years, it is seldom when a person is involved in a single event, such as a car accident where essentially they're seated, seat belted, what have you, um, where they don't sustain any other injuries and they sustain isolated disc pathology. It becomes even more unusual to sustain both neck pathology and lower back pathology as a function of a single event such as a car accident. However, this is based on reasonable medical probability more likely than not. I mean, it possible that somebody has disc pathology? It's possible, but it's unlikely.
+
+Speaker 2: Okay. When you say absent any other injuries, what do you mean by that? So
+
+Speaker 3: there's
+
+Speaker 3: single events such as you know, meaning you got rear ended or you fell out of out of a building, what have you, that are traumatic, are associated very well described patterns of injury, and they usually involve fractures and dislocations on ligamentous ruptures. Your disc is in a position where really is relatively immune to those kinds of traumas. Kind of injury is a function of that type of trauma.
+
+Speaker 3: Typically, if you don't have a fracture or dislocation or ligamentous rupture, in my experience, it's unlikely to have disc damage that goes on and is unresolved after a motor vehicle accident.
+
+Speaker 2: Now in this case, you've looked at all the medical records, correct? Yes. Ms. Vargas is also alleged to have injured her shoulder in this crash as well not just the neck and lower back correct? Yes.
+
+Speaker 2: If you treat patients in your own private practice, why are you getting involved in litigation work such as this? Objection form.
+
+Speaker 3: I think I've been doing it well. I know I've been doing this for about 10 or 15 years. It's just another aspect practicing medicine. And I enjoy the work. It gives me flexibility.
+
+Speaker 2: It pays well. So I do it. But when you say this is an aspect of practicing medicine, you are not Ms. Rocio Vargas' treating physician in this case, correct? Correct. And you have not practiced any medicine as to Ms. Rocio Vargas, correct? Correct. Okay. And you as a physician yourself, you're familiar with something called a doctor patient relationship, correct? Yes. What is a doctor patient relationship?
+
+Speaker 3: Well, essentially, if you're treating your patient, first of all, you have an obligation to do the best that you can by her. There's also a physician patient
+
+Speaker 3: HIPAA kind of information security concept. And also, you're also a patient's advocate, where essentially you're sort of, if the person comes and tells you, hey, they're hurting, like, okay, the person told me they're hurting, and I take them at their word. Well, don't exactly take them at their word. You do an examination on them and you look for something called what else signs, correct?
+
+Speaker 2: I don't, but that's what they say. Okay. Well, many physicians don't take patients at their word. They do examination and they correlate the patient's statements with the physical examination as well as other information to see if what the patient is stating matches, uh, the physical examination as well as possible radiological findings, correct? Yes. And a Waddell, you've heard of what a Waddell sign is, correct? Yes, know what a Waddell sign is. What is a Waddell sign?
+
+Speaker 3: So Waddell is named after, I don't know what the guy's first name is, Waddell's and the idea is that there are certain maneuvers that you do that if a patient is making things up,
+
+Speaker 3: they would not know that they would say, You barely touch them and they scream of pain, and so they're doing they're telling you information that is not consistent with a possible pathology that they actually have. And so the oddity is that if they do that, they're lying. And so they're not trustworthy. Okay.
+
+Speaker 2: And many physicians, many treating physicians as part of the examination look for things to not only coordinate the pain symptoms with potential injuries, but also to see if the patient's reported pain symptoms is inconsistent with the physical examination,
+
+Speaker 3: correct? Yes.
+
+Speaker 2: Now,
+
+Speaker 2: Ms. Vargas underwent surgery on her lower back, correct? Yes. And she underwent 2 epidural steroid injections as well, correct? I believe she did 2 in the neck and 1 in the back, but Yes, thank you. Mean 2 in the neck, 1 in the back, correct? Yes. What type of a lumbar surgery does she undergo?
+
+Speaker 3: She had a lumbar discectomy.
+
+Speaker 2: And what does that surgery entail, Doctor?
+
+Speaker 3: That essentially entails you make a relatively small incision in the back, probably 2 or 3 inches long.
+
+Speaker 3: You essentially go in, you expose the spine, you take a little bit of bone away to kind of get access to spinal canal, and then you
+
+Speaker 3: look at the nerves and you move the nerves in order to get access to the disc, and then you remove a portion of the disc in order to change the shape of the disc and make it flat so it's no longer pinching a nerve. Okay. And that is something that's called an elective procedure, correct? Yes. What is an elective procedure, doctor? I mean, it's a procedure that's not an emergency.
+
+Speaker 3: That's probably more of a timeline issue as opposed to a I mean, if you have a facelift, that's elective and you have to have discectomies, that's elective. But obviously, there's a range of electiveness. I think it's not an
+
+Speaker 1: that's elective. But obviously, there's a range of electiveness. I think it's not an emergency, meaning it can be delayed. But I think a lot of people would argue that having spine surgery is not elective.
+
+Speaker 3: Well, another way, a more lamest term, of describing an elective procedure, that's 1 that a patient chooses to undergo. They elect to undergo that, correct? J. Sure, yes. J. M. As a physician yourself, would you ever perform an elective spine surgery on a patient without first examining them? No. Okay. And in this case you did not examine Ms. Procedure Vargas, correct? I did not. Okay. But you are offering opinions on the necessity of the elective surgery that she underwent without examining her, correct? Yes. And we talked earlier about a doctor patient relationship. What obligations of the physicians who do have a doctor patient relationship with Miss Vargas, what obligations does that doctor patient relationship create for the physicians who are treating her? So they're obliged to first
+
+Speaker 3: do no harm, try to improve Ms. Vargas' symptoms and help her overall function in a safe fashion.
+
+Speaker 3: And as part of that doctor patient relationship with them, if they make a mistake and do something that harms her, they could potentially be sued for malpractice, correct? Yes. So the physicians who are indeed treating her, they have, if you would, skin in the game, they have a dog in the fight because their medical license is on the line not to harm, uh, Ms. Rocio Vargas, correct? Theoretically yes. Okay and because that you're not 1 of her treating physicians and you're not examining
+
+Speaker 3: her, in this case due to your role in this case, you obviously cannot be sued by malpractice myasvargas if you are wrong in your opinions because you are not her treating physician, correct? Yes.
+
+Speaker 3: All right. Can you tell me what your opinions are in this case?
+
+Speaker 1: So it's my opinion that based on reasonable medical probability, from a spine perspective, Ms. Vargas may have sustained possibly soft tissue sprains and strains of her cervical and lumbar spine
+
+Speaker 1: from a causation perspective. From a treatment perspective, in my experience treating patients and based on our objective findings, the treatment is usually physical therapy for 8 to 12 weeks followed by home treatment program and oral anti inflammatory medications.
+
+Speaker 1: Looking at the imaging and looking at the documented examinations and complaints, I don't think there's a rationale for the lumbar discectomy that was performed.
+
+Speaker 1: The same applies for the cervical fusion that was recommended based on the EMG findings, based on the objective imaging findings, and based on the stability of the imaging over the span of the year and a half between How the 2 sets of
+
+Speaker 3: about the injections? Do you think the injections are medically necessary?
+
+Speaker 1: In my experience, typically patients who get rear ended with objective findings such as Ms. Vargas do not need injections.
+
+Speaker 3: So if I understand correctly, so I'm trying to make sure I understand your opinions, is that you believe she sustained a cervical sprain or cervical strain in this motor vehicle crash, correct? It is possible that she did, yes. Okay. So you're not telling the jury that she did not get hurt in this crash, is that correct? I'm telling the jury that it is possible,
+
+Speaker 1: not definite, not probable, but it is possible that a person who gets rear ended can get neck pain and back pain temporarily as a function of the accident.
+
+Speaker 1: So yes, it's possible. It's not like, my God, can't believe that happened. But it's definitely not definitive.
+
+Speaker 1: And my experience, people improve over the course of 6 weeks after that, those kinds of symptoms if they have it.
+
+Speaker 3: So is it your opinion then that Doctor. Lee did an unnecessary spine surgery on her? Yes. So do you believe Doctor. Lee committed malpractice?
+
+Speaker 1: In my opinion, looking at the totality records, there's no rationale for having the operation that they did. There is arthritis there. He did a discectomy. Is it crazy? No. But if you look at the details of the record, it doesn't make any sense. Certainly, to directly link you to the accident, I don't think there's a rationale.
+
+Speaker 3: So if it's not warranted, in your opinion, doctor, you're a treating physician, do you believe Doctor. Lee committed malpractice by doing that surgery? Objection. 4. I
+
+Speaker 1: think that the malpractice involves
+
+Speaker 1: would there be other doctors that agree with Doctor. Lee to do a discectomy? I can tell you 4 or 5 personal injury doctors who do it all the time. So I think from that perspective, he's okay with that. But I think it's pretty clear, and I can explain to the jury why the procedure that was done doesn't make any sense.
+
+Speaker 3: Okay. We'll get into that in a little bit.
+
+Speaker 3: The purpose of surgery though is to reduce or eliminate pain symptoms, correct? J. Yes. J. Okay and following the surgery,
+
+Speaker 3: according to medical records from Doctor. Lee, Miss Rocio Vargas' lumbar symptoms improved significantly after the surgery. Would you agree with that? Yes. Okay. Do you believe that Ms. Vargas was at all dishonest with her doctors about her pain symptoms at any point in time during her treatment? Objection. Form.
+
+Speaker 1: In my opinion, the documentation of her symptoms before and the documentation of improvement of her symptoms afterwards
+
+Speaker 1: don't make any sense. Now, are there unusual things that happen? Yes, maybe unusual things happen. But I don't think there's a rationale
+
+Speaker 3: for the symptoms you had pre op or a rationale for the improvement of symptoms post op based on the surgery that was done. So is it your case? You going to tell this jury that Ms. Vargas is lying to her doctors when she reported the symptoms both
+
+Speaker 1: pre surgery and after and post surgery. Objection form. My role is not to tell the jury if Ms. Vargas was lying or not. My role is purely to interpret the medical information and allow the jury to decide for themselves. So the words Ms. Vargas is lying will not come out of my mouth.
+
+Speaker 3: So even though you're not going to say she's lying, are you going to say she's being dishonest in the way she was reporting her symptoms to her doctors? No. Okay.
+
+Speaker 3: I want to look at some documents with you now.
+
+Speaker 3: I'm going to mark as exhibit 1 what was produced to me as your expert report in this case.
+
+Speaker 3: This is a 55 page document dated 03/13/2026.
+
+Speaker 3: I'm going to scroll down
+
+Speaker 3: to
+
+Speaker 3: where it was signed. Can you confirm by looking at the first page as well as the 50 fourth page, does this look like your most up to date extra report in this case? Yes. And is this your only final draft of your report? Yes.
+
+Speaker 3: I'm going to mark as Exhibit 2 to your deposition. This is what's been produced to me as your curriculum of IT. Can you confirm this by looking at the first page is your most up to date Curriculum VIT? MR. Yes. MR. I'm going to look at exhibit 3 to your deposition. This was been given to me as your fee schedule.
+
+Speaker 3: Can you confirm this by looking at this first 3 pages, is this your most up to date fee schedule? Yes. How much do you charge for the type of work that you're doing in this case? So I charge $750
+
+Speaker 1: an hour for the records review, dollars $7.50 an hour for preparation for deposition and then $12.50 dollars an hour for deposition itself per hour.
+
+Speaker 3: And
+
+Speaker 3: 1 of the things that I asked was that you bring your expert file with you in the invoices you submitted for this case. Have you done that? I don't have an expert file. The invoices I sent to Mr.
+
+Speaker 1: Ramos. So
+
+Speaker 3: how much money have you billed in this case thus far?
+
+Speaker 1: $5,000 And
+
+Speaker 3: how many hours have you spent reviewing records in this case?
+
+Speaker 1: To review the records and generate the report 6.5 hours.
+
+Speaker 3: That's 6.5 hours at $7.5 an hour, correct? Yes.
+
+Speaker 1: So
+
+Speaker 3: that comes out to be $4,875 Correct? Yes. Yeah.
+
+Speaker 3: I'm going mark as exhibit 4. What's been given to me is your testimony history. Are you able to see this, Doctor? Mr. Yes. Mr. Okay. In all of these cases that you have testified, have you all been retained by defendants in personal injury cases? Mr. For all practical purposes, yes. Okay. So this is 10 pages and we can see the various cases where you have testified. 100% of those are on behalf of the defense, correct?
+
+Speaker 3: I think of this lease, yes. Okay. And in those cases, 100% of those is where you're criticizing some of the work and treatment that was done by doctors who were actually treating patients, correct? Dr. Yes.
+
+Speaker 3: The motor vehicle crash that brings us all to here today took place on 09/15/2023 correct? Yes. Have you reviewed any medical records from the plaintiff, in this case, Vargas, that predates 09/15/2023? No. So have you
+
+Speaker 0: document where Ms. Vargas complained of lower back pain that radiates down into her either glutes or legs prior to 09/15/2023? No. Have you seen any medical record where Ms. Vargas complained of cervical pain with radicular symptoms prior to 09/15/2023? No. But looking at the records that you have reviewed in this case, she did make complaints to her doctors after the crash of lower back pain with radicular symptoms after the crash, correct? Yes. She did make complaints to her doctors about cervical pain with radicular symptoms after this crash, correct? Yes.
+
+Speaker 0: You reviewed the MRI films in this case? Yes.
+
+Speaker 0: The
+
+Speaker 0: radiologist who read the lower back MRI, the lumbar MRI noted a disc herniation with compression on, I believe it was the L4 nerve roots, is that correct? L5. L5, thank you.
+
+Speaker 0: Do you did have you looked at the actual films themselves, correct? Yes. Do you agree or disagree with the radiologist's opinions with respect to the lumbar MRI?
+
+Speaker 1: I think that Ms. Vargas does have left sided spinal foraminal narrowing with relatively significant neural compression. I don't think there's significant pathology on the right side. Okay. But you say significant compression, correct? On the right, on the left side, yes. Okay.
+
+Speaker 0: And compression of a nerve root is something and compression of the nerve root at that level is something that can cause the patient to experience radicular symptoms down in the legs, correct? Yes. Okay. You know I'm a layman's type guy so I like to think of the body in layman's terms. When we talk about nerve roots and compressions, it would be a fair characterization to describe the nervous system as sort of like a wiring system, correct? Yes. Okay and you know for anyone who's done electrical work, if you for example break a wire you know in the wall in your house it would cause the light in the room to go out, correct? Yes. So even though the light goes out and you see the light go out, the problem could be somewhere in the wiring down the line, correct? Yes. Now looking at the human body, um, if you have a compressed nerve in the lower back because that nerve root exits the foramenot in the lumbar spine and goes down the legs, the symptomology that the patient could experience it would be possibly pain, numbness, or radiating pain from the glutes down to the leg, correct? That's a possibility, correct? Yes. So even though you have the impingement at the, uh, in the lower back, the symptoms that the patient would feel could actually be in the glutes or in the legs, correct? Yes. And same with the neck. If you have impingement in the cervical spine at the neural foramen in the neck, the patient could experience, uh, radicular symptoms in the shoulders and the arms even though the impingement is actually in the neck because of where the nerves go after they leave the neck, correct? Yes.
+
+Speaker 0: Now I read your report in this case, mentioned
+
+Speaker 0: that the plaintiff in this case, Miss Vargas showed signs of disc degeneration Bentley: in her cervical and lumbar spine, correct? Yes. Okay. What is disc degeneration? Can you please explain that to the jury?
+
+Speaker 1: Disc degeneration is a natural condition that happens in patients as they age, although I've got 15 year olds who have it too. But typically, it's associated with aging.
+
+Speaker 1: It's a wear and tear type phenomenon where
+
+Speaker 1: your disc that's made of 2 different structures, 1 is the soft cushioning material in the center and then this fibrous material on the outside.
+
+Speaker 1: Over time,
+
+Speaker 1: the cells inside the soft cushioning material stop secreting proteins. Those proteins essentially act like a wick and suck water into the disc. And when you're stopping the protein, the disc dries out. It loses some of its ability to cushion. You also start getting that same change in mechanics starts affecting the fibrous material around it. And over time, in the degenerated disc, the fibrous material thin out, and then they start changing their shape.
+
+Speaker 1: And
+
+Speaker 1: they start kind of pooching out some.
+
+Speaker 1: They also start losing height.
+
+Speaker 1: Over time, it can be the point where the disc completely disappears.
+
+Speaker 1: That sort of goes from just a little bit of a pooch maybe a disc herniation to just completely going away and wearing out. So that's disc degeneration that's commonly seen in people.
+
+Speaker 0: And disc degeneration,
+
+Speaker 0: in layman's terms,
+
+Speaker 0: that can be described as the normal wear and tear of the spine It as you get older and use the spine, correct?
+
+Speaker 1: Can be normal or it can I mean, we treat that's what we treat as spine surgeons, mainly is disc degeneration? So it be
+
+Speaker 1: symptomatic at some point, but yes, but people get it over time. And
+
+Speaker 0: part of that's just as the body grows old and wears out, the spine is a joint, correct? Yes. And just as you move and use your body throughout your lifetime, as the spine wears out, 1 of the things that you experience would be disc degeneration of the spine, correct? Yes. And
+
+Speaker 0: Ms. Vargas was approximately 57 years old at the time of this crash, correct? Yes. For the disc degeneration that you did know in the MRIs of her spine, was that normal for a 57 year old woman?
+
+Speaker 0: Many people out there have disc degeneration that is not creating any pain whatsoever, correct? Yes. That's called asymptomatic, know no symptoms means asymptomatic, correct? Yes. And is it not true that trauma can cause distant degeneration to become symptomatic when it was previously asymptomatic?
+
+Speaker 1: I think absent any objective evidence of acute findings, no. That's kind of a thing where I don't think just because you've been in trauma, discs that are previously degenerated and asymptomatic become symptomatic with no objective evidence of change in them. So you can't look the same and it starts hurting just because you're in a car accident.
+
+Speaker 0: But there is peer reviewed literature out there that says that following a car wreck,
+
+Speaker 0: disc degeneration can become symptomatic without acute findings on the MRIs,
+
+Speaker 1: correct? Dr. I am not aware of that literature.
+
+Speaker 0: Are you familiar with an organization called the National Library for Medicine?
+
+Speaker 1: National Library for Medicine. No. Okay.
+
+Speaker 1: PubMed? Yes, I am. Okay.
+
+Speaker 0: Is this a peer reviewed document? Well, let me
+
+Speaker 1: this article here, have you ever seen this article before? An early MRI finding correlates with longstanding symptoms following whiplash perspective wonder, no. Okay.
+
+Speaker 0: I'm going to switch to a PDF copy of it.
+
+Speaker 0: Since And that PDF author website, do you see here where it says
+
+Speaker 0: EUR Spine J 02/2017? Yes. It has several names listed down here below it.
+
+Speaker 0: The author's names, yes. J. So I put some highlights here and just looking at this, it says neck pain is the cardinal symptom following whiplash injuries. The trauma mechanism could theoretically lead to both soft tissue and bone injury that could be visibly visualized by means of MRI. From previous quite small trials, it seems the MRI does not demonstrate significant tissue damage. And I'll let you read this whole thing to yourself, Doctor, if you would like, but it talks about how participants were included after rear end and frontal car collisions and it goes on to say that outcome parameters were neck pain, headaches, neck disability, and working ability. A total of 178 participants had a cervical MRI scan on average 13 days after the injury. Traumatic findings were observed in 7 participants sign of disc degeneration or Sign of disc degeneration were common and most frequent C5, C6 and C6 levels. Findings were not associated with outcome after 3 or 12 months. The population had no considerable neck trouble prior to the whiplash injury and the non traumatic findings represents findings to be expected in the background population. Trauma related MRI findings are rare in whiplash populations screened for serious injuries in the emergency unit and not related to specific symptomology.
+
+Speaker 1: Also, generation I'm sorry, because you rolled up a little bit. You're
+
+Speaker 0: Yes. I can't see. I mean, I was I'm sorry. So it goes on to say the population had no considerable neck trouble prior to the whiplash injury and the non traumatic findings represents findings to be expected in the background population. Trauma related MRI findings are rare in a whiplash population screened for serious injuries in the emergency unit and not related to symptomatic to specific symptomology. Also, preexisting degeneration is not associated with prognosis.
+
+Speaker 1: Dennis, can you scroll up your screen a little bit? Is this,
+
+Speaker 0: when you say up, I just need to make sure up's not down. Is that what the answer Well, I mean, just so I can see the rest of
+
+Speaker 1: the abstract. You're just cutting it off after. Oh,
+
+Speaker 0: yes. And I can zoom in and zoom out, doctor.
+
+Speaker 1: I'm sorry, but I guess, not well, I mean, I only, it gets caught, so
+
+Speaker 1: what was the conclusion?
+
+Speaker 1: So,
+
+Speaker 0: I mean, it looks to me like,
+
+Speaker 0: again I'm not a doctor but reading this, it looks to me like that the patients were complaining of symptomology in the, uh, in the neck, headaches, neck pain, and working ability. But of the 178 participants that were screened, only 7 of them actually had a finding on the MRI even though 178 were complaining of pain. That's what it looks like to me. Do you disagree that's what it's saying?
+
+Speaker 1: So
+
+Speaker 1: again, the part that I don't I mean, obviously, I can look at this, but the part that doesn't it doesn't make so they started with 178 patients.
+
+Speaker 1: I guess the question is, were 178 people hurting after 12 months? And did 178 people have cervical fusions? And did 178 people have cervical epidural steroid injections? I'm not there's nobody that will deny that you can have neck pain and back pain right after an accident, and that certainly can happen,
+
+Speaker 1: which is fine. Nobody's saying that. The question is, do you have ongoing symptoms that require operative intervention? Okay.
+
+Speaker 0: But even if you don't I mean, you can have injuries to the spine that can be resolved with conservative treatment like epidural steroid injections and not need surgery, correct?
+
+Speaker 1: J. Yes. J. Okay,
+
+Speaker 0: now
+
+Speaker 0: and this isn't a trick question. I understand that you haven't looked at this before. So this is not a race. If you want to read, take some time to read the whole thing to yourself, doctor. Just do me a favor. Can you just roll? Mean, so you're I can only see the top half. Can you just Dennis,
+
+Speaker 1: I think what happened here is you transitioned to a PDF version. We're still looking at the online. Oh, I'm sorry.
+
+Speaker 0: Yeah. Maybe that's what it is. Maybe the screen didn't switch on your end. Yeah.
+
+Speaker 0: Is that better?
+
+Speaker 1: Not yet.
+
+Speaker 0: Okay. Yes, we were not seeing. Yes. I'm sorry. I thought that
+
+Speaker 0: you could see what I was looking at. Okay. So if you want except I'm the 1 who put the highlights.
+
+Speaker 1: Okay, so.
+
+Speaker 1: Essentially, just the article says that it doesn't matter if you have arthritis, degenerative changes in your neck or not, you may or may not have neck pain after 12 months. That's the gist of it. It doesn't matter what you have, some people have neck pain, some people don't have neck pain. That's, I think, the gist of the article is that if people with whiplash, according to this article, regardless of what their MRI findings were, some people have neck pain, some people don't have neck pain.
+
+Speaker 1: You know, but yeah. But
+
+Speaker 0: am I reading this correctly where it says of 178 participants that complained of neck pain, only 7 of them actually had the acute findings on the MRIs. Am I reading that correctly? No, you're reading that correctly, yeah. Okay, so having said that, is it a fair representation to say that there's peer reviewed literature out there which specifically says how a car crash can cause
+
+Speaker 0: degenerative conditions in the spine to become asymptomatic without
+
+Speaker 0: acute findings on the MRIs.
+
+Speaker 0: So
+
+Speaker 1: you can say that according to this article, you can have neck pain after a car crash regardless of what the MRI shows. You can have a normal MRI, you can have an abnormal MRI, you can have neck pain after a car crash.
+
+Speaker 1: If you see it says
+
+Speaker 1: okay, so the specific part that he didn't highlight is kind of the crux of the thing, that essentially findings were not associated with outcome after 3 to 12 months.
+
+Speaker 1: So what does that mean? So essentially, it means it doesn't matter if you had arthritis or not. Some people have neck pain, some people don't,
+
+Speaker 0: according to his article. So it says findings were not associated with outcomes after 3 to 12 months. I don't what
+
+Speaker 1: is it saying there that I'm missing? Okay. So if somebody has significant traumatic abnormalities, well, that's a different category, right? They've got a fracture, dislocation, ligamentous rupture, well, that's not whiplash. That's something else. In a patient population that essentially has neck pain afterwards,
+
+Speaker 1: it doesn't matter even if you have C56, C67 disc herniation or disc degeneration or you don't have C56, C67 disc herniation, you may have neck pain going forward.
+
+Speaker 1: So essentially, the findings, meaning the finding of this degeneration is not associated with symptoms 3 to 6 months 3 to 12 months.
+
+Speaker 0: So are you saying that it would be the
+
+Speaker 1: pain would resolve itself in 3 to 12 months? Is that what you're saying it says here? No. What I'm saying is that they're saying that the MRI finding, you can't say this person has 2 discs that are degenerated and arthritic
+
+Speaker 1: in day 1. So this person is more likely than the person who doesn't have a disc that's degenerated a year later to have or not have symptoms. What does it say? So it doesn't matter if you have arthritis or not. If you're going have neck pain, you may have neck pain. If you do or don't have arthritis.
+
+Speaker 1: So you can have neck pain without arthritic changes in your neck, or you can have neck pain with arthritic changes in your neck Okay. After I mean, obviously, these studies question is the context of the accident, was the litigation involved, how bad was it, and all those things are things that you can't tell based on a
+
+Speaker 1: whatever. Okay. But
+
+Speaker 0: is that also a rep, does this article also say that degenerative conditions can become symptomatic
+
+Speaker 0: after trauma without acute findings on the MRI? Does this article say that?
+
+Speaker 1: This article says that without trauma, with or without degenerative changes, you can potentially have symptoms in the long term. Without acute findings on the MRI? Without acute findings, with or without degenerative changes. It doesn't really matter what you do or don't have. You can have ongoing symptoms, according to this article,
+
+Speaker 0: 3 to 6 months out. Okay. And when we say acute, that means new injuries, correct?
+
+Speaker 1: The I'm
+
+Speaker 1: sorry, I'm trying to figure out how they're
+
+Speaker 1: well, yes, so traumatic findings, no, mean, traumatic findings means fractures, dislocations, ligamentous ruptures, real trauma. So 7 of them had
+
+Speaker 1: something that needed surgery on their neck and etcetera, and then the other didn't.
+
+Speaker 1: But again, it doesn't say what percentage was actually symptomatic, right? What you're reading doesn't say of those 178 people what percentage got better, what percentage got worse. I'm sure it's in there in the article, but what you're reading doesn't say how likely is it that they continue to be symptomatic. But what it does say, I think the interesting take home is that this article is saying that it doesn't really matter if you have something if you've got a neck that's arthritic or a neck that's not arthritic, you may potentially have whiplash symptoms for a period of time after the accident.
+
+Speaker 0: And when use the word acute findings, acute means visible new injuries, correct? Well, I mean, this says traumatic findings, which
+
+Speaker 1: meaning, again, fractures, dislocations with menace ruptures, and acuity being it happened around the time of the incident. Okay.
+
+Speaker 0: So again, so I understand, is you're saying that this article says that you can have the symptoms
+
+Speaker 1: of neck and back pain following a car wreck without traumatic findings on the MRIs,
+
+Speaker 0: correct? Dr. Regardless of what the MRI shows, yes. Okay.
+
+Speaker 1: So just so I understand your opinion correctly,
+
+Speaker 1: because that article uses the word traumatic,
+
+Speaker 1: you in your report have used the word acute. means new. Correct?
+
+Speaker 0: Usually, I use the acute traumatic, so both acute and traumatic, which I guess maybe in some capacity is redundant because, well, I guess traumatic could be had trauma before and we have evidence of that. But new trauma is the word I use in my report.
+
+Speaker 1: Okay. So when you say acute, you mean new trauma, correct?
+
+Speaker 1: Correct. Okay. So just so I understand what you're saying correctly is you're telling me and the jury that
+
+Speaker 1: for degenerative conditions to become symptomatic, there has to be new visible trauma on the MRI, correct?
+
+Speaker 0: I'm saying my experience treating patients, patients who are asymptomatic do not become symptomatic for a year and a half and 2 years requiring operation unless something new happened on the MRI. That is demonstrable on imaging. Yes, as a spine surgeon, you can't just say, Oh, well, there are some people who just have symptoms and you can't tell where it's coming from, but I'm going operate on a level anyways just for support of it. That kind of goes against the concept of we are able to diagnose sources of pain and treat it effectively.
+
+Speaker 1: Okay.
+
+Speaker 1: In your experience, do other physicians disagree with you and say that trauma can cause degenerative conditions to become symptomatic without showing as new
+
+Speaker 0: acute trauma on the MRI? Are there other physicians out there who disagree with you on that opinion? I am sure Doctor. Lee and Doctor. Oishi and the slew of doctors that do personal injury work say that all the time. But in my realm of nonpersonally personal injury involved physicians, I think the idea is something's got to happen for you to become symptomatic, which I think the jury can understand is common sense. It can be that, Oh, nothing happened, but this went from perfectly fine to perfectly not fine. And, Oh, there's no difference. That's just common sense and that's common. Medicine is common sense. It's not rocket science. I'm just pointing out common sense.
+
+Speaker 1: Okay. But you say doctors who do personal injury work, you yourself do personal injury work, right? No, I didn't say that. You don't treat patients who have been injured as part of your practice?
+
+Speaker 0: So
+
+Speaker 0: there's 2 worlds of injuries, right? I did the hitting, and then I got hit. And so the persons who got hit who get attorneys from time to time because if they have insurance, maybe the insurance doesn't pay for it, but those are personal injury stuff. The persons who did the hitting, their insurance covers it, and we see those people actually not that often because they're not that many people running around. They're not that many people who are involved in hitting the person who then come and seek treatment unless they break something, dislocate something, fracture something, in which case we do.
+
+Speaker 1: Doctor, I'm gonna mark as exhibit 5 to your your record to your deposition.
+
+Speaker 1: The
+
+Speaker 1: records from Texas Injury Chiropractic. Okay? Yes.
+
+Speaker 1: 1 second, doctor.
+
+Speaker 1: Okay, are you able to see this doctor?
+
+Speaker 0: Yes.
+
+Speaker 1: This is a record from Texas Injury Chiropractic dated 09/15/2023. Do you see this? Yes. So would you agree with me she went to a doctor literally the day of the car wreck? Yes. Okay and she reported according to the chief complaints an acute complaint in the posterior head, posterior cervical neck, upper thoracic, mid thoracic, lower thoracic lumbar, left scroiliac sacral right scroiliac, left posterior shoulder and left anterior shoulder due to accent ninefifteentwenty 3. Do you see that? Yes.
+
+Speaker 1: And it goes on to say that patient complains at the time of the accident she felt discomfort at the back of head, back of neck, central upper back, central mid back, central low back, front of left shoulder and rear of left shoulder and supplemental complaints of discomfort. Do you see that? Yes.
+
+Speaker 1: Would you agree with me that she was reporting to a medical
+
+Speaker 1: professional the day of the crash that she would experience shoulder pain, neck pain, mid back pain and lower back pain? Yes. Do you have any reason to think she was being dishonest when she told that to the doctors? Let
+
+Speaker 1: rephrase that. Do you have any reason to believe that she was being dishonest when she reported that to the person who was treating her at Texas Pan injury in the day of the crash. Objection. Form.
+
+Speaker 0: Again, like I said, I'm not going to opine on the honesty or lack of honesty of Ms. Vargas. I will tell you that according to this, to be frank with you, I forget when the accident was that day, but I'm assuming it wasn't 06:00 in the morning or maybe it was. Mean, I don't know when the accident was. But ultimately, it's been a few hours from Tom, the accident, the presentation, which is not a bad thing. But this is presented as
+
+Speaker 0: so it takes 24, 48 hours to start getting symptoms of soft tissue sprains and strains, etcetera, etcetera. And unless Ms. Vargas broke her neck, her mid back, her lower back, her left pelvis, her right pelvis, her left shoulder, it would be really unusual in such a quick timeframe to have horrible pain. And then additionally, if you're having that much of a pain, most people go to the emergency room because they want pain medicine.
+
+Speaker 0: Other than that, I don't know if she's lying or not, I'm just saying that the timeline of her complaints are quite fast and her location of service is unusual just because the chiropractor can't give them any pain meds. Mean, you're hurting that much, you don't need to be manipulated. You needed some muscle relaxers. You need some pain pills. And additionally,
+
+Speaker 0: if Miss Vargas truly had all these symptoms, well then shame on the chiropractor for not sending her to the emergency room because maybe she broke her neck, maybe she broke her mid back, maybe she broke her lumbar spine, maybe she broke her throat. If she truly if he this documentation is appropriate, Ms. Vargas was mistreated by the chiropractors. Why? Because somebody's in a car accident and 3 hours later, they're dying of pain and you're like, Oh, let me just examine you and document 20 pages and then send you home. What if the eye shadow fracture? What if she had a dislocation? Where's the X-ray? Which I don't think was done. But that's the way it typically works, although I don't know, maybe she was, maybe he was undertreated,
+
+Speaker 1: but that's typically the way it was. Well, they did do an examination on her at the chiropractor, so they would know if she broke her neck or dislocated her shoulder and things of that nature like you described because the records do document that they did examine her,
+
+Speaker 0: As the jury knows, and I'm sure everybody else knows, if you can't diagnose somebody's broken neck with an exam or their low back or their mid back, you need X rays.
+
+Speaker 1: So you're saying that a medical professional through an examination cannot diagnose someone with a broken neck?
+
+Speaker 0: Somebody who is complaining of severe pain that started after a significant event 3 or 4 hours ago, I mean, something must have happened to Ms. Vargas to have that kind of pain.
+
+Speaker 0: Again, there's no time clock, so I don't know how many hours happened from the car accident to this visit. But I mean, this is a presentation of somebody who's really in distress, and I'd be generally worried that this lady broke something.
+
+Speaker 1: Well, does it say she was in severe pain or does it just say she was reporting pain? Okay. So if we go
+
+Speaker 0: it says severe pain in the shoulder,
+
+Speaker 0: severe pain in the back examinations, severe pain in the camps, severe pain in the neck exam. I don't know how much worse you can get. Okay.
+
+Speaker 1: So and then they did an examination on her, correct? Yes. And looking at the examination, they did the range of motion of cervical, correct? Yes. And there's signs of decreased range of motion in the cervical, correct? Yes. Even though someone is experiencing severe pain, if they had a broken neck, could their neck be manipulated like that?
+
+Speaker 0: Believe it or not, yes. I mean, had a young man with a dislocated neck after trauma. He was walking around for 2 weeks
+
+Speaker 0: and technically was kind of fine, I guess, but obviously it wasn't.
+
+Speaker 0: But again, I'm just pointing out the jury, it seems weird that if a person is having severe pain pan body after an acute trauma, if you're really worried about it, why are you not working her up? Why don't send her to emergency room?
+
+Speaker 0: ARMSTRONG:
+
+Speaker 0: But your criticism is they didn't refer to the emergency room?
+
+Speaker 0: MR. No. I don't think based on the context of the events, based on my experience, people get rear ended such as Ms. Vargas, she did not need to go to the emergency room. But if this is the exam, well, then, she should have gone to the emergency room. Don't think she should have because I don't think this exam is very surprising based on all the stuff that we have we know afterwards. But if that is really the exam, again, 2 days later, people do hurt more because they get inflamed, they get irritated, the pain increases. But to have acute levels of symptomatology like examined, and I'm sure at the time he probably didn't know what happened,
+
+Speaker 0: you'd be genuinely concerned for something bad having happened.
+
+Speaker 1: So is it your belief then that the chiropractor John Morrison mistreated Ms. Vargas on that day? I think that either John Morrison mistreated
+
+Speaker 0: the exam or mistreated Ms. Vargas. It's 1 of the 2. Uh, they 2 cannot be the same. Get that what there's other discrepancy in the severity of the documentation
+
+Speaker 0: or a mistreatment, whichever that's, again, arguably based on what happened later, her objective imaging,
+
+Speaker 0: it's probably some questionable some question about the accuracy of documentation.
+
+Speaker 1: And the chiropractor, Doctor. John Morrison, he has a doctor patient relationship with his patient, correct? Yes. And if he harms her or commits malpractice, he opens himself up to a civil liability as well as his medical license to professional liability if he's wrong. Correct? Yes.
+
+Speaker 1: I'm gonna mark as exhibit 6 to your deposition some records from Quantum Pain.
+
+Speaker 1: Are you able to see this doctor? Yes sir. This is dated October 1823. Do you see that? Yes.
+
+Speaker 1: And on the first visit she was making complaints about pain in the left shoulder, correct? Yes. And then she was recommended for shoulder surgery, correct? Yes. And you're not offering any opinions in this case 1 way or the other as to the whether she injured her shoulder in the crash or whether surgery is recommended or warranted, correct?
+
+Speaker 0: I have some opinions regarding the shoulder, but not regarding necessity or lack of necessity of the shoulder. Okay. What is your opinion then with regarding the shoulder?
+
+Speaker 0: Well,
+
+Speaker 0: Ms. Vargas is complaining of left shoulder pain, actually pretty consistently. If she comes in, the first thing she says is my left shoulder hurts and so on and so forth.
+
+Speaker 0: Chronicity or acuity aside, she does say her left shoulder hurts.
+
+Speaker 0: Well, and they have a recommendation for left shoulder surgery.
+
+Speaker 0: Going forward, when she's complaining of her neck and she's diagnosed with cervical radiculopathy, it's on the left side.
+
+Speaker 0: And the concept of overlapping shoulder neck symptom is something we see very commonly in spine surgery.
+
+Speaker 0: And absent neural compression on the left side, which there really isn't on the MRI, somebody who's got a rotator cuff tear probably has a shoulder problem. So you can't have your cake and eat it too. So you can't have a shoulder problem with left sided that you say needs shoulder surgery and then say, Oh, no, no, her neck is bad too. So she's on the left because she has a pinched nerve on the left side. Statistically, that is pretty unusual and extra unusual in her case because there's really nothing compressing her nerves on the left side. So you've got to pick your poison. Either you've a shoulder injury or shoulder pain on the left side or you've a neck disc herniation that needs neck surgery based on left sided radiculopathy. To need both is very atypical.
+
+Speaker 1: Now, if a person is sitting in the driver's seat and they're buckled in, the shoulder harness would go over your left shoulder, correct? Yes. And in this case, Miss Vargas was indeed sitting in the driver's side seat of the vehicle when she was granted, correct? Yes. Your records indicate that she was seat belted in, Yes.
+
+Speaker 1: I want to scroll down to
+
+Speaker 1: this,
+
+Speaker 1: excuse me, October '23 where
+
+Speaker 1: Ms. Vargas reports to the doctors at Quantum Pain that she has neck and low back pain and goes on to say patient states pain is characterized as aching, throbbing, rating, burning and sharp. Patient also reports the following associated symptoms headache, numbness, tingling the legs and trouble sleeping due to pain. Do you see that? Yes. Again, do you have reason
+
+Speaker 1: to think that she was being dishonest with her medical professionals when she's reporting that symptomology?
+
+Speaker 0: Objection form.
+
+Speaker 0: Again,
+
+Speaker 0: want to point out to the jury that Ms.
+
+Speaker 0: Vargas is complaining of neck pain, back pain, both legs numbness and tingling,
+
+Speaker 0: and then later on both arms too.
+
+Speaker 0: Objectively, she could have these symptoms as you have soft tissue sprains and strains, where you get inflamed and everything kind of hurts. But she's not treated as somebody who's inflamed. She ends up eventually having surgery,
+
+Speaker 0: and there's no objective rationale for her to have bilateral lower extremity numbness and tingling. This generic everything hurts typically is not associated with objective imaging findings. Again, shoulder hurts from day 1, fine. And again, it doesn't look acute, looks chronic, but her left shoulder does have a rotator cuff there, which again looks old, but different story. But as far as this pan everything hurting is not associated with single events that are then eventually going to need surgery.
+
+Speaker 1: So I guess having said that, do you believe that what she told the doctors that Quantum Pain on that day is untruthful?
+
+Speaker 0: Objection, form. Again, the doctors are there and Ms. Vargas is there. I have the films to look at and the context of the event and what actually happened to her in my experience. I'm not here to judge if she was truthful or not. I'm purely educating the jury how likely is it that these events with these findings would cause the set of symptomatology that Ms. Vargas is explaining. And in my opinion, it's not very likely. But, I mean, she may be an outlier. And if the jury decides Ms. Vargas is an outlier, well, then so be it. So
+
+Speaker 1: just so I understand what you're telling me correctly, you're telling the jury while it is possible she was being truthful, more likely than not she was not being truthful based on the totality of the circumstances.
+
+Speaker 0: Objection. No. I'm gonna tell the jury that it's up to them to define truthfulness or not, but her objective imaging and the context of what happened is not consistent with what's being documented. And they can decide. That's it. I'm making no judgment on this. The honesty or lack of honesty of Ms. Vargas or her treating providers.
+
+Speaker 1: Purely, the jury needs to decide that, not me. I guess, Doctor, I'm not trying to badger you, but why won't you just commit? I mean, you give me that very long answer and what you're saying is the long answer means that records indicate she's lying. So why don't you just connect the dots and say that based on your review of the records and your review of the MRI films is that you think she's lying. Why won't you make that commission? Objection.
+
+Speaker 0: Form. Well, first of all, because that's not my charge. My charge is not to determine if Ms. Vargas is lying or not. That's the jury's charge, right? Ultimately, that's why we're all here, for the jury to determine was this treatment appropriate, was this treatment not appropriate, was these accurate
+
+Speaker 1: was it not. That's not my job. That's the jury's charge. That's them for them. You will have your doctors giving opinions, I'm giving my opinions and then the jury can look at the totality of their information.
+
+Speaker 1: And there was an examination performed on Ms. Vargas at Quantum Pain correct? Yes.
+
+Speaker 1: Just like there was 1 at Texas Injury and Chiropractic correct? Yes. And Doctor. Sam Lee, he has a doctor patient relationship with Ms. Vargas, correct? Doctor. Yes. Doctor. And through his doctor patient relationship, his medical license is on the line for him to do his job correctly and not do anything that would harm Ms. Vargas, correct? Yes.
+
+Speaker 1: Looks like according to the records that on 11/16/2023, Doctor. Lee performed a cervical epidural steroid injection, correct? Yes. You believe the epidural injection was unnecessary? I believe that the epidural injection, based on reason for medical probability, would not have been necessitated by the accident. Now, Ms. Vargas has arthritis in her neck. Could be that she has neck pain? Sure. Is it crazy to do an epidural steroid injection on somebody who says their neck hurts? No. But I don't think it was because of the accident because accidents such as what Miss Vargas was involved in, if she was asymptomatic beforehand, do not necessitate epidural steroid injections.
+
+Speaker 1: Okay. So are you telling me that the injection was necessary but not related to the crash? Is that what you're telling me?
+
+Speaker 1: The
+
+Speaker 1: injection is used. Ms. Vargas came in and said, My neck hurts. She has arthritis in her neck, so they didn't have a steroid injection on her neck. Is that a crime? No, you can do that. But in my opinion, people such as Ms. Vargas who have been involved in this car accidents typically do not need injections. So definitely not related to the accident. But again, if she has neck pain, is it crazy to do an injection? No, it's not crazy. You can do an injection.
+
+Speaker 1: And scrolling down further, doctor. Give 1 second.
+
+Speaker 1: According to the records at Quantum Pain on 02/01/2024, a doctor Lee did a lumbar epidural steroid injection on her, correct? Yes. Do you believe that that procedure was unnecessary? I think, again, the same answer. I think that it's Ms. Vargas does have arthritis in her back. If she came to a pain management doctor and says, my back hurts, As a patient's advocate, is it crazy to do an injection? No. But do I think it's more likely to not relate to the accident? I don't think so.
+
+Speaker 1: Why do you think a treating physician is a patient's advocate? Because you are not sitting there arguing with the patient. Patient comes in, my back hurts.
+
+Speaker 1: Okay, your back hurts. Great. Let's see what you got. Let's treat it. You're not sitting there saying, No, I don't think it's from the accident or it's from the accident or what have you. Typically, you just document what they say and you just treat. You do what you think is appropriate,
+
+Speaker 1: if nothing else, because you're not they come, they're paying you, they want you to treat them. They don't want you to sit down and argue with them. Well, it's a little bit as a treating physician, the response slaves that physicians have actually goes beyond that, doesn't it? Because if the patient is stating things that are not true, it's the doctor's ethical duty not to give them a treatment plan that could potentially harm them, correct?
+
+Speaker 1: For example, let me give you an example. If a patient comes in who is complaining of pain and is asking for their prescription of narcotic pain medication and based on the examination and as well as radiological findings, there's no indication the patient really has pain. The doctor has an ethical responsibility not to prescribe them pain medications just because the patient asked for that, correct? That's correct. In fact, you could lose your license for doing something like that, correct? Well, a doctor's license is slightly harder to lose than for that. But yes, if there's a pattern of behavior where you're prescribing medication that for people who don't need it and you've got running a pill mill without appropriate testing, yes, that's you can potentially get in trouble, potentially. Okay. So the phrase patient advocate, the doctor has a response, the treating physician has a responsibility to be more than a patient advocate. They have a responsibility to tailor a treatment plan that will actually help the patient and if the patient is stating things that are inconsistent or incorrect, it is the doctor's ethical responsibility to not only raise that with the patient, but not give them a treatment plan that they are requesting if it is not really going to help them, correct? Dr. Correct.
+
+Speaker 1: And just to be clear, something we spoke about earlier, trauma can cause degenerative conditions to become symptomatic, correct?
+
+Speaker 1: Absent
+
+Speaker 1: material change in the anatomy, if a person is asymptomatic beforehand, I do not think they become symptomatic in the long term. Now short term, because some arthritis, you twist your knee, it hurts. But unless you tear a meniscus, unless your knee starts swelling, it will go back to its baseline. Same thing applies to the back, same thing applies to the neck. Okay. But I mean, just so I understand what you're saying is,
+
+Speaker 1: degenerative conditions can become symptomatic due to trauma if there's physical changes on the MRI, correct? If there's evidence of acute change in the anatomy, yes. Sure. I mean, it's like the anatomy goes from, well, that's fine to that's not fine, then yes, sure. Okay. And doctors routinely disagree with respect to MRI interpretations as well as patient treatment plans, correct? Dr. Yes. Dr. Okay. In fact,
+
+Speaker 1: I have often said, and you can agree with me, your disagreement is fine, that you could take a patient
+
+Speaker 1: to 10 separate doctors to have the same problem examined and you will get 10 separate opinions on the best method to treat them. Is that fair to say? If you have a bogus problem, yes. If you have a real problem, no. Well I mean not necessarily because for example, let's say that, and this is just an example, if a patient has a lower back issue with traumatic findings on the MRIs, you could have, for example, 3 separate doctors examine them, 3 separate doctors could recommend surgery, but it could be 3 different types of surgeries because there's different types of lumbar surgeries, correct? J. M. Yes. J. Okay. So when I say that doctors, you can get 10 separate opinions, doctors might all agree that the patient needs treatment, but they might recommend various different types of treatment, correct? There's certainly, there's multiple ways to skin an operative cat, yes. Okay. Now going back to the issue with MRI findings, as we have discussed before, you have your opinion that the only way degenerative conditions can become symptomatic post trauma is due to acute trauma on an MRI. As we discussed earlier, there are some physicians out there who have a different opinion than you that you can have. Trauma can cause degenerative conditions to become symptomatic without acute findings on the MRI. There are some physicians out there who have that opinion, correct? Yes. And you would disagree with that opinion, correct? Yes. Okay.
+
+Speaker 1: I'm going to mark as exhibit 7 to your deposition a copy of the MRI reports.
+
+Speaker 1: As we have discussed earlier, you have reviewed the films of these, correct? Dr. Yes. And with respect to the cervical MRI, you agree with the radiologist that at the C6 level, she has a 2 millimeter disc protrusion or herniation that impinges on the thecal sac, correct? Dr. Yes. Dr. And then at the lumbar spine, you also agree with the radiologist that at the various levels, there are disc protrusions or herniations, correct?
+
+Speaker 1: With as far as, yes, especially at the 5.1 level, she does have lymph node disc degeneration and a pars fracture, which isn't red. But yes, yes, she has definitely abnormalities of the L5 S1 level. When you say a fracture that isn't red, what do you mean by that?
+
+Speaker 1: So, Miss,
+
+Speaker 0: Ms. Vargas, on the MRI, has evidence of a chronic
+
+Speaker 0: fracture of her pars interarticularis that is not red. And Doctor. Lee shockingly doesn't mention it operatively.
+
+Speaker 1: I'm not a physician, so can you explain that to me? What part of the body is that fracture in?
+
+Speaker 0: So there is
+
+Speaker 0: as a person grows, typically the age of 12 or 13 years old,
+
+Speaker 0: from
+
+Speaker 0: a lot of times, if you're active, gymnasts, soccer players, although I don't know if Ms. Vargas was jumping up and down and going up and down trees, but it's usually an overused injury that results in a fracture of a little piece of bone in the back that essentially is called the parsian articularis fracture, which Ms. Vargas clearly has at the L5 S1 level. Is
+
+Speaker 1: that a vertebrae fracture or what is it now? It's part of the vertebra, yes. Is that something that's new or is it old?
+
+Speaker 0: Like I said, probably when she was 10, 12, 13 years old.
+
+Speaker 1: So a long time ago. And she was 57 at the time of the car wreck, correct? Correct. Okay. But it never heals is the thing. So do you agree that the L5 S1 level, there is a 3 millimeter disc protrusion or herniation
+
+Speaker 1: that impinges in the thecal sac and the L5 nerve root and the neural foramina on both sides? Just
+
+Speaker 0: on the left side, in my opinion. But the rest is accurate. Okay.
+
+Speaker 1: So you agree that there's impingement on the left side, but you disagree with the radiologist who says it's on both sides, correct? Correct.
+
+Speaker 1: And I'm terrible at pronouncing names. Do you know how to pronounce this particular radiologist's names?
+
+Speaker 0: I'm sorry, I moved away from the Right here. Le Grande, that 1, Kevin La Grande. La Grande. La Grande? Okay. We'll go with your pronunciation.
+
+Speaker 1: That way
+
+Speaker 1: we'll be consistent.
+
+Speaker 1: I want to mark the modern spine records as Exhibit 8 to your deposition, doctor.
+
+Speaker 1: Are you able to see these?
+
+Speaker 1: Yes.
+
+Speaker 1: So I'm going to jump down to Page 19, which is the operative report. You had a chance to look at this as part of assessment of this case, correct? J. Yes. J. So according to this, on
+
+Speaker 1: August 30,
+
+Speaker 1: Lee performed
+
+Speaker 1: a laminectomy surgery on the lumbar spine of Miss Vargas, correct? Yes. And is it your opinion that surgery was unnecessary?
+
+Speaker 0: Yes.
+
+Speaker 1: Now during the surgery, he does down here in his report specifically discuss seeing it the disc herniation at the L5 S1 removing the herniation and decompressing where the herniation was impinging in the nerve roots, correct? Yes. And as we talked about from reviewing the MRIs, you would agree with the radiologist, Doctor. La Grande, that there is in fact a disc herniation which impinges on the nerve roots at that level, correct? Yes.
+
+Speaker 0: On the left side. On the left side. Correct. Thank you.
+
+Speaker 1: The surgery was done, looks like, on 08/30/2024, correct? Yes.
+
+Speaker 1: Mean you have no reason to dispute, though, that Doctor. Lee did in fact note the herniation impingement and decompressed it, though, correct?
+
+Speaker 0: So a couple of things about the operative report.
+
+Speaker 0: The reason you do an operative report is to explain what you exactly did. And I can't help but notice that Doctor. Lee forgot to mention which side he did the discectomy on.
+
+Speaker 0: Because arguably, if you're trying to decompress the foramens, you need to do both sides.
+
+Speaker 0: Additionally,
+
+Speaker 0: Ms. Vargas' anatomy, if you're going to actually do a discectomy to decompress the L5 nerve roots bilaterally, especially in the setting of a PARS fracture, that's a pretty tall order.
+
+Speaker 0: And I don't think you'd forget to say, Oh, by the way, we have to go in the foraminal area and then decompress the nerve. And it's a whole production, which Doctor. Lee certainly doesn't mention. Now, did he do it and just was stingy with his words? Maybe. But I would be remiss to not say that, first of he didn't even mention which side he did the discectomy on. He didn't mention that he decompressed the foramens because that's where the problem was.
+
+Speaker 0: Other than that, I'm sure he found something to cut out because he actually
+
+Speaker 0: there's a pathology report at Laredo Hospital that says there's chronic degenerative chunks of disc that were taken out and looked at under microscope.
+
+Speaker 1: So I guess just to understand your criticism, are you criticizing Doctor. Lee for being dishonest? Are you criticizing him for being sloppy in his report?
+
+Speaker 0: I'm neither criticizing him for being sloppy nor being dishonest. I'm just purely pointing out that when you do a discectomy, you typically say which side you're doing it. And it's a pretty tall order to decompress the nerves and the foramens as present.
+
+Speaker 0: That's all. But again, it could be that he's sloppy, could be stingy, I don't know. But those are
+
+Speaker 0: facts.
+
+Speaker 1: If you scroll down in this record, this is on Page 25.
+
+Speaker 1: The date on this
+
+Speaker 0: I'm sorry, can you I sort of did something and I lost your I don't know what I did. Yeah. There we go. That's good. Yeah. Yeah.
+
+Speaker 1: If you're having trouble seeing things, it's just Oh, no. I'm fine now. I sort of did something on my screen and it disappeared. Because I remember when I had this screen up, I thought I was sharing the PDF and I wasn't. So by all means, jump in and let me know. So this is on 05/23/2024. This would be before the surgery, which was August 30, but I believe it's August 30, correct?
+
+Speaker 0: I'll
+
+Speaker 1: put back surgery? J. Yeah. Is it thirtieth or the twentieth? Now you got me second guessing myself. Um,
+
+Speaker 0: thirtieth.
+
+Speaker 1: So yeah, August 30 was the surgery and if we go down to what she was, what the patient was reporting on 05/23/2024, in the lower back, she was reporting that her pain was 7 out of 10, correct? At its worst.
+
+Speaker 0: I'm sorry, what's the date of that? Yes, yes, yes. May 23.
+
+Speaker 1: This will be before the surgery in terms of lower
+
+Speaker 1: back pain. Yes. It says left leg and then right leg intermittent 7 out of 10 of its worst, correct? Yes. Okay. Now you did note that there from the MRI that there was impingement on the left side, correct? Yes. The radiologist said it was both sides. It was your opinions on the left side, correct? Yes. And but according to the reported symptoms, her left side pain was worse than her right side pain, correct? Yes. And that would correlate with your own
+
+Speaker 1: review of the MRI films, wouldn't it?
+
+Speaker 1: Yes. Okay. And if we then go to page 2 of these records, this is now 12/19/2024, the screen change on your end, Doctor? Yes. So she has a surgery August 30 and now we're at December 19 and with respect to the lower back pain, it's now 1 out of 10 out of its worst, correct? Yes. So her pain symptoms improve after the surgery, correct?
+
+Speaker 0: That's what the record said, yes. And as a
+
+Speaker 1: spine surgeon yourself, the goal of a spine surgery is to reduce the patient's pain symptoms, correct? Yes. And
+
+Speaker 1: it appears as though after the surgery you would agree with me that the reported symptoms improved drastically after the surgery, correct? Yes.
+
+Speaker 1: But you don't think she should have had the surgery? Yes. Okay. So even though it appears the surgery did improve her pain symptoms, you would take that away from her?
+
+Speaker 0: Well, I wouldn't take that away from her, but her presentation of objective imaging is not consistent with the accident having caused
+
+Speaker 0: trauma and her presentation of her symptomatology
+
+Speaker 0: up to the point of seeing Doctor. Lee is both sides, both sides, bilateral straight leg raise, things that are really not consistent with the objective findings.
+
+Speaker 1: But have you seen any medical records that indicate she's reporting
+
+Speaker 1: radicular lumbar symptoms prior to the crash? No. But she was reporting them after the crash, correct? Yes. And you yourself note that based off your own MRI findings that there was a herniation on the left that impinged the left side nerve root, correct? Yes. And if you look at the reported symptoms for left side leg pain, it just so happens to be that the left side leg pain that she was reporting was worse than the right side, correct? Yes. And going back to the records,
+
+Speaker 1: after the crash, excuse me, after the surgery, now looking at the cervical spine, the neck, on 12/19/2024, her neck pain is a 7 out of 10, correct? Yes. And the doctors also say that she needs surgery on her neck as well, correct? Yes. And that's a surgery that in your opinion she should not have, correct? Yes.
+
+Speaker 1: So just to recap is that you think that the chiropractor John Morrison, Doctor. Morrison either mistreated or misdiagnosed
+
+Speaker 1: Ms. Vargas, the patient in this case, correct? Either undertreated or overdiagnosed, yes. So you would disagree with Doctor. Morrison, correct? Yes. You would also disagree with Doctor. Sam Lee, correct?
+
+Speaker 1: From the perspective of ascribing causation to the symptoms, yes. But you also think he did an unnecessary lumbar surgery, correct?
+
+Speaker 1: You mean lumbar injection? No, the surgery. Oh, not Sandwood. That's Kenly.
+
+Speaker 1: There's a Kenly and a Sandwood. I'm sorry. I got my doctor. Thank you for correcting me on that.
+
+Speaker 1: Doctor. Kenly, you believe that Doctor. Kenly performed an unnecessary lumbar surgery, correct? Yes.
+
+Speaker 1: And Doctor. Kenley and Doctor.
+
+Speaker 1: Morrison are both treating physicians of the patient, correct? Yes. Their medical license is on the line to make sure they do their job correctly, Yes. And you are not a treating physician, don't have the same responsibilities to the plaintiff that they do, correct? Yes.
+
+Speaker 1: And the depositions that we looked at in in your case on your testimony list, 100% of those are for defendants, correct? Yes. And 100% of those depositions, you were offering criticism of physicians who were treating their patients, correct? In some capacity, yes. Okay. Thank you, Doctor. I will pass the witness.
+
+Speaker 1: Have no questions reserved for the time of trial. And before we go off the record, I will mark that peer reviewed article as Exhibit 9 to the doctor's deposition.
+
+Speaker 1: Okay.
+
+Speaker 1: The time is 02:50. We're off the record.

@@ -1,0 +1,24 @@
+=== Transcript snapshots — TEST_D_VERY_TIGHT ===
+
+--- Rapid Fire Qa (0) ---
+(none)
+--- Objections (5) ---
+[Speaker 2; 22 words; t=375.00-382.60s] If you treat patients in your own private practice, why are you getting involved in litigation work such as this? Objection form.
+[Speaker 0; 22 words; t=893.83-900.86s] in your opinion, doctor, you're a treating physician, do you believe Doctor. Lee committed malpractice by doing that surgery? Objection. 4. I
+[Speaker 0; 44 words; t=938.03-952.36s] Miss Rocio Vargas' lumbar symptoms improved significantly after the surgery. Would you agree with that? Yes. Okay. Do you believe that Ms. Vargas was at all dishonest with her doctors about her pain symptoms at any point in time during her treatment? Objection. Form.
+[Speaker 1; 55 words; t=984.89-999.77s] pre surgery and after and post surgery. Objection form. My role is not to tell the jury if Ms. Vargas was lying or not. My role is purely to interpret the medical information and allow the jury to decide for themselves. So the words Ms. Vargas is lying will not come out of my mouth.
+[Speaker 1; 37 words; t=2803.72-2816.40s] rephrase that. Do you have any reason to believe that she was being dishonest when she reported that to the person who was treating her at Texas Pan injury in the day of the crash. Objection. Form.
+
+--- Colloquy (5) ---
+[Speaker 2; 16 words; t=55.56-61.64s] Good afternoon. Dennis Malley for the plaintiff Procedure of Vargas located in San Antonio, Texas. Agreed.
+[Speaker 2; 14 words; t=63.32-69.88s] Good afternoon. Ramon for Defendant Koepke and Defendants Standing Steam located in McAllen, Texas.
+[Speaker 3; 33 words; t=115.20-126.40s] to look at the totality of the medical records and information regarding the case and given an opinion regarding causation and also the necessity of the treatment that was provided for the spine.
+[Speaker 2; 10 words; t=192.59-195.47s] And in your own private practice, do you treat patients
+[Speaker 2; 12 words; t=196.71-202.71s] who have made complaints of lumbar and cervical pain to you following
+
+--- Problematic Merges (5) ---
+[Speaker 2; 70 words; t=89.48-112.31s] And Doctor. Etminan, my name is Dennis Bentley. I represent the plaintiff in this case in a civil action filed in Hidalgo County, Texas to recover for damages that were sustained in a motor vehicle crash on 09/15/2023. Do you understand that? Yes. And my understanding is you were hired by the defendants to perform som…
+[Speaker 2; 53 words; t=138.07-157.08s] Okay. And in your own private practice, you do treat patients, correct? Yes. What kind of a doctor are you? I'm a board certified orthopedic spine surgeon. Do you do shoulder surgeries? No. Are you offering any opinions about any shoulder complaints or shoulder injuries alleged by Miss Vargas in this case? No.
+[Speaker 2; 31 words; t=159.75-169.99s] Are you licensed to practice medicine in the state of Texas? Yes. Are you licensed in state other than Texas? No. What year did you get your medical license in Texas?
+[Speaker 3; 20 words; t=183.31-192.43s] Probably cervical and lumbar separated, probably about 70 to 100 surgeries a year. And that's total cervical and lumbar? Yes.
+[Speaker 2; 37 words; t=354.00-367.89s] Now in this case, you've looked at all the medical records, correct? Yes. Ms. Vargas is also alleged to have injured her shoulder in this crash as well not just the neck and lower back correct? Yes.

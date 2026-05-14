@@ -1,0 +1,44 @@
+# Transcript snapshots — `TEST_A_CURRENT`
+
+## Rapid Fire Qa (0)
+
+_(none found)_
+
+## Objections (5)
+
+- **Speaker 2** (22 words t=375.00-382.60s)
+  > If you treat patients in your own private practice, why are you getting involved in litigation work such as this? Objection form.
+- **Speaker 0** (27 words t=889.75-900.86s)
+  > So if it's not warranted, in your opinion, doctor, you're a treating physician, do you believe Doctor. Lee committed malpractice by doing that surgery? Objection. 4. I
+- **Speaker 0** (51 words t=935.32-952.36s)
+  > according to medical records from Doctor. Lee, Miss Rocio Vargas' lumbar symptoms improved significantly after the surgery. Would you agree with that? Yes. Okay. Do you believe that Ms. Vargas was at all dishonest with her doctors about her pain symptoms at any point in time during her treatment? Objection. Form.
+- **Speaker 1** (55 words t=984.89-999.77s)
+  > pre surgery and after and post surgery. Objection form. My role is not to tell the jury if Ms. Vargas was lying or not. My role is purely to interpret the medical information and allow the jury to decide for themselves. So the words Ms. Vargas is lying will not come out of my mouth.
+- **Speaker 1** (144 words t=2762.88-2816.40s)
+  > And it goes on to say that patient complains at the time of the accident she felt discomfort at the back of head, back of neck, central upper back, central mid back, central low back, front of left shoulder and rear of left shoulder and supplemental complaints of discomfort. Do you see that? Yes. Would you agree with…
+
+## Colloquy (5)
+
+- **Speaker 2** (16 words t=55.56-61.64s)
+  > Good afternoon. Dennis Malley for the plaintiff Procedure of Vargas located in San Antonio, Texas. Agreed.
+- **Speaker 2** (14 words t=63.32-69.88s)
+  > Good afternoon. Ramon for Defendant Koepke and Defendants Standing Steam located in McAllen, Texas.
+- **Speaker 3** (36 words t=113.04-126.40s)
+  > I was hired to look at the totality of the medical records and information regarding the case and given an opinion regarding causation and also the necessity of the treatment that was provided for the spine.
+- **Speaker 3** (34 words t=382.92-392.42s)
+  > I think I've been doing it well. I know I've been doing this for about 10 or 15 years. It's just another aspect practicing medicine. And I enjoy the work. It gives me flexibility.
+- **Speaker 3** (28 words t=418.76-426.69s)
+  > Well, essentially, if you're treating your patient, first of all, you have an obligation to do the best that you can by her. There's also a physician patient
+
+## Problematic Merges (5)
+
+- **Speaker 2** (70 words t=89.48-112.31s)
+  > And Doctor. Etminan, my name is Dennis Bentley. I represent the plaintiff in this case in a civil action filed in Hidalgo County, Texas to recover for damages that were sustained in a motor vehicle crash on 09/15/2023. Do you understand that? Yes. And my understanding is you were hired by the defendants to perform som…
+- **Speaker 2** (53 words t=138.07-157.08s)
+  > Okay. And in your own private practice, you do treat patients, correct? Yes. What kind of a doctor are you? I'm a board certified orthopedic spine surgeon. Do you do shoulder surgeries? No. Are you offering any opinions about any shoulder complaints or shoulder injuries alleged by Miss Vargas in this case? No.
+- **Speaker 2** (31 words t=159.75-169.99s)
+  > Are you licensed to practice medicine in the state of Texas? Yes. Are you licensed in state other than Texas? No. What year did you get your medical license in Texas?
+- **Speaker 3** (20 words t=183.31-192.43s)
+  > Probably cervical and lumbar separated, probably about 70 to 100 surgeries a year. And that's total cervical and lumbar? Yes.
+- **Speaker 3** (105 words t=261.26-304.37s)
+  > Sure. So in my experience treating patients for the past 24, 25 years, it is seldom when a person is involved in a single event, such as a car accident where essentially they're seated, seat belted, what have you, um, where they don't sustain any other injuries and they sustain isolated disc pathology. It becomes even…

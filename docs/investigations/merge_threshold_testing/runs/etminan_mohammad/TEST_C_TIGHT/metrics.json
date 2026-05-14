@@ -1,0 +1,35 @@
+{
+  "config": {
+    "name": "TEST_C_TIGHT",
+    "in_chunk_gap": 0.6,
+    "cross_chunk_gap": 0.6,
+    "description": "Both stages aligned at 0.6s. Symmetric, conservative. Both gaps now agree with the Deepgram-side cadence (utt_split=0.8 yields utterances broken at ~0.8s silence)."
+  },
+  "input_utterance_count_pre_per_chunk_merge": 1141,
+  "post_per_chunk_merge_count": 767,
+  "structure": {
+    "utterance_count": 523,
+    "long_duration_threshold": 30.0,
+    "duration_seconds": {
+      "avg": 7.957,
+      "median": 5.44,
+      "max": 84.125,
+      "min": 0.08
+    },
+    "words_per_utterance": {
+      "avg": 23.25,
+      "median": 16,
+      "max": 242
+    },
+    "long_utterance_count": 6,
+    "over_100_words_count": 5,
+    "merged_qa_candidates": 92,
+    "speaker_transition_inside_utterance": 110,
+    "standalone_short_answers": 4
+  },
+  "classifier": {
+    "total_blocks": 523,
+    "colloquy": 522,
+    "oath": 1
+  }
+}

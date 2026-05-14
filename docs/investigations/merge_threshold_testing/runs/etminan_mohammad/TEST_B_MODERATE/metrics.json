@@ -1,0 +1,35 @@
+{
+  "config": {
+    "name": "TEST_B_MODERATE",
+    "in_chunk_gap": 0.6,
+    "cross_chunk_gap": 0.9,
+    "description": "Same per-chunk merge; cross-chunk gap reduced to 0.9s. Goal: tighten the cross-chunk pass without disturbing the in-chunk pass."
+  },
+  "input_utterance_count_pre_per_chunk_merge": 1141,
+  "post_per_chunk_merge_count": 767,
+  "structure": {
+    "utterance_count": 419,
+    "long_duration_threshold": 30.0,
+    "duration_seconds": {
+      "avg": 10.115,
+      "median": 7.36,
+      "max": 101.63,
+      "min": 0.08
+    },
+    "words_per_utterance": {
+      "avg": 29.02,
+      "median": 19,
+      "max": 296
+    },
+    "long_utterance_count": 19,
+    "over_100_words_count": 11,
+    "merged_qa_candidates": 85,
+    "speaker_transition_inside_utterance": 105,
+    "standalone_short_answers": 4
+  },
+  "classifier": {
+    "total_blocks": 419,
+    "colloquy": 418,
+    "oath": 1
+  }
+}
