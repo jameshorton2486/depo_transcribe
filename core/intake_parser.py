@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -735,7 +736,13 @@ def parse_intake_document(
     def log(msg: str):
         if progress_callback:
             progress_callback(msg)
-        logger.info(msg)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.info(msg)
+        else:
+            if "Reading PDF:" in msg:
+                logger.info("[IntakeParser] Reading PDF input")
+            else:
+                logger.info(msg)
 
     if extracted_text is not None:
         log("[IntakeParser] Using pre-extracted text")
