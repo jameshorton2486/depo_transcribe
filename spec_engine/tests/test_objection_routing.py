@@ -151,7 +151,8 @@ def test_colloquy_block_eligible_for_split():
 
 def test_answer_block_never_split():
     """An answer block that happens to contain 'objection' is
-    never split. The witness doesn't object."""
+    never split. This is enforced by block type, not by any
+    assumption that a witness would never say the word."""
     block = TranscriptBlock(
         speaker="THE WITNESS",
         text="Well, I would have raised an objection if I had been there. Objection. Form.",
@@ -221,17 +222,7 @@ def test_word_boundary_objections_plural_no_match_with_punctuation():
     assert len(result) == 1
 
 
-def test_no_objection_phrase_handling():
-    """The phrase 'no objection' contains 'objection' as a whole
-    word. The regex matches, but the surrounding thresholds and
-    sentence-start logic determine whether a split fires.
-
-    This test documents the current behavior: when 'no objection'
-    appears mid-block after enough preceding text and after a
-    sentence boundary, a split DOES fire and the colloquy gets
-    the sentence starting with whatever comes after the boundary.
-    This is acceptable because the (SPEAKER UNVERIFIED) label
-    makes the misattribution conspicuous for Miah's review."""
+def test_no_objection_phrase_does_not_split():
     blocks = [
         _q(
             "Counsel reviewed exhibit one in detail. "
@@ -239,10 +230,11 @@ def test_no_objection_phrase_handling():
         )
     ]
     result = split_misattributed_objections(blocks)
-    assert len(result) == 2
-    assert result[0].text == "Counsel reviewed exhibit one in detail."
-    assert result[1].speaker == SENTINEL_SPEAKER
-    assert result[1].text == "Plaintiff has no objection to admission."
+    assert len(result) == 1
+    assert result[0].text == (
+        "Counsel reviewed exhibit one in detail. "
+        "Plaintiff has no objection to admission."
+    )
 
 
 def test_without_objection_at_start_filtered_by_offset():
@@ -252,6 +244,32 @@ def test_without_objection_at_start_filtered_by_offset():
     result = split_misattributed_objections(blocks)
     assert len(result) == 1
     assert result[0].text == "Without objection, the exhibit is admitted."
+
+
+def test_without_objection_mid_block_does_not_split():
+    blocks = [
+        _colloquy(
+            "THE COURT",
+            "We have addressed the record. Counsel proceeds without objection.",
+        )
+    ]
+    result = split_misattributed_objections(blocks)
+    assert len(result) == 1
+    assert result[0].text == (
+        "We have addressed the record. Counsel proceeds without objection."
+    )
+
+
+def test_subject_to_objection_does_not_split():
+    blocks = [
+        _colloquy(
+            "MS. ZHAN",
+            "The witness may answer subject to objection on form.",
+        )
+    ]
+    result = split_misattributed_objections(blocks)
+    assert len(result) == 1
+    assert result[0].text == "The witness may answer subject to objection on form."
 
 
 def test_split_with_question_mark_boundary():

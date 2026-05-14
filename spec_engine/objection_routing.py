@@ -51,19 +51,11 @@ alone does NOT filter out phrases like "no objection",
 "subject to objection", or "without objection" - those still
 contain "objection" as a whole word.
 
-What filters those phrases is the COMBINATION of the regex with
-the 10/20 thresholds AND the sentence-start split point:
+Those phrases are explicitly excluded before split logic runs:
 
-  * "Without objection, Counsel." - "objection" at position ~8,
-    fails the offset check (< 10).
-  * "I am subject to objection here." - "objection" at position
-    ~16; preceding non-whitespace text is 16 chars, fails the
-    preceding-text check (< 20).
-  * "We have already covered this. Counsel makes no objection."
-    - passes offset and preceding-text checks, but the sentence
-    start of "objection" is "Counsel makes no..." which becomes
-    the colloquy text. Conspicuously labeled (SPEAKER
-    UNVERIFIED). Miah's review flags and corrects.
+  * "no objection"
+  * "without objection"
+  * "subject to objection"
 
 The 10 and 20 thresholds are conservative first-pass values. If
 review feedback shows false positives or missed splits, tune
@@ -77,9 +69,10 @@ import re
 from .models import TranscriptBlock
 
 
-# Block types eligible for splitting. Answer, directive, and oath
-# blocks are never split - the pattern we're correcting only
-# arises in attorney-speech blocks that Deepgram mis-merged.
+# Only attorney-speech conversational blocks are eligible.
+# Answer, directive, and oath blocks are never split - the
+# pattern we're correcting only arises in attorney-speech blocks
+# that Deepgram mis-merged.
 _SPLIT_TARGET_TYPES = frozenset({"question", "colloquy"})
 
 # Minimum offset (in characters) from the start of block text at
@@ -101,6 +94,11 @@ SENTINEL_SPEAKER = "(SPEAKER UNVERIFIED)"
 # Objection-start detector. "objection" as a whole word,
 # optionally followed by . , or :. Case-insensitive.
 _OBJECTION_RE = re.compile(r"\bobjection\b[\.\,:]?", re.IGNORECASE)
+_EXCLUDED_OBJECTION_PHRASES = (
+    "no objection",
+    "without objection",
+    "subject to objection",
+)
 
 # Sentence boundary: ., ?, or ! followed by one or more
 # whitespace characters.
@@ -148,6 +146,12 @@ def _split_block(block: TranscriptBlock) -> list[TranscriptBlock] | None:
 
     if match_start < _MIN_OBJECTION_OFFSET:
         return None
+
+    lowered = text.lower()
+    window = lowered[max(0, match_start - 25):match_start + 25]
+    for phrase in _EXCLUDED_OBJECTION_PHRASES:
+        if phrase in window:
+            return None
 
     sentence_start = _find_sentence_start(text, match_start)
     if sentence_start is None:
