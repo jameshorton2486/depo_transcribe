@@ -8,3 +8,4 @@
 2026-05-14 - Defect #5 money and percent normalization - commit 94a6d00
 2026-05-14 - Defect #6 age and time normalization - commit a94e00c
 2026-05-14 - Defect #7 DOCX writer Q/A parse and continuation geometry - commit d07336d
+2026-05-14 - Defect #8 recess and off-record pair collapsing - commit 0302202
