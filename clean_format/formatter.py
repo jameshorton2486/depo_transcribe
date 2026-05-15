@@ -29,6 +29,7 @@ _MISS_NAME_RE = re.compile(r"\bMiss Kuipers\b")
 _EM_DASH_RE = re.compile(r"\s*[—–]\s*")
 _SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
 _LABEL_LINE_RE = re.compile(r"^(?P<label>[A-Z][A-Z .'-]+):\t(?P<text>.*)$")
+_RAW_SPEAKER_LINE_RE = re.compile(r"^Speaker\s+\d+:\s*(?P<text>.*)$", re.IGNORECASE)
 _DUNNELL_RE = re.compile(
     r"^((THE\s+)?VIDEOGRAPHER):\t(?P<text>Billy Dunnell here on behalf of .*)$",
     re.IGNORECASE,
@@ -231,6 +232,31 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
     return "\n".join(lines).strip()
 
 
+def _token_count(text: str) -> int:
+    return len(re.findall(r"\b[\w']+\b", text or ""))
+
+
+def _verbatim_fallback_for_chunk(chunk: str) -> str:
+    """Lossless fallback when model output drops too much content.
+
+    Keeps all words from the raw chunk and only applies body-text normalization
+    on each speaker line's body.
+    """
+    lines: list[str] = []
+    for raw_line in (chunk or "").splitlines():
+        line = raw_line.rstrip()
+        if not line:
+            lines.append("")
+            continue
+        match = _RAW_SPEAKER_LINE_RE.match(line)
+        if not match:
+            lines.append(_normalize_body_text(line))
+            continue
+        body = match.group("text")
+        lines.append(f"{line[:match.start('text')]}{_normalize_body_text(body)}")
+    return "\n".join(lines).strip()
+
+
 def _build_client(client: Any | None = None) -> Any:
     if client is not None:
         return client
@@ -291,6 +317,11 @@ def format_transcript(
         response_text = _response_text(response)
         if deepgram_words:
             validate_marker_round_trip(chunk, response_text)
+        source_tokens = _token_count(chunk)
+        response_tokens = _token_count(response_text)
+        if source_tokens >= 80 and response_tokens < int(source_tokens * 0.7):
+            rendered_chunks.append(_verbatim_fallback_for_chunk(chunk))
+            continue
         rendered_chunks.append(_postprocess_formatted_text(response_text))
 
     return "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
