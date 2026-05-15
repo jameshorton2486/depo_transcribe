@@ -10,6 +10,8 @@ import json
 import os
 import re
 import glob
+import hashlib
+import logging
 from typing import Any
 
 from app_logging import get_logger
@@ -44,8 +46,14 @@ def _extract_keyterms_from_pdf_text(text: str, progress_callback=None) -> list[s
         keyterms = list(intake.all_proper_nouns)
         reasons = intake.vocabulary_terms
         if reasons:
-            preview = "; ".join(f"{item.term}: {item.reason}" for item in reasons[:5])
-            _log(f"AI intake keyterms: {preview}")
+            if logger.isEnabledFor(logging.DEBUG):
+                preview = "; ".join(f"{item.term}: {item.reason}" for item in reasons[:5])
+                _log(f"AI intake keyterms: {preview}")
+            else:
+                _log(
+                    f"AI intake keyterms extracted: terms={len(keyterms)} "
+                    f"reasons={len(reasons)}"
+                )
         return keyterms
     except Exception as exc:
         _log(f"AI intake parse unavailable, falling back to regex extraction: {exc}")
@@ -106,11 +114,25 @@ def extract_from_filename(filename: str) -> dict:
         results["witness_first"] = (first_name, "filename")
         results["witness_last"] = (last_name, "filename")
 
-    logger.info(
-        "Filename extraction: %s -> %s",
-        os.path.basename(filename),
-        {k: v for k, v in results.items() if k != "scanned"},
-    )
+    if logger.isEnabledFor(logging.DEBUG):
+        logger.info(
+            "Filename extraction: %s -> %s",
+            os.path.basename(filename),
+            {k: v for k, v in results.items() if k != "scanned"},
+        )
+    else:
+        digest = hashlib.sha256(os.path.basename(filename).encode("utf-8")).hexdigest()[:10]
+        logger.info(
+            "Filename extraction summary: file_hash=%s fields_found=%d",
+            digest,
+            sum(
+                1
+                for k, entry in results.items()
+                if k != "scanned"
+                and isinstance(entry, tuple)
+                and entry[0]
+            ),
+        )
     return results
 
 
@@ -354,7 +376,13 @@ def ai_extract_fields(text: str, missing_fields: list[str]) -> dict[str, Any]:
             response_text = re.sub(r"^```(?:json)?\s*", "", response_text)
             response_text = re.sub(r"\s*```$", "", response_text)
         result = json.loads(response_text)
-        logger.info("AI extraction returned: %s", result)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.info("AI extraction returned: %s", result)
+        else:
+            logger.info(
+                "AI extraction returned keys=%s",
+                sorted(str(k) for k in result.keys()),
+            )
         return result
     except Exception as exc:
         logger.error("AI extraction failed: %s", exc)

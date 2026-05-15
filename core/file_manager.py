@@ -167,6 +167,8 @@ def resolve_or_create_case(
     witness_last: str,
     witness_first: str,
     deposition_date: str | None = None,
+    *,
+    allow_cause_mismatch_reuse: bool = False,
 ) -> tuple[str, dict]:
     """Resolve a case folder, reusing a legacy folder if its name's canonical
     form matches the requested cause number.
@@ -183,7 +185,43 @@ def resolve_or_create_case(
         base_folder, cause_number, witness_last, witness_first, deposition_date,
     )
 
+    def _load_persisted_original_cause_number(case_path: str) -> str | None:
+        import json
+
+        path = os.path.join(case_path, "source_docs", "job_config.json")
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            return None
+        value = str(data.get("original_cause_number") or "").strip()
+        return value or None
+
+    def _is_material_cause_mismatch(incoming: str, persisted: str) -> bool:
+        incoming_clean = str(incoming or "").strip()
+        persisted_clean = str(persisted or "").strip()
+        return bool(incoming_clean and persisted_clean and incoming_clean != persisted_clean)
+
     if os.path.isdir(canonical_path):
+        persisted = _load_persisted_original_cause_number(canonical_path)
+        if (
+            not allow_cause_mismatch_reuse
+            and _is_material_cause_mismatch(cause_number, persisted or "")
+        ):
+            msg = (
+                "Cause-number mismatch guard: canonical folder exists but "
+                f"persisted original_cause_number='{persisted}' differs from incoming "
+                f"'{cause_number}'. Manual confirmation required before reuse."
+            )
+            logger.warning("[FileManager] %s", msg)
+            return canonical_path, {
+                "case_path": canonical_path,
+                "created": [],
+                "existing": [],
+                "errors": [msg],
+            }
         status = create_case_folders(canonical_path)
         return canonical_path, status
 
@@ -196,6 +234,23 @@ def resolve_or_create_case(
     if legacy_cause_dir is not None:
         legacy_case = os.path.join(legacy_cause_dir, witness_segment)
         if os.path.isdir(legacy_case):
+            persisted = _load_persisted_original_cause_number(legacy_case)
+            if (
+                not allow_cause_mismatch_reuse
+                and _is_material_cause_mismatch(cause_number, persisted or "")
+            ):
+                msg = (
+                    "Cause-number mismatch guard: legacy canonical match found but "
+                    f"persisted original_cause_number='{persisted}' differs from incoming "
+                    f"'{cause_number}'. Manual confirmation required before reuse."
+                )
+                logger.warning("[FileManager] %s", msg)
+                return legacy_case, {
+                    "case_path": legacy_case,
+                    "created": [],
+                    "existing": [],
+                    "errors": [msg],
+                }
             status = create_case_folders(legacy_case)
             return legacy_case, status
 

@@ -3516,6 +3516,7 @@ class TranscribeTab(ctk.CTkFrame):
         from core.keyterm_extractor import merge_keyterms
 
         self._create_case_folders_now()
+        allow_cause_mismatch_reuse = False
 
         # Safety net: if in-memory intake state is empty (e.g. wiped by a
         # transient field edit, or the user reopened a previously-processed
@@ -3557,6 +3558,30 @@ class TranscribeTab(ctk.CTkFrame):
                 f"Using {len(final_keyterms)} Deepgram keyterms"
             )
 
+        if self._current_case_path:
+            cfg = load_job_config(self._current_case_path)
+            persisted_original = str(cfg.get("original_cause_number") or "").strip()
+            incoming_original = self._cause_var.get().strip()
+            if persisted_original and incoming_original and persisted_original != incoming_original:
+                reuse = messagebox.askyesno(
+                    "Cause Number Mismatch",
+                    "This case folder was previously associated with a different original cause number.\n\n"
+                    f"Saved: {persisted_original}\n"
+                    f"Incoming: {incoming_original}\n\n"
+                    "Reuse this folder anyway?",
+                )
+                if not reuse:
+                    self.after(
+                        0,
+                        self._on_done,
+                        {
+                            "success": False,
+                            "error": "Cause-number mismatch: operator declined folder reuse.",
+                        },
+                    )
+                    return
+                allow_cause_mismatch_reuse = True
+
         run_transcription_job(
             audio_path=self._selected_file,
             model=self._model_var.get(),
@@ -3572,6 +3597,7 @@ class TranscribeTab(ctk.CTkFrame):
             progress_callback=self._on_progress,
             log_callback=self._on_log,
             done_callback=self._on_done,
+            allow_cause_mismatch_reuse=allow_cause_mismatch_reuse,
         )
 
     # ── Callbacks (called from background thread, dispatch via after()) ──────
