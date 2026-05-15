@@ -94,22 +94,34 @@ def test_postprocess_formatted_text_applies_label_and_title_rules():
 
     result = _postprocess_formatted_text(text)
 
-    assert "\t\t\tTHE REPORTER:  Doctor Bianca Caram is here." in result
-    assert "\t\t\tMR.  DUNNELL:  Billy Dunnell here on behalf of Doctor Karam." in result
-    assert "\t\t\tTHE VIDEOGRAPHER:  The time is 8:12 a.m." in result
-    assert "\tQ.\tDid Doctor Brittany Anders speak with Miss Kuipers?" in result
+    assert "THE REPORTER:\tDoctor Bianca Caram is here." in result
+    assert "MR. DUNNELL:\tBilly Dunnell here on behalf of Doctor Karam." in result
+    assert "THE VIDEOGRAPHER:\tThe time is 8:12 a.m." in result
+    assert "Q.\tDid Doctor Brittany Anders speak with Miss Kuipers?" in result
+
+
+def test_postprocess_formatted_text_normalizes_the_court_reporter_label():
+    result = _postprocess_formatted_text(
+        "THE COURT REPORTER:\tPlease raise your right hand."
+    )
+    assert result == "THE REPORTER:\tPlease raise your right hand."
+
+
+def test_postprocess_formatted_text_preserves_single_space_in_mr_label():
+    result = _postprocess_formatted_text("MR. DUNNELL:\tstate your appearance.")
+    assert result == "MR. DUNNELL:\tstate your appearance."
 
 
 def test_postprocess_formatted_text_uses_two_spaces_after_sentence_endings():
     result = _postprocess_formatted_text("A.\tYes. no? maybe.")
-    assert result == "\tA.\tYes.  no?  maybe."
+    assert result == "A.\tYes.  no?  maybe."
 
 
 def test_postprocess_formatted_text_normalizes_interruption_dashes():
     result = _postprocess_formatted_text(
         "Q.\tOkay — if you need a break - let me know."
     )
-    assert result == "\tQ.\tOkay -- if you need a break - let me know."
+    assert result == "Q.\tOkay -- if you need a break - let me know."
 
 
 def test_format_transcript_raises_output_truncated_error_on_max_tokens(caplog):
@@ -122,15 +134,14 @@ def test_format_transcript_raises_output_truncated_error_on_max_tokens(caplog):
 def test_format_transcript_allows_non_truncated_stop_reason():
     client = _FakeClient(stop_reason="end_turn")
     result = format_transcript("Speaker 0: hello", {}, client=client)
-    assert result == "\t\t\tLABEL:  chunk 1"
+    assert result == "LABEL:\tchunk 1"
 
 
 def test_content_loss_gate_allows_ratio_above_threshold():
     raw_text = "\n\n".join(f"Speaker 0: line {n}" for n in range(100))
     output = "\n".join(f"LABEL:\tline {n}" for n in range(95))
     result = format_transcript(raw_text, {}, client=_FakeClient(text=output))
-    expected = "\n".join(f"\t\t\tLABEL:  line {n}" for n in range(95))
-    assert result == expected
+    assert result == output
 
 
 def test_content_loss_gate_raises_below_threshold():
@@ -142,7 +153,7 @@ def test_content_loss_gate_raises_below_threshold():
 
 def test_content_loss_gate_skips_zero_input_utterances():
     result = format_transcript("plain text with no speaker labels", {}, client=_FakeClient())
-    assert result == "\t\t\tLABEL:  chunk 1"
+    assert result == "LABEL:\tchunk 1"
 
 
 def test_utterance_count_regex_matches_speaker_fixture_shape():
@@ -184,8 +195,7 @@ def test_format_transcript_with_status_returns_success_schema():
     result, status = format_transcript_with_status(
         raw_text, {}, client=_FakeClient(text=output)
     )
-    expected = "\n".join(f"\t\t\tLABEL:  line {n}" for n in range(100))
-    assert result == expected
+    assert result == output
     assert status == {
         "schema_version": "1.0",
         "model": "claude-sonnet-4-6",

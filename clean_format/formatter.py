@@ -302,127 +302,62 @@ def _normalize_body_text(text: str) -> str:
 
 
 def _postprocess_formatted_text(formatted_text: str) -> str:
-    """
-    Normalise the AI's plain-text output to the canonical Miah Bardot format.
-
-    Output format contract (must match prompt.py §11 and the DOCX writer spec):
-
-      Q/A lines:
-        \\tQ.\\tquestion text
-        \\tA.\\tanswer text
-
-      Speaker label lines  (3 tabs + ALL-CAPS label + colon + 2 spaces + text):
-        \\t\\t\\tTHE REPORTER:  text
-        \\t\\t\\tMS.  MALONEY:  text
-        \\t\\t\\tMR.  DUNNELL:  Objection.  Form.
-        \\t\\t\\tDR.  KARAM:  text
-
-      Parenthetical lines  (4 tabs + parens):
-        \\t\\t\\t\\t(The witness was sworn.)
-
-      Examination headers (no leading whitespace):
-        EXAMINATION
-        BY MS.  MALONEY:
-
-    Labels that arrive from the AI with one trailing tab are silently
-    accepted and re-emitted in the canonical three-tab / two-space form.
-    Both the new (\\t\\t\\tLABEL:  text) and legacy (LABEL:\\ttext) AI formats
-    are accepted.
-    """
     lines: list[str] = []
     for raw_line in (formatted_text or "").splitlines():
         line = raw_line.rstrip()
-
-        # ── Empty lines ───────────────────────────────────────────────────────
         if not line:
             lines.append("")
             continue
 
-        # ── Dunnell mis-attribution fix ───────────────────────────────────────
-        # Billy Dunnell's appearance statement is sometimes labelled as a
-        # VIDEOGRAPHER block by Deepgram.  Relabel to MR.  DUNNELL.
-        # Two spaces after the honorific period (Morson's / Miah spec).
         dunnell_match = _DUNNELL_RE.match(line)
         if dunnell_match:
             lines.append(
-                "\t\t\tMR.  DUNNELL:  "
-                + _normalize_body_text(dunnell_match.group("text"))
+                f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}"
             )
             continue
 
-        # ── COURT REPORTER → THE REPORTER ─────────────────────────────────────
-        # Strip any leading tabs before checking so both legacy and new AI
-        # output formats are caught.
-        stripped = line.lstrip("\t")
-        if stripped.startswith("COURT REPORTER:"):
-            body = stripped[len("COURT REPORTER:"):].lstrip("\t").lstrip()
-            lines.append("\t\t\tTHE REPORTER:  " + _normalize_body_text(body))
+        if line.startswith("COURT REPORTER:\t") or line.startswith("THE COURT REPORTER:\t"):
+            prefix = "COURT REPORTER:\t" if line.startswith("COURT REPORTER:\t") else "THE COURT REPORTER:\t"
+            lines.append(
+                "THE REPORTER:\t"
+                + _normalize_body_text(line[len(prefix) :])
+            )
             continue
 
-        # ── Bare VIDEOGRAPHER → THE VIDEOGRAPHER ──────────────────────────────
-        if stripped.startswith("VIDEOGRAPHER:") and not _DUNNELL_RE.match(line):
-            body = stripped[len("VIDEOGRAPHER:"):].lstrip("\t").lstrip()
-            lines.append("\t\t\tTHE VIDEOGRAPHER:  " + _normalize_body_text(body))
+        if line.startswith("VIDEOGRAPHER:\t") or line.startswith("THE VIDEOGRAPHER:\t"):
+            prefix = "VIDEOGRAPHER:\t" if line.startswith("VIDEOGRAPHER:\t") else "THE VIDEOGRAPHER:\t"
+            lines.append(
+                "THE VIDEOGRAPHER:\t"
+                + _normalize_body_text(line[len(prefix) :])
+            )
             continue
 
-        # ── Q. / A. lines ─────────────────────────────────────────────────────
-        # Accept both \tQ.\t (new, per prompt.py) and Q.\t (legacy).
-        qa_match = _QA_LINE_RE.match(line)
-        if qa_match:
-            label = qa_match.group("label")   # "Q" or "A"
-            body  = qa_match.group("text")
-            lines.append(f"\t{label}.\t{_normalize_body_text(body)}")
+        if line in {"COURT REPORTER:", "THE COURT REPORTER:"}:
+            lines.append("THE REPORTER:")
             continue
 
-        # ── Parenthetical lines ───────────────────────────────────────────────
-        # Accept any number of leading tabs; always re-emit with four tabs.
-        paren_match = _PAREN_LINE_RE.match(line)
-        if paren_match:
-            content = paren_match.group("content").strip()
-            lines.append(f"\t\t\t\t({content})")
+        if line in {"VIDEOGRAPHER:", "THE VIDEOGRAPHER:"}:
+            lines.append("THE VIDEOGRAPHER:")
             continue
 
-        # ── Speaker label lines ───────────────────────────────────────────────
-        # Accept both legacy (LABEL:\ttext) and new (\t\t\tLABEL:  text).
-        # Re-emit as \t\t\tLABEL:  text with two spaces after the colon
-        # and two spaces after each honorific period (Miah spec).
+        if line.startswith("Q.\t"):
+            lines.append("Q.\t" + _normalize_body_text(line[3:]))
+            continue
+
+        if line.startswith("A.\t"):
+            lines.append("A.\t" + _normalize_body_text(line[3:]))
+            continue
+
         label_match = _LABEL_LINE_RE.match(line)
         if label_match:
             label = label_match.group("label").strip()
             text  = _normalize_body_text(label_match.group("text"))
-            lines.append(f"\t\t\t{label}:  {text}")
+            lines.append(f"{label}:\t{text}")
             continue
 
-        # ── Examination headers and BY lines ──────────────────────────────────
-        # These are flush-left: EXAMINATION / CROSS-EXAMINATION / BY MS. X:
-        # No leading whitespace, no trailing text (BY lines end with colon).
-        if stripped in (
-            "EXAMINATION", "CROSS-EXAMINATION", "REDIRECT EXAMINATION",
-            "RECROSS-EXAMINATION", "FURTHER EXAMINATION",
-        ):
-            lines.append(stripped)
-            continue
-
-        if stripped.startswith("BY ") and stripped.endswith(":"):
-            lines.append(stripped)
-            continue
-
-        # ── Fallback: normalise body text and pass through ────────────────────
         lines.append(_normalize_body_text(line))
 
-    # Collapse any run of more than one consecutive blank line to exactly one.
-    result_lines: list[str] = []
-    prev_blank = False
-    for line in lines:
-        is_blank = not line.strip()
-        if is_blank and prev_blank:
-            continue
-        result_lines.append(line)
-        prev_blank = is_blank
-
-    # Only trim trailing whitespace/blank lines. Leading tabs on the first
-    # line are semantically meaningful in the canonical output contract.
-    return "\n".join(result_lines).rstrip()
+    return "\n".join(lines).strip()
 
 
 # ── API client helpers ────────────────────────────────────────────────────────
