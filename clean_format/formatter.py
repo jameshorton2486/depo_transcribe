@@ -18,24 +18,68 @@ from clean_format.low_confidence_markers import (
 
 try:
     from anthropic import Anthropic
-except ImportError:  # pragma: no cover - exercised only when dependency missing
+except ImportError:  # pragma: no cover
     Anthropic = None  # type: ignore[assignment]
 
 CHUNK_CHAR_LIMIT = 80_000
-MAX_TOKENS = 8192
-_SENTENCE_DOUBLE_SPACE_RE = re.compile(r"([.?])\s+(?=\S)")
+# Raised from 8,192 after real transcript runs hit stop_reason=max_tokens on
+# multi-chunk clean-format jobs. Keep this a bounded increase rather than
+# introducing new orchestration here.
+MAX_TOKENS = 12_288
+
+# ── Sentence / punctuation normalisation ─────────────────────────────────────
+# Two spaces after sentence-ending . or ? before the next non-space character.
+# Abbreviation titles (Dr., Mr., etc.) are tokenised before this runs so their
+# trailing period is not double-spaced.
+_SENTENCE_DOUBLE_SPACE_RE = re.compile(r"([.?!])\s+(?=\S)")
+
+# Times must have no leading zero: "08:12 a.m." → "8:12 a.m."
 _LEADING_ZERO_TIME_RE = re.compile(r"\b0([1-9]):(\d{2}\s*[ap]\.m\.)", re.IGNORECASE)
-_DOCTOR_NAME_RE = re.compile(r"\bDoctor\s+(?=[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)")
-_MISS_NAME_RE = re.compile(r"\bMiss Kuipers\b")
+
+# Actual em-dash / en-dash → spaced double-hyphen (Morson's / UFM rule)
 _EM_DASH_RE = re.compile(r"\s*[—–]\s*")
+
+# Normalise any run of spaces around "--" to exactly " -- "
 _SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
-_LABEL_LINE_RE = re.compile(r"^(?P<label>[A-Z][A-Z .'-]+):\t(?P<text>.*)$")
+
+# Mid-word false-start dash ("run--ning") must not be touched by the hyphen
+# normaliser above; protect it with a placeholder round-trip.
+_MIDWORD_FALSE_START_RE = re.compile(r"(?<=\w)--(?=\s*[A-Za-z])")
+
+# ── Line-type detection regexes ───────────────────────────────────────────────
+# Q/A lines from the AI arrive as \tQ.\t… or \tA.\t… (per prompt.py §4 / §11).
+# A bare "Q.\t" or "A.\t" (no leading tab) is the legacy format; we handle
+# both so the formatter is backward-compatible during rollout.
+_QA_LINE_RE = re.compile(r"^\t?(?P<label>[QA])\.\t(?P<text>.*)$")
+
+# Speaker label lines: one or more leading tabs, then ALL-CAPS label, colon,
+# one or two spaces or a tab, then body text.  Matches both the new format
+# (\t\t\tMS.  MALONEY:  text) and the legacy format (LABEL:\ttext).
+_LABEL_LINE_RE = re.compile(
+    r"^\t*(?P<label>[A-Z][A-Z .'\-]+?):\s+(?P<text>.+)$"
+)
+
+# Parenthetical lines: four leading tabs then (…)  OR  bare (…).
+_PAREN_LINE_RE = re.compile(r"^\t*\((?P<content>[^)]+)\)\s*$")
+
+# Raw Deepgram "Speaker N:" lines in the input (used to count utterances).
 _INPUT_UTTERANCE_RE = re.compile(r"^Speaker\s+\d+:", re.MULTILINE)
-_OUTPUT_UTTERANCE_RE = re.compile(r"^(?:Q\.|A\.|[A-Z][A-Z .]+:)\s*", re.MULTILINE)
+
+# Formatted utterance lines in the output (used to verify retention).
+# Counts \tQ.\t, \tA.\t, and \t\t\tLABEL: patterns.
+_OUTPUT_UTTERANCE_RE = re.compile(
+    r"^\t?(?:Q|A)\.\t|^\t{0,3}[A-Z][A-Z .'\-]+:\s",
+    re.MULTILINE,
+)
+
+# Dunnell mis-attribution: Deepgram sometimes labels Billy Dunnell's
+# appearance statement as a VIDEOGRAPHER block.  Detect and relabel.
+# Handles both legacy format (VIDEOGRAPHER:\t) and new (\t\t\tTHE VIDEOGRAPHER:  ).
 _DUNNELL_RE = re.compile(
-    r"^((THE\s+)?VIDEOGRAPHER):\t(?P<text>Billy Dunnell here on behalf of .*)$",
+    r"^\t*(?:THE\s+)?VIDEOGRAPHER:\s+(?P<text>Billy\s+Dunnell\s+here\s+on\s+behalf\s+of\s+.*)$",
     re.IGNORECASE,
 )
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,6 +110,8 @@ class ContentLossError(RuntimeError):
             f"Cleanup aborted to prevent silent content loss."
         )
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _normalize_whitespace(value: str) -> str:
     return " ".join((value or "").split()).strip()
@@ -141,12 +187,10 @@ def _case_meta_for_prompt(case_meta: dict[str, Any]) -> dict[str, Any]:
         "reporter_csr",
         "attorneys",
         "videographer_name",
-        # Phase 2: NOD-derived authoritative data. confirmed_spellings is
-        # a wrong->right dict the model applies as proper-noun corrections.
-        # deepgram_keyterms is the list of NOD entities given to Deepgram
-        # as keyterms; surfacing it to the model lets it preserve those
-        # spellings as canonical. Both fields are passed through from
-        # job_config.json by ui/tab_transcribe.py::_run_clean_format_job.
+        # Phase 2: NOD-derived authoritative data.
+        # confirmed_spellings: wrong->right dict the model applies as proper-noun corrections.
+        # deepgram_keyterms: list of NOD entities given to Deepgram; lets the model
+        # preserve those spellings as canonical.
         "confirmed_spellings",
         "deepgram_keyterms",
     ]
@@ -183,102 +227,205 @@ def _response_text(response: Any) -> str:
 
 
 def _response_stop_reason(response: Any) -> str:
-    """Return Anthropic response stop reason string, or empty string when unavailable."""
     return getattr(response, "stop_reason", "") or ""
 
 
 def _count_input_utterances(text: str) -> int:
-    """Count Speaker N: lines in the raw input text."""
     return len(_INPUT_UTTERANCE_RE.findall(text or ""))
 
 
 def _count_output_utterances(text: str) -> int:
-    """Count formatted utterance lines, including pass-through Speaker N: lines."""
     output = text or ""
     count = len(_OUTPUT_UTTERANCE_RE.findall(output))
     return count or len(_INPUT_UTTERANCE_RE.findall(output))
 
 
 def _normalize_body_text(text: str) -> str:
-    text = _DOCTOR_NAME_RE.sub("Dr. ", text)
-    text = _MISS_NAME_RE.sub("Ms. Kuipers", text)
+    """
+    Apply Miah Bardot / Texas UFM typographic rules to body text.
+
+    Rules applied in order:
+    1. Protect mid-word false-start dashes ("run--ning") from dash normalisation.
+    2. Remove leading zeros from times ("08:12 a.m." → "8:12 a.m.").
+    3. Convert em-dashes and en-dashes to spaced double-hyphen (" -- ").
+    4. Normalise any existing "--" spacing to exactly " -- ".
+    5. Protect common lowercase title abbreviations so their trailing period
+       is NOT double-spaced (Dr., Mr., Ms., Mrs. → one space, not two).
+       Uppercase honorifics (MR., MS., DR.) intentionally receive two spaces
+       from the sentence-spacing rule in step 6, which is the correct
+       Miah format: "MR.  MALONEY" not "MR. MALONEY".
+    6. Apply two-space rule after every sentence-ending . ? ! before the next
+       non-space character.
+    7. Restore the protected title tokens.
+    8. Restore the protected mid-word dash.
+    9. Collapse any run of more than two consecutive spaces to exactly two
+       (prevents triple-spacing from interacting patterns).
+    """
+    # Step 1 – protect mid-word false-start dashes
+    text = _MIDWORD_FALSE_START_RE.sub("__FALSESTART_DASH__", text)
+
+    # Step 2 – leading-zero time fix
     text = _LEADING_ZERO_TIME_RE.sub(r"\1:\2", text)
+
+    # Steps 3–4 – dash normalisation
     text = _EM_DASH_RE.sub(" -- ", text)
     text = _SPACED_DOUBLE_HYPHEN_RE.sub(" -- ", text)
-    for short_title, token in {
+
+    # Step 5 – protect lowercase titles (one space preserved)
+    for title, token in {
         "Dr. ": "__TITLE_DR__",
         "Mr. ": "__TITLE_MR__",
         "Ms. ": "__TITLE_MS__",
         "Mrs. ": "__TITLE_MRS__",
     }.items():
-        text = text.replace(short_title, token)
+        text = text.replace(title, token)
+
+    # Step 6 – two spaces after sentence-ending punctuation
     text = _SENTENCE_DOUBLE_SPACE_RE.sub(r"\1  ", text)
-    for token, short_title in {
+
+    # Step 7 – restore lowercase titles
+    for token, title in {
         "__TITLE_DR__": "Dr. ",
         "__TITLE_MR__": "Mr. ",
         "__TITLE_MS__": "Ms. ",
         "__TITLE_MRS__": "Mrs. ",
     }.items():
-        text = text.replace(token, short_title)
+        text = text.replace(token, title)
+
+    # Step 8 – restore mid-word dash
+    text = text.replace("__FALSESTART_DASH__", "--")
+
+    # Step 9 – collapse triple+ spaces to two (never more than two)
+    text = re.sub(r"   +", "  ", text)
+
     return text
 
 
 def _postprocess_formatted_text(formatted_text: str) -> str:
+    """
+    Normalise the AI's plain-text output to the canonical Miah Bardot format.
+
+    Output format contract (must match prompt.py §11 and the DOCX writer spec):
+
+      Q/A lines:
+        \\tQ.\\tquestion text
+        \\tA.\\tanswer text
+
+      Speaker label lines  (3 tabs + ALL-CAPS label + colon + 2 spaces + text):
+        \\t\\t\\tTHE REPORTER:  text
+        \\t\\t\\tMS.  MALONEY:  text
+        \\t\\t\\tMR.  DUNNELL:  Objection.  Form.
+        \\t\\t\\tDR.  KARAM:  text
+
+      Parenthetical lines  (4 tabs + parens):
+        \\t\\t\\t\\t(The witness was sworn.)
+
+      Examination headers (no leading whitespace):
+        EXAMINATION
+        BY MS.  MALONEY:
+
+    Labels that arrive from the AI with one trailing tab are silently
+    accepted and re-emitted in the canonical three-tab / two-space form.
+    Both the new (\\t\\t\\tLABEL:  text) and legacy (LABEL:\\ttext) AI formats
+    are accepted.
+    """
     lines: list[str] = []
     for raw_line in (formatted_text or "").splitlines():
         line = raw_line.rstrip()
+
+        # ── Empty lines ───────────────────────────────────────────────────────
         if not line:
             lines.append("")
             continue
 
+        # ── Dunnell mis-attribution fix ───────────────────────────────────────
+        # Billy Dunnell's appearance statement is sometimes labelled as a
+        # VIDEOGRAPHER block by Deepgram.  Relabel to MR.  DUNNELL.
+        # Two spaces after the honorific period (Morson's / Miah spec).
         dunnell_match = _DUNNELL_RE.match(line)
         if dunnell_match:
             lines.append(
-                f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}"
+                "\t\t\tMR.  DUNNELL:  "
+                + _normalize_body_text(dunnell_match.group("text"))
             )
             continue
 
-        if line.startswith("COURT REPORTER:\t"):
-            lines.append(
-                "THE REPORTER:\t"
-                + _normalize_body_text(line[len("COURT REPORTER:\t") :])
-            )
+        # ── COURT REPORTER → THE REPORTER ─────────────────────────────────────
+        # Strip any leading tabs before checking so both legacy and new AI
+        # output formats are caught.
+        stripped = line.lstrip("\t")
+        if stripped.startswith("COURT REPORTER:"):
+            body = stripped[len("COURT REPORTER:"):].lstrip("\t").lstrip()
+            lines.append("\t\t\tTHE REPORTER:  " + _normalize_body_text(body))
             continue
 
-        if line.startswith("VIDEOGRAPHER:\t"):
-            lines.append(
-                "THE VIDEOGRAPHER:\t"
-                + _normalize_body_text(line[len("VIDEOGRAPHER:\t") :])
-            )
+        # ── Bare VIDEOGRAPHER → THE VIDEOGRAPHER ──────────────────────────────
+        if stripped.startswith("VIDEOGRAPHER:") and not _DUNNELL_RE.match(line):
+            body = stripped[len("VIDEOGRAPHER:"):].lstrip("\t").lstrip()
+            lines.append("\t\t\tTHE VIDEOGRAPHER:  " + _normalize_body_text(body))
             continue
 
-        if line == "COURT REPORTER:":
-            lines.append("THE REPORTER:")
+        # ── Q. / A. lines ─────────────────────────────────────────────────────
+        # Accept both \tQ.\t (new, per prompt.py) and Q.\t (legacy).
+        qa_match = _QA_LINE_RE.match(line)
+        if qa_match:
+            label = qa_match.group("label")   # "Q" or "A"
+            body  = qa_match.group("text")
+            lines.append(f"\t{label}.\t{_normalize_body_text(body)}")
             continue
 
-        if line == "VIDEOGRAPHER:":
-            lines.append("THE VIDEOGRAPHER:")
+        # ── Parenthetical lines ───────────────────────────────────────────────
+        # Accept any number of leading tabs; always re-emit with four tabs.
+        paren_match = _PAREN_LINE_RE.match(line)
+        if paren_match:
+            content = paren_match.group("content").strip()
+            lines.append(f"\t\t\t\t({content})")
             continue
 
-        if line.startswith("Q.\t"):
-            lines.append("Q.\t" + _normalize_body_text(line[3:]))
-            continue
-
-        if line.startswith("A.\t"):
-            lines.append("A.\t" + _normalize_body_text(line[3:]))
-            continue
-
+        # ── Speaker label lines ───────────────────────────────────────────────
+        # Accept both legacy (LABEL:\ttext) and new (\t\t\tLABEL:  text).
+        # Re-emit as \t\t\tLABEL:  text with two spaces after the colon
+        # and two spaces after each honorific period (Miah spec).
         label_match = _LABEL_LINE_RE.match(line)
         if label_match:
             label = label_match.group("label").strip()
-            text = _normalize_body_text(label_match.group("text"))
-            lines.append(f"{label}:\t{text}")
+            text  = _normalize_body_text(label_match.group("text"))
+            lines.append(f"\t\t\t{label}:  {text}")
             continue
 
+        # ── Examination headers and BY lines ──────────────────────────────────
+        # These are flush-left: EXAMINATION / CROSS-EXAMINATION / BY MS. X:
+        # No leading whitespace, no trailing text (BY lines end with colon).
+        if stripped in (
+            "EXAMINATION", "CROSS-EXAMINATION", "REDIRECT EXAMINATION",
+            "RECROSS-EXAMINATION", "FURTHER EXAMINATION",
+        ):
+            lines.append(stripped)
+            continue
+
+        if stripped.startswith("BY ") and stripped.endswith(":"):
+            lines.append(stripped)
+            continue
+
+        # ── Fallback: normalise body text and pass through ────────────────────
         lines.append(_normalize_body_text(line))
 
-    return "\n".join(lines).strip()
+    # Collapse any run of more than one consecutive blank line to exactly one.
+    result_lines: list[str] = []
+    prev_blank = False
+    for line in lines:
+        is_blank = not line.strip()
+        if is_blank and prev_blank:
+            continue
+        result_lines.append(line)
+        prev_blank = is_blank
 
+    # Only trim trailing whitespace/blank lines. Leading tabs on the first
+    # line are semantically meaningful in the canonical output contract.
+    return "\n".join(result_lines).rstrip()
+
+
+# ── API client helpers ────────────────────────────────────────────────────────
 
 def _build_client(client: Any | None = None) -> Any:
     if client is not None:
@@ -290,6 +437,8 @@ def _build_client(client: Any | None = None) -> Any:
     return Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
+# ── Public API ────────────────────────────────────────────────────────────────
+
 def format_transcript(
     raw_text: str,
     case_meta: dict[str, Any],
@@ -300,7 +449,7 @@ def format_transcript(
     deepgram_words: list[dict[str, Any]] | None = None,
     low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> str:
-    """Backward-compatible wrapper for transcript cleanup."""
+    """Backward-compatible wrapper — returns formatted text only."""
     formatted_text, _ = format_transcript_with_status(
         raw_text,
         case_meta,
@@ -323,26 +472,31 @@ def format_transcript_with_status(
     deepgram_words: list[dict[str, Any]] | None = None,
     low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> tuple[str, dict[str, Any]]:
-    """Format a raw Deepgram transcript into clean-format text.
+    """Format a raw Deepgram transcript into canonical Miah Bardot / UFM output.
 
-    Step C: when ``deepgram_words`` is provided, tokens with confidence
-    below ``low_confidence_threshold`` are wrapped with ``‹LC:...›``
-    markers prior to the Anthropic cleanup pass. The system prompt
-    instructs the model to preserve those markers verbatim. Step D's
-    DOCX writer reads the markers to render yellow highlights.
-
-    When ``deepgram_words`` is None (default), behavior is unchanged.
+    Pipeline:
+      Step A  Inject ‹LC:word› markers for Deepgram tokens below the
+              confidence threshold (requires deepgram_words).
+      Step B  Split the marked text into ≤ CHUNK_CHAR_LIMIT chunks on
+              speaker-block boundaries.
+      Step C  Send each chunk to the AI with the system prompt and case
+              metadata.  The AI normalises speaker labels, Q./A. format,
+              and verbatim fidelity per prompt.py.
+      Step D  Postprocess each AI response: relabel COURT REPORTER →
+              THE REPORTER, VIDEOGRAPHER (Dunnell) → MR.  DUNNELL,
+              ensure canonical Q./A. and label tab/spacing format, apply
+              sentence double-spacing, dash normalisation, etc.
+      Step E  Validate marker round-trip and utterance retention ratio.
+      Step F  Join chunks and return.
     """
     marked_text = (
-        inject_markers(
-            raw_text, deepgram_words, threshold=low_confidence_threshold
-        )
+        inject_markers(raw_text, deepgram_words, threshold=low_confidence_threshold)
         if deepgram_words
         else raw_text
     )
     selected_model = model or AI_MODEL
     chunks = split_transcript(marked_text, max_chunk_chars=max_chunk_chars)
-    status = {
+    status: dict[str, Any] = {
         "schema_version": "1.0",
         "model": selected_model,
         "success": True,
@@ -359,6 +513,7 @@ def format_transcript_with_status(
 
     api_client = _build_client(client)
     rendered_chunks: list[str] = []
+
     for index, chunk in enumerate(chunks, start=1):
         response = api_client.messages.create(
             model=selected_model,
@@ -367,28 +522,35 @@ def format_transcript_with_status(
             messages=[
                 {
                     "role": "user",
-                    "content": build_user_message(chunk, case_meta, index, len(chunks)),
+                    "content": build_user_message(
+                        chunk, case_meta, index, len(chunks)
+                    ),
                 }
             ],
         )
         response_text = _response_text(response)
         stop_reason = _response_stop_reason(response)
+
         if stop_reason == "max_tokens":
             logger.error(
-                "Anthropic output truncated chunk_index=%s chunk_count=%s model=%s stop_reason=%s",
-                index,
-                len(chunks),
-                selected_model,
-                stop_reason,
+                "Anthropic output truncated chunk_index=%s chunk_count=%s "
+                "model=%s stop_reason=%s",
+                index, len(chunks), selected_model, stop_reason,
             )
             raise OutputTruncatedError(index, len(chunks), selected_model)
+
         if deepgram_words:
             validate_marker_round_trip(chunk, response_text)
+
         rendered_chunks.append(_postprocess_formatted_text(response_text))
 
-    final_text = "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
-    input_utterance_count = _count_input_utterances(marked_text)
+    final_text = (
+        "\n\n".join(part for part in rendered_chunks if part.strip()).rstrip()
+    )
+
+    input_utterance_count  = _count_input_utterances(marked_text)
     output_utterance_count = _count_output_utterances(final_text)
+
     if input_utterance_count > 0:
         ratio = output_utterance_count / input_utterance_count
         if ratio < MIN_UTTERANCE_RETENTION_DOCUMENT:
@@ -397,13 +559,17 @@ def format_transcript_with_status(
                 output_count=output_utterance_count,
                 threshold=MIN_UTTERANCE_RETENTION_DOCUMENT,
             )
-    status["input_utterance_count"] = input_utterance_count
+
+    status["input_utterance_count"]  = input_utterance_count
     status["output_utterance_count"] = output_utterance_count
     status["utterance_retention_ratio"] = (
-        output_utterance_count / input_utterance_count if input_utterance_count else 0.0
+        output_utterance_count / input_utterance_count
+        if input_utterance_count else 0.0
     )
     return final_text, status
 
+
+# ── Case metadata helpers ─────────────────────────────────────────────────────
 
 def _extract_city(attorney: dict[str, Any]) -> str:
     for key in ("city", "city_state_zip", "address"):
@@ -437,7 +603,9 @@ def _attorneys_from_ufm(ufm_fields: dict[str, Any]) -> list[dict[str, str]]:
 
 def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
     """Project existing job-config UFM data into the clean-format case metadata shape."""
-    witness_name = _normalize_whitespace(str(ufm_fields.get("witness_name", "") or ""))
+    witness_name = _normalize_whitespace(
+        str(ufm_fields.get("witness_name", "") or "")
+    )
     witness_core, _, witness_credentials = witness_name.partition(",")
     defendant_name = _normalize_whitespace(
         str(ufm_fields.get("defendant_name", "") or "")
@@ -448,7 +616,11 @@ def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
             str(ufm_fields.get("cause_number", "") or "")
         ),
         "court": _normalize_whitespace(
-            str(ufm_fields.get("court_caption") or ufm_fields.get("court_type") or "")
+            str(
+                ufm_fields.get("court_caption")
+                or ufm_fields.get("court_type")
+                or ""
+            )
         ),
         "county": _normalize_whitespace(str(ufm_fields.get("county", "") or "")),
         "judicial_district": _normalize_whitespace(
@@ -473,16 +645,18 @@ def build_case_meta_from_ufm(ufm_fields: dict[str, Any]) -> dict[str, Any]:
             str(ufm_fields.get("reporter_name", "") or "")
         ),
         "reporter_csr": _normalize_whitespace(
-            str(ufm_fields.get("reporter_csr") or ufm_fields.get("csr_number") or "")
+            str(
+                ufm_fields.get("reporter_csr")
+                or ufm_fields.get("csr_number")
+                or ""
+            )
         ),
         "attorneys": _attorneys_from_ufm(ufm_fields),
         "videographer_name": _normalize_whitespace(
             str(ufm_fields.get("videographer_name", "") or "")
         ),
-        # Phase 2 placeholders. The Start-Transcription job populates
-        # these from job_config.json (top-level keys, not nested in
-        # ufm_fields) at the _run_clean_format_job call site. Default
-        # empty so existing callers and tests still work.
+        # Phase 2 placeholders.  Populated from job_config.json at the
+        # _run_clean_format_job call site.  Defaults keep existing callers working.
         "confirmed_spellings": {},
         "deepgram_keyterms": [],
     }
@@ -498,15 +672,14 @@ def load_deepgram_words_from_json(
 ) -> list[dict[str, Any]] | None:
     """Load the Deepgram word array from a raw_deepgram.json file.
 
-    Returns the ``words`` list when present and non-empty; ``None`` in
-    every degraded case (file missing, JSON malformed, no ``words``
-    key, empty list). Never raises — callers can pass the result
-    directly to ``format_transcript(..., deepgram_words=...)`` and the
-    yellow-highlight pipeline degrades to "no markers" gracefully.
+    Returns the ``words`` list when present and non-empty; ``None`` in every
+    degraded case.  Never raises — callers pass the result directly to
+    ``format_transcript(..., deepgram_words=...)`` and the yellow-highlight
+    pipeline degrades gracefully to "no markers."
 
-    The schema expected matches what ``core/job_runner.py`` writes to
-    ``{case_dir}/Deepgram/raw_deepgram.json``: a dict with a top-level
-    ``"words"`` key holding a list of Deepgram word dicts.
+    Expected schema: dict with top-level ``"words"`` key holding a list of
+    Deepgram word dicts, as written by ``core/job_runner.py`` to
+    ``{case_dir}/Deepgram/raw_deepgram.json``.
     """
     try:
         with open(path, "r", encoding="utf-8") as handle:

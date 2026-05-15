@@ -334,80 +334,133 @@ def _format_transcript_for_txt(formatted_text: str) -> str:
     """
     Reformat clean-format output into a UFM-style plain-text view for Notepad
     and the in-app preview without introducing a second transcript pipeline.
+
+    Handles the canonical formatter.py output shapes:
+      \tQ.\tbody          (Q line)
+      \tA.\tbody          (A line)
+      \t\t\tLABEL:  body (speaker label — colon + two spaces, not tab)
+      \t\t\t\t(text)    (parenthetical)
+      EXAMINATION          (examination header — flush left)
+      BY MS.  NAME:        (by-line — flush left, ends with colon)
+
+    Also accepts the legacy shape Q.\t / A.\t (no leading tab) and
+    LABEL:\tbody (colon + tab) so the function works across pipeline
+    versions during rollout.
     """
-    blocks: list[dict[str, str]] = []
+    import re, textwrap
+
+    _SENTENCE_SPACING_RE = re.compile(r"([.!?])\s+")
+
+    def _normalize(text: str) -> str:
+        return _SENTENCE_SPACING_RE.sub(r"\1  ", " ".join((text or "").split()).strip())
+
+    EXAM_HEADERS = {
+        "EXAMINATION", "CROSS-EXAMINATION",
+        "REDIRECT EXAMINATION", "RECROSS-EXAMINATION", "FURTHER EXAMINATION",
+    }
+
+    blocks: list[dict] = []
+
     for raw_block in (formatted_text or "").split("\n\n"):
-        lines = [line.rstrip() for line in raw_block.splitlines() if line.strip()]
+        lines = [ln.rstrip() for ln in raw_block.splitlines() if ln.strip()]
         if not lines:
             continue
         line = lines[0]
-        if line.startswith("Q.\t"):
-            blocks.append({"type": "question", "speaker": "", "text": line[3:].strip()})
-        elif line.startswith("A.\t"):
-            blocks.append({"type": "answer", "speaker": "", "text": line[3:].strip()})
-        elif ":\t" in line:
+        stripped = line.lstrip("\t")
+
+        # ── Q / A ──────────────────────────────────────────────────────────
+        if stripped.startswith("Q.\t"):
+            blocks.append({"type": "question", "text": stripped[3:].strip()})
+            continue
+        if stripped.startswith("A.\t"):
+            blocks.append({"type": "answer", "text": stripped[3:].strip()})
+            continue
+
+        # ── Parenthetical ──────────────────────────────────────────────────
+        if line.startswith("\t\t\t\t") and stripped.startswith("("):
+            blocks.append({"type": "paren", "text": stripped})
+            continue
+
+        # ── Speaker label  (three tabs + LABEL:  body, colon+two-space sep)
+        if line.startswith("\t\t\t"):
+            body = line[3:]
+            colon_idx = body.find(":")
+            if colon_idx > 0:
+                label = body[:colon_idx].strip()
+                text = body[colon_idx + 1:].lstrip()
+                blocks.append({"type": "speaker", "speaker": label, "text": text})
+                continue
+            blocks.append({"type": "directive", "text": stripped})
+            continue
+
+        # ── Legacy: LABEL:\tbody ───────────────────────────────────────────
+        if ":\t" in line:
             label, text = line.split(":\t", 1)
-            blocks.append(
-                {
-                    "type": "speaker",
-                    "speaker": label.strip().upper(),
-                    "text": text.strip(),
-                }
-            )
-        elif line.endswith(":"):
-            blocks.append(
-                {"type": "directive", "speaker": "", "text": line.strip().upper()}
-            )
-        else:
-            blocks.append({"type": "speaker", "speaker": "", "text": line.strip()})
-
-    lines: list[str] = []
-    index = 0
-    while index < len(blocks):
-        block = blocks[index]
-        block_type = block["type"]
-        text = _normalize_preview_sentence_spacing(block["text"])
-
-        if block_type == "question":
-            lines.append(format_qa_for_plain_text("Q.", text))
-            index += 1
+            blocks.append({"type": "speaker",
+                            "speaker": label.strip().upper(),
+                            "text": text.strip()})
             continue
 
-        if block_type == "answer":
-            lines.append(format_qa_for_plain_text("A.", text))
-            lines.append("")
-            index += 1
+        # ── Examination header ─────────────────────────────────────────────
+        if stripped in EXAM_HEADERS:
+            blocks.append({"type": "directive", "text": stripped})
             continue
 
-        if block_type == "directive":
-            lines.append("")
-            lines.append(block["text"])
-            lines.append("")
-            index += 1
+        # ── BY-line ────────────────────────────────────────────────────────
+        if stripped.startswith("BY ") and stripped.rstrip().endswith(":"):
+            blocks.append({"type": "directive", "text": stripped})
             continue
 
-        speaker = block["speaker"]
-        if speaker:
-            lines.append(f"    {speaker}:")
-            while index < len(blocks):
-                current = blocks[index]
-                if current["type"] != "speaker" or current["speaker"] != speaker:
-                    break
-                lines.append(
-                    f"        {_normalize_preview_sentence_spacing(current['text'])}"
-                )
-                index += 1
-            lines.append("")
-            continue
+        # ── Fallback ───────────────────────────────────────────────────────
+        blocks.append({"type": "directive", "text": stripped})
 
-        lines.append(text)
-        index += 1
+    # ── Render to plain text ───────────────────────────────────────────────
+    first_prefix  = "        "   # 8 spaces before Q./A.
+    cont_prefix   = " " * 14    # continuation lines align under body
+    label_indent  = "    "      # 4 spaces for speaker labels
+    body_indent   = "        "  # 8 spaces for speaker body text
+    paren_indent  = "            "  # 12 spaces for parentheticals
 
-    # Trim only trailing blank lines / whitespace. Leading whitespace on
-    # the first line is meaningful — Q/A blocks start at column 8 and
-    # speaker labels at column 4 — so .strip() would silently break
-    # alignment when the document opens with a Q/A or labeled block.
-    return "\n".join(lines).rstrip()
+    def _wrap_qa(label: str, text: str) -> str:
+        prefix  = first_prefix + label + "    "
+        wrapped = textwrap.wrap(
+            text, width=75,
+            initial_indent=prefix,
+            subsequent_indent=cont_prefix,
+            break_long_words=False, break_on_hyphens=False,
+            replace_whitespace=False, drop_whitespace=True,
+        )
+        return "\n".join(wrapped)
+
+    output: list[str] = []
+    for block in blocks:
+        btype = block["type"]
+        text  = _normalize(block.get("text", ""))
+
+        if btype == "question":
+            output.append(_wrap_qa("Q.", text))
+
+        elif btype == "answer":
+            output.append(_wrap_qa("A.", text))
+            output.append("")
+
+        elif btype == "speaker":
+            speaker = block.get("speaker", "")
+            output.append(f"{label_indent}{speaker}:")
+            if text:
+                output.append(f"{body_indent}{text}")
+            output.append("")
+
+        elif btype == "paren":
+            output.append(f"{paren_indent}{text}")
+            output.append("")
+
+        elif btype == "directive":
+            output.append("")
+            output.append(text)
+            output.append("")
+
+    return "\n".join(output).rstrip()
 
 
 def _save_transcript_as_txt(transcript_text: str, docx_path: str) -> str:
@@ -2131,21 +2184,40 @@ class TranscribeTab(ctk.CTkFrame):
     def _set_preview_text(self, text: str) -> None:
         self._preview_text.configure(state="normal")
         self._preview_text.delete("1.0", "end")
+
+        EXAM_HEADERS = {
+            "EXAMINATION", "CROSS-EXAMINATION",
+            "REDIRECT EXAMINATION", "RECROSS-EXAMINATION", "FURTHER EXAMINATION",
+        }
+
         for line in str(text or "").splitlines():
+            stripped = line.lstrip("\t")
             tag = None
-            stripped = line.strip()
-            if line.startswith("\tQ.\t") or line.startswith("\tA.\t"):
+
+            # Q/A — new format (\tQ.\t / \tA.\t) or legacy (Q.\t / A.\t)
+            if stripped.startswith("Q.\t") or stripped.startswith("A.\t"):
                 tag = "qa"
-            elif stripped.startswith("BY ") and stripped.endswith(":"):
+
+            # Examination header or BY-line (flush left, bold in final DOCX)
+            elif stripped in EXAM_HEADERS:
                 tag = "directive"
-            elif line.startswith("    ") and stripped.endswith(":"):
+            elif stripped.startswith("BY ") and stripped.rstrip().endswith(":"):
+                tag = "directive"
+
+            # Speaker label (three leading tabs)
+            elif line.startswith("\t\t\t") and ":" in stripped:
                 tag = "speaker"
+
+            # Parenthetical (four leading tabs)
+            elif line.startswith("\t\t\t\t") and stripped.startswith("("):
+                tag = "directive"
 
             if tag:
                 self._preview_text.insert("end", line, tag)
             else:
                 self._preview_text.insert("end", line)
             self._preview_text.insert("end", "\n")
+
         self._preview_text.see("1.0")
         self._preview_text.configure(state="disabled")
 
@@ -2273,6 +2345,10 @@ class TranscribeTab(ctk.CTkFrame):
         if not isinstance(config_data, dict):
             return
 
+        # Rehydrate persisted intake artifacts so a reopened case reuses the
+        # same confirmed spellings and Deepgram keyterms on the next run.
+        self._confirmed_spellings = dict(config_data.get("confirmed_spellings", {}) or {})
+        self._pdf_keyterms = list(config_data.get("deepgram_keyterms", []) or [])
         self._speaker_map_suggestion = _normalize_ui_speaker_suggestion(
             config_data.get("speaker_map_suggestion", {})
         )

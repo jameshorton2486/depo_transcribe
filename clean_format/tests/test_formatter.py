@@ -42,6 +42,25 @@ class _FakeClient:
         self.messages = _FakeMessages(stop_reason=stop_reason, text=text)
 
 
+class _EchoMessages:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        content = kwargs["messages"][0]["content"]
+        marker = "Transcript chunk "
+        body_start = content.find(marker)
+        newline = content.find("\n", body_start)
+        text = content[newline + 1 :].rstrip()
+        return SimpleNamespace(content=[SimpleNamespace(text=text)], stop_reason="end_turn")
+
+
+class _EchoClient:
+    def __init__(self) -> None:
+        self.messages = _EchoMessages()
+
+
 def test_split_transcript_chunks_large_input_on_block_boundaries():
     raw_text = "\n\n".join(
         f"Speaker 0: block {index} " + ("x" * 80) for index in range(20)
@@ -75,22 +94,22 @@ def test_postprocess_formatted_text_applies_label_and_title_rules():
 
     result = _postprocess_formatted_text(text)
 
-    assert "THE REPORTER:\tDr. Bianca Caram is here." in result
-    assert "MR. DUNNELL:\tBilly Dunnell here on behalf of Dr. Karam." in result
-    assert "THE VIDEOGRAPHER:\tThe time is 8:12 a.m." in result
-    assert "Q.\tDid Dr. Brittany Anders speak with Ms. Kuipers?" in result
+    assert "\t\t\tTHE REPORTER:  Doctor Bianca Caram is here." in result
+    assert "\t\t\tMR.  DUNNELL:  Billy Dunnell here on behalf of Doctor Karam." in result
+    assert "\t\t\tTHE VIDEOGRAPHER:  The time is 8:12 a.m." in result
+    assert "\tQ.\tDid Doctor Brittany Anders speak with Miss Kuipers?" in result
 
 
 def test_postprocess_formatted_text_uses_two_spaces_after_sentence_endings():
     result = _postprocess_formatted_text("A.\tYes. no? maybe.")
-    assert result == "A.\tYes.  no?  maybe."
+    assert result == "\tA.\tYes.  no?  maybe."
 
 
 def test_postprocess_formatted_text_normalizes_interruption_dashes():
     result = _postprocess_formatted_text(
         "Q.\tOkay — if you need a break - let me know."
     )
-    assert result == "Q.\tOkay -- if you need a break - let me know."
+    assert result == "\tQ.\tOkay -- if you need a break - let me know."
 
 
 def test_format_transcript_raises_output_truncated_error_on_max_tokens(caplog):
@@ -103,14 +122,15 @@ def test_format_transcript_raises_output_truncated_error_on_max_tokens(caplog):
 def test_format_transcript_allows_non_truncated_stop_reason():
     client = _FakeClient(stop_reason="end_turn")
     result = format_transcript("Speaker 0: hello", {}, client=client)
-    assert result == "LABEL:\tchunk 1"
+    assert result == "\t\t\tLABEL:  chunk 1"
 
 
 def test_content_loss_gate_allows_ratio_above_threshold():
     raw_text = "\n\n".join(f"Speaker 0: line {n}" for n in range(100))
     output = "\n".join(f"LABEL:\tline {n}" for n in range(95))
     result = format_transcript(raw_text, {}, client=_FakeClient(text=output))
-    assert result == output
+    expected = "\n".join(f"\t\t\tLABEL:  line {n}" for n in range(95))
+    assert result == expected
 
 
 def test_content_loss_gate_raises_below_threshold():
@@ -122,7 +142,7 @@ def test_content_loss_gate_raises_below_threshold():
 
 def test_content_loss_gate_skips_zero_input_utterances():
     result = format_transcript("plain text with no speaker labels", {}, client=_FakeClient())
-    assert result == "LABEL:\tchunk 1"
+    assert result == "\t\t\tLABEL:  chunk 1"
 
 
 def test_utterance_count_regex_matches_speaker_fixture_shape():
@@ -132,13 +152,40 @@ def test_utterance_count_regex_matches_speaker_fixture_shape():
     assert _count_output_utterances(output) == 70
 
 
+def test_format_transcript_preserves_filler_words():
+    result = format_transcript("Speaker 0: Uh, yes, ma'am.", {}, client=_EchoClient())
+    assert "Uh, yes, ma'am." in result
+
+
+def test_format_transcript_preserves_stutters():
+    result = format_transcript(
+        "Speaker 0: I -- I don't remember.", {}, client=_EchoClient()
+    )
+    assert "I -- I don't remember." in result
+
+
+def test_format_transcript_preserves_repeated_words():
+    result = format_transcript(
+        "Speaker 0: Well, well, I think so.", {}, client=_EchoClient()
+    )
+    assert "Well, well, I think so." in result
+
+
+def test_format_transcript_preserves_false_starts():
+    result = format_transcript(
+        "Speaker 0: It was on Tues-- Wednesday.", {}, client=_EchoClient()
+    )
+    assert "Tues-- Wednesday" in result
+
+
 def test_format_transcript_with_status_returns_success_schema():
     raw_text = "\n\n".join(f"Speaker 0: line {n}" for n in range(100))
     output = "\n".join(f"LABEL:\tline {n}" for n in range(100))
     result, status = format_transcript_with_status(
         raw_text, {}, client=_FakeClient(text=output)
     )
-    assert result == output
+    expected = "\n".join(f"\t\t\tLABEL:  line {n}" for n in range(100))
+    assert result == expected
     assert status == {
         "schema_version": "1.0",
         "model": "claude-sonnet-4-6",

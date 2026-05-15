@@ -417,14 +417,10 @@ def run_transcription_job(
         deepgram_dir = out_dir / "Deepgram"
         deepgram_dir.mkdir(parents=True, exist_ok=True)
 
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = Path(audio_path).stem[:40]
-        txt_name = f"{base_name}_{stamp}.txt"
-        json_name = f"{base_name}_{stamp}.json"
-
-        txt_path = deepgram_dir / txt_name
-        json_path = deepgram_dir / json_name
-        raw_txt_path = deepgram_dir / f"{base_name}_{stamp}_raw.txt"
+        txt_path = deepgram_dir / f"{base_name}.txt"
+        json_path = deepgram_dir / f"{base_name}.json"
+        raw_txt_path = deepgram_dir / f"{base_name}_raw.txt"
         canonical_raw_txt_path = deepgram_dir / "raw_deepgram.txt"
 
         _safe_write_text(txt_path, transcript_text, _log)
@@ -463,7 +459,7 @@ def run_transcription_job(
         }
         _safe_write_json(json_path, json_data, _log)
 
-        raw_json_path = deepgram_dir / f"{base_name}_{stamp}_raw.json"
+        raw_json_path = deepgram_dir / f"{base_name}_raw.json"
         raw_data = {
             "audio_file": audio_path,
             "model": model,
