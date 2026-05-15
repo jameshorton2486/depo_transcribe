@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
 
-from core.config import AI_MODEL
+from core.config import AI_MODEL, MIN_UTTERANCE_RETENTION_DOCUMENT
 from config import ANTHROPIC_API_KEY, LOW_CONFIDENCE_THRESHOLD
 from clean_format.prompt import CLEAN_FORMAT_SYSTEM_PROMPT
 from clean_format.low_confidence_markers import (
@@ -29,10 +30,41 @@ _MISS_NAME_RE = re.compile(r"\bMiss Kuipers\b")
 _EM_DASH_RE = re.compile(r"\s*[—–]\s*")
 _SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
 _LABEL_LINE_RE = re.compile(r"^(?P<label>[A-Z][A-Z .'-]+):\t(?P<text>.*)$")
+_INPUT_UTTERANCE_RE = re.compile(r"^Speaker\s+\d+:", re.MULTILINE)
+_OUTPUT_UTTERANCE_RE = re.compile(r"^(?:Q\.|A\.|[A-Z][A-Z .]+:)\s*", re.MULTILINE)
 _DUNNELL_RE = re.compile(
     r"^((THE\s+)?VIDEOGRAPHER):\t(?P<text>Billy Dunnell here on behalf of .*)$",
     re.IGNORECASE,
 )
+logger = logging.getLogger(__name__)
+
+
+class OutputTruncatedError(RuntimeError):
+    """Raised when Anthropic returns stop_reason='max_tokens' for a chunk."""
+
+    def __init__(self, chunk_index: int, chunk_count: int, model: str):
+        self.chunk_index = chunk_index
+        self.chunk_count = chunk_count
+        self.model = model
+        super().__init__(
+            f"Output truncated at max_tokens on chunk {chunk_index}/{chunk_count} "
+            f"(model={model}). Cleanup aborted to prevent silent content loss."
+        )
+
+
+class ContentLossError(RuntimeError):
+    """Raised when the AI cleanup pass drops too many utterances."""
+
+    def __init__(self, input_count: int, output_count: int, threshold: float):
+        self.input_count = input_count
+        self.output_count = output_count
+        self.threshold = threshold
+        self.ratio = output_count / input_count if input_count else 0.0
+        super().__init__(
+            f"Content loss detected: {output_count}/{input_count} utterances "
+            f"({self.ratio:.1%}) below threshold {threshold:.0%}. "
+            f"Cleanup aborted to prevent silent content loss."
+        )
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -150,6 +182,23 @@ def _response_text(response: Any) -> str:
     return output
 
 
+def _response_stop_reason(response: Any) -> str:
+    """Return Anthropic response stop reason string, or empty string when unavailable."""
+    return getattr(response, "stop_reason", "") or ""
+
+
+def _count_input_utterances(text: str) -> int:
+    """Count Speaker N: lines in the raw input text."""
+    return len(_INPUT_UTTERANCE_RE.findall(text or ""))
+
+
+def _count_output_utterances(text: str) -> int:
+    """Count formatted utterance lines, including pass-through Speaker N: lines."""
+    output = text or ""
+    count = len(_OUTPUT_UTTERANCE_RE.findall(output))
+    return count or len(_INPUT_UTTERANCE_RE.findall(output))
+
+
 def _normalize_body_text(text: str) -> str:
     text = _DOCTOR_NAME_RE.sub("Dr. ", text)
     text = _MISS_NAME_RE.sub("Ms. Kuipers", text)
@@ -251,6 +300,29 @@ def format_transcript(
     deepgram_words: list[dict[str, Any]] | None = None,
     low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> str:
+    """Backward-compatible wrapper for transcript cleanup."""
+    formatted_text, _ = format_transcript_with_status(
+        raw_text,
+        case_meta,
+        client=client,
+        model=model,
+        max_chunk_chars=max_chunk_chars,
+        deepgram_words=deepgram_words,
+        low_confidence_threshold=low_confidence_threshold,
+    )
+    return formatted_text
+
+
+def format_transcript_with_status(
+    raw_text: str,
+    case_meta: dict[str, Any],
+    *,
+    client: Any | None = None,
+    model: str | None = None,
+    max_chunk_chars: int = CHUNK_CHAR_LIMIT,
+    deepgram_words: list[dict[str, Any]] | None = None,
+    low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
+) -> tuple[str, dict[str, Any]]:
     """Format a raw Deepgram transcript into clean-format text.
 
     Step C: when ``deepgram_words`` is provided, tokens with confidence
@@ -268,14 +340,25 @@ def format_transcript(
         if deepgram_words
         else raw_text
     )
+    selected_model = model or AI_MODEL
     chunks = split_transcript(marked_text, max_chunk_chars=max_chunk_chars)
+    status = {
+        "schema_version": "1.0",
+        "model": selected_model,
+        "success": True,
+        "failure_reason": None,
+        "input_utterance_count": 0,
+        "output_utterance_count": 0,
+        "utterance_retention_ratio": 0.0,
+        "chunk_count": len(chunks),
+        "chunks_truncated": [],
+        "errors": [],
+    }
     if not chunks:
-        return ""
+        return "", status
 
     api_client = _build_client(client)
     rendered_chunks: list[str] = []
-    selected_model = model or AI_MODEL
-
     for index, chunk in enumerate(chunks, start=1):
         response = api_client.messages.create(
             model=selected_model,
@@ -289,11 +372,37 @@ def format_transcript(
             ],
         )
         response_text = _response_text(response)
+        stop_reason = _response_stop_reason(response)
+        if stop_reason == "max_tokens":
+            logger.error(
+                "Anthropic output truncated chunk_index=%s chunk_count=%s model=%s stop_reason=%s",
+                index,
+                len(chunks),
+                selected_model,
+                stop_reason,
+            )
+            raise OutputTruncatedError(index, len(chunks), selected_model)
         if deepgram_words:
             validate_marker_round_trip(chunk, response_text)
         rendered_chunks.append(_postprocess_formatted_text(response_text))
 
-    return "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
+    final_text = "\n\n".join(part for part in rendered_chunks if part.strip()).strip()
+    input_utterance_count = _count_input_utterances(marked_text)
+    output_utterance_count = _count_output_utterances(final_text)
+    if input_utterance_count > 0:
+        ratio = output_utterance_count / input_utterance_count
+        if ratio < MIN_UTTERANCE_RETENTION_DOCUMENT:
+            raise ContentLossError(
+                input_count=input_utterance_count,
+                output_count=output_utterance_count,
+                threshold=MIN_UTTERANCE_RETENTION_DOCUMENT,
+            )
+    status["input_utterance_count"] = input_utterance_count
+    status["output_utterance_count"] = output_utterance_count
+    status["utterance_retention_ratio"] = (
+        output_utterance_count / input_utterance_count if input_utterance_count else 0.0
+    )
+    return final_text, status
 
 
 def _extract_city(attorney: dict[str, Any]) -> str:

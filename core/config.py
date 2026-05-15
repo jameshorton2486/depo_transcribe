@@ -16,6 +16,11 @@ it changes in one place and takes effect everywhere.
 # Used by core/intake_parser.py and core/pdf_extractor.py
 AI_MODEL = "claude-sonnet-4-6"
 
+# Defect #19: content-preservation gate for AI cleanup pass.
+# If post-cleanup utterance count drops below this fraction of input
+# utterance count, raise ContentLossError.
+MIN_UTTERANCE_RETENTION_DOCUMENT = 0.90
+
 # ── Job Config File ───────────────────────────────────────────────────────────
 # Single source-of-truth file per deposition case.
 # Location: {case_root}/source_docs/job_config.json

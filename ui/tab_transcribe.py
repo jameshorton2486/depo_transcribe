@@ -13,7 +13,7 @@ import subprocess
 import textwrap
 import threading
 import tkinter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
@@ -37,6 +37,16 @@ from ui._components import (
 from app_logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _write_cleanup_status_sidecar(case_dir: Path, status: dict[str, Any]) -> None:
+    """Write cleanup_status.json to case folder. Log and continue on any IO error."""
+    try:
+        (case_dir / "cleanup_status.json").write_text(
+            json.dumps(status, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        logger.exception("[TranscribeTab] failed to write cleanup_status.json")
 
 
 # Default output directory
@@ -3624,8 +3634,17 @@ class TranscribeTab(ctk.CTkFrame):
     def _run_clean_format_job(self, result: dict) -> None:
         try:
             from clean_format import format_transcript, write_deposition_docx
-            from clean_format.formatter import load_deepgram_words_from_json
+            from clean_format.formatter import (
+                ContentLossError,
+                OutputTruncatedError,
+                _count_input_utterances,
+                _count_output_utterances,
+                format_transcript as format_transcript_wrapper,
+                format_transcript_with_status,
+                load_deepgram_words_from_json,
+            )
             from clean_format.low_confidence_markers import MarkerDriftError
+            from core.config import AI_MODEL
 
             case_dir = Path(result.get("output_dir") or "")
             raw_path = Path(
@@ -3633,6 +3652,7 @@ class TranscribeTab(ctk.CTkFrame):
             )
             case_meta = self._build_clean_format_case_meta()
             raw_text = raw_path.read_text(encoding="utf-8")
+            selected_model = AI_MODEL
 
             case_meta_path = case_dir / "case_meta.json"
             case_meta_path.write_text(
@@ -3649,9 +3669,30 @@ class TranscribeTab(ctk.CTkFrame):
             deepgram_words = load_deepgram_words_from_json(
                 case_dir / "Deepgram" / "raw_deepgram.json"
             )
-            formatted_text = format_transcript(
-                raw_text, case_meta, deepgram_words=deepgram_words
-            )
+            if format_transcript is format_transcript_wrapper:
+                formatted_text, status = format_transcript_with_status(
+                    raw_text, case_meta, deepgram_words=deepgram_words
+                )
+            else:
+                formatted_text = format_transcript(
+                    raw_text, case_meta, deepgram_words=deepgram_words
+                )
+                input_count = _count_input_utterances(raw_text)
+                output_count = _count_output_utterances(formatted_text)
+                status = {
+                    "schema_version": "1.0",
+                    "model": selected_model,
+                    "success": True,
+                    "failure_reason": None,
+                    "input_utterance_count": input_count,
+                    "output_utterance_count": output_count,
+                    "utterance_retention_ratio": (
+                        output_count / input_count if input_count else 0.0
+                    ),
+                    "chunk_count": None,
+                    "chunks_truncated": [],
+                    "errors": [],
+                }
 
             # Optional walkthrough capture (no-op when WALKTHROUGH_CAPTURE unset).
             from tools.walkthrough import capture_stage
@@ -3668,6 +3709,11 @@ class TranscribeTab(ctk.CTkFrame):
             docx_path = case_dir / f"{witness_last}_Deposition_{date_part}.docx"
             saved_path = write_deposition_docx(formatted_text, case_meta, docx_path)
             capture_stage(case_dir, "03_docx_text", saved_path)
+            status["timestamp_utc"] = datetime.now(timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            status["case_folder"] = str(case_dir)
+            _write_cleanup_status_sidecar(case_dir, status)
 
             self.after(
                 0,
@@ -3687,6 +3733,23 @@ class TranscribeTab(ctk.CTkFrame):
             # grep-able for later threshold tuning.
             logger.exception("[TranscribeTab] clean_format failed: marker drift")
             logger.warning("marker_drift_stats: %s", exc.stats)
+            _write_cleanup_status_sidecar(
+                case_dir,
+                {
+                    "schema_version": "1.0",
+                    "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "case_folder": str(case_dir),
+                    "model": selected_model,
+                    "success": False,
+                    "failure_reason": "marker_drift",
+                    "input_utterance_count": (exc.stats or {}).get("input_count"),
+                    "output_utterance_count": (exc.stats or {}).get("output_count"),
+                    "utterance_retention_ratio": None,
+                    "chunk_count": None,
+                    "chunks_truncated": [],
+                    "errors": [str(exc)],
+                },
+            )
             self.after(
                 0,
                 self._on_clean_format_done,
@@ -3696,8 +3759,81 @@ class TranscribeTab(ctk.CTkFrame):
                     "marker_drift": True,
                 },
             )
+        except OutputTruncatedError as exc:
+            logger.exception("[TranscribeTab] clean_format failed: output truncated")
+            _write_cleanup_status_sidecar(
+                case_dir,
+                {
+                    "schema_version": "1.0",
+                    "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "case_folder": str(case_dir),
+                    "model": exc.model,
+                    "success": False,
+                    "failure_reason": "output_truncated",
+                    "input_utterance_count": None,
+                    "output_utterance_count": None,
+                    "utterance_retention_ratio": None,
+                    "chunk_count": exc.chunk_count,
+                    "chunks_truncated": [exc.chunk_index],
+                    "errors": [str(exc)],
+                },
+            )
+            self.after(
+                0,
+                self._on_clean_format_done,
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "output_truncated": True,
+                },
+            )
+        except ContentLossError as exc:
+            logger.exception("[TranscribeTab] clean_format failed: content loss")
+            _write_cleanup_status_sidecar(
+                case_dir,
+                {
+                    "schema_version": "1.0",
+                    "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "case_folder": str(case_dir),
+                    "model": selected_model,
+                    "success": False,
+                    "failure_reason": "content_loss",
+                    "input_utterance_count": exc.input_count,
+                    "output_utterance_count": exc.output_count,
+                    "utterance_retention_ratio": exc.ratio,
+                    "chunk_count": None,
+                    "chunks_truncated": [],
+                    "errors": [str(exc)],
+                },
+            )
+            self.after(
+                0,
+                self._on_clean_format_done,
+                {
+                    "success": False,
+                    "error": str(exc),
+                    "content_loss": True,
+                },
+            )
         except Exception as exc:
             logger.exception("[TranscribeTab] clean_format failed")
+            _write_cleanup_status_sidecar(
+                case_dir,
+                {
+                    "schema_version": "1.0",
+                    "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "case_folder": str(case_dir),
+                    "model": selected_model,
+                    "success": False,
+                    "failure_reason": "unknown_exception",
+                    "input_utterance_count": None,
+                    "output_utterance_count": None,
+                    "utterance_retention_ratio": None,
+                    "chunk_count": None,
+                    "chunks_truncated": [],
+                    "errors": [str(exc)],
+                },
+            )
             self.after(
                 0, self._on_clean_format_done, {"success": False, "error": str(exc)}
             )
