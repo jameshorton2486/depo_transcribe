@@ -139,16 +139,17 @@ def build_user_message(
     )
 
 
-def _response_text(response: Any) -> str:
+def _response_text(response: Any) -> tuple[str, str | None]:
     parts = []
     for item in getattr(response, "content", []) or []:
         text = getattr(item, "text", "")
         if text:
             parts.append(text)
     output = "\n".join(parts).strip()
+    stop_reason = getattr(response, "stop_reason", None)
     if not output:
         raise RuntimeError("Anthropic response did not include text content")
-    return output
+    return output, stop_reason
 
 
 def _normalize_body_text(text: str) -> str:
@@ -314,7 +315,10 @@ def format_transcript(
                 }
             ],
         )
-        response_text = _response_text(response)
+        response_text, stop_reason = _response_text(response)
+        if stop_reason == "max_tokens":
+            rendered_chunks.append(_verbatim_fallback_for_chunk(chunk))
+            continue
         if deepgram_words:
             validate_marker_round_trip(chunk, response_text)
         source_tokens = _token_count(chunk)

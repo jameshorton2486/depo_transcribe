@@ -96,3 +96,25 @@ def test_format_transcript_falls_back_when_model_drops_chunk_content():
     assert "Q.\tshort output." not in result
     assert "Speaker 0:" in result
     assert "word159" in result
+
+
+def test_format_transcript_falls_back_when_model_hits_max_tokens_stop_reason():
+    class _TruncatedMessages:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(
+                content=[SimpleNamespace(text="Q.\tpartial")], stop_reason="max_tokens"
+            )
+
+    class _TruncatedClient:
+        def __init__(self) -> None:
+            self.messages = _TruncatedMessages()
+
+    raw_text = "Speaker 3: " + " ".join(f"word{i}" for i in range(120))
+    result = format_transcript(raw_text, {}, client=_TruncatedClient())
+    assert "Q.\tpartial" not in result
+    assert "Speaker 3:" in result
+    assert "word119" in result
