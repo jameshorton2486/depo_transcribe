@@ -76,3 +76,23 @@ def test_postprocess_formatted_text_normalizes_interruption_dashes():
         "Q.\tOkay — if you need a break - let me know."
     )
     assert result == "Q.\tOkay -- if you need a break - let me know."
+
+
+def test_format_transcript_falls_back_when_model_drops_chunk_content():
+    class _DroppingMessages:
+        def __init__(self) -> None:
+            self.calls: list[dict] = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(content=[SimpleNamespace(text="Q.\tshort output.")])
+
+    class _DroppingClient:
+        def __init__(self) -> None:
+            self.messages = _DroppingMessages()
+
+    raw_text = "Speaker 0: " + " ".join(f"word{i}" for i in range(160))
+    result = format_transcript(raw_text, {}, client=_DroppingClient())
+    assert "Q.\tshort output." not in result
+    assert "Speaker 0:" in result
+    assert "word159" in result
