@@ -66,6 +66,16 @@ def test_postprocess_formatted_text_applies_label_and_title_rules():
     assert "Q.\tDid Dr. Brittany Anders speak with Ms. Kuipers?" in result
 
 
+def test_postprocess_formatted_text_normalizes_the_court_reporter_label():
+    result = _postprocess_formatted_text("THE COURT REPORTER:\tPlease raise your right hand.")
+    assert result == "THE REPORTER:\tPlease raise your right hand."
+
+
+def test_postprocess_formatted_text_preserves_single_space_in_mr_label():
+    result = _postprocess_formatted_text("MR. DUNNELL:\tstate your appearance.")
+    assert result == "MR. DUNNELL:\tstate your appearance."
+
+
 def test_postprocess_formatted_text_uses_two_spaces_after_sentence_endings():
     result = _postprocess_formatted_text("A.\tYes. no? maybe.")
     assert result == "A.\tYes.  no?  maybe."

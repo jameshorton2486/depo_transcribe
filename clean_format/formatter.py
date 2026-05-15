@@ -191,25 +191,27 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
             )
             continue
 
-        if line.startswith("COURT REPORTER:\t"):
+        if line.startswith("COURT REPORTER:\t") or line.startswith("THE COURT REPORTER:\t"):
+            prefix = "COURT REPORTER:\t" if line.startswith("COURT REPORTER:\t") else "THE COURT REPORTER:\t"
             lines.append(
                 "THE REPORTER:\t"
-                + _normalize_body_text(line[len("COURT REPORTER:\t") :])
+                + _normalize_body_text(line[len(prefix) :])
             )
             continue
 
-        if line.startswith("VIDEOGRAPHER:\t"):
+        if line.startswith("VIDEOGRAPHER:\t") or line.startswith("THE VIDEOGRAPHER:\t"):
+            prefix = "VIDEOGRAPHER:\t" if line.startswith("VIDEOGRAPHER:\t") else "THE VIDEOGRAPHER:\t"
             lines.append(
                 "THE VIDEOGRAPHER:\t"
-                + _normalize_body_text(line[len("VIDEOGRAPHER:\t") :])
+                + _normalize_body_text(line[len(prefix) :])
             )
             continue
 
-        if line == "COURT REPORTER:":
+        if line in {"COURT REPORTER:", "THE COURT REPORTER:"}:
             lines.append("THE REPORTER:")
             continue
 
-        if line == "VIDEOGRAPHER:":
+        if line in {"VIDEOGRAPHER:", "THE VIDEOGRAPHER:"}:
             lines.append("THE VIDEOGRAPHER:")
             continue
 
