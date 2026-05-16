@@ -52,3 +52,4 @@ training_corpus/*
 # The PDFs themselves are tracked as design references for the
 # ufm_engine/templates/figures/*.docx generators.
 ufm_template/settings.local.json
+prompt_HEAD.txt
