@@ -49,10 +49,13 @@ _SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
 # normaliser above; protect it with a placeholder round-trip.
 _MIDWORD_FALSE_START_RE = re.compile(r"(?<=\w)--(?=\s*[A-Za-z])")
 
-# Honorific double-space rule: MR./MS./DR. inside ALL-CAPS speaker labels
-# must be followed by two spaces (canonical UFM / Miah Bardot spec).
-# Example: "MR. DUNNELL" → "MR.  DUNNELL"
-_HONORIFIC_DOUBLE_SPACE_RE = re.compile(r"\b(MR|MS|DR)\.\s+(?=[A-Z])")
+# Honorific spacing rule: MR./MS./DR. inside ALL-CAPS speaker labels must
+# be followed by exactly one space (canonical UFM / Miah Bardot spec,
+# confirmed by James 2026-05-15). Collapses any pre-existing wider spacing
+# back down to a single space.
+# Example: "MR.  DUNNELL" → "MR. DUNNELL"
+# Example: "MR. DUNNELL"  → "MR. DUNNELL"  (idempotent)
+_HONORIFIC_SPACING_RE = re.compile(r"\b(MR|MS|DR)\.\s+(?=[A-Z])")
 
 # ── Line-type detection regexes ───────────────────────────────────────────────
 # Q/A lines: canonical input is "\tQ.\t…" / "\tA.\t…"; the formatter also
@@ -313,16 +316,17 @@ def _normalize_body_text(text: str) -> str:
 
 def _normalize_label_honorifics(label: str) -> str:
     """
-    Apply the two-spaces-after-honorific rule for ALL-CAPS speaker labels.
+    Apply the single-space-after-honorific rule for ALL-CAPS speaker labels.
 
-    Canonical UFM / Miah Bardot spec:
-      MR. DUNNELL  → MR.  DUNNELL
-      MS. MALONEY  → MS.  MALONEY
-      DR. KARAM    → DR.  KARAM
-    Already-double-spaced input is preserved (regex matches "one or more"
-    whitespace and replaces with exactly two spaces).
+    Canonical UFM / Miah Bardot spec (confirmed by James 2026-05-15):
+      MR.  DUNNELL → MR. DUNNELL
+      MS.  MALONEY → MS. MALONEY
+      DR.  KARAM   → DR. KARAM
+    Collapses any whitespace run between an honorific period and the
+    following capital letter to exactly one space. Idempotent on input
+    that is already single-spaced.
     """
-    return _HONORIFIC_DOUBLE_SPACE_RE.sub(lambda m: f"{m.group(1)}.  ", label)
+    return _HONORIFIC_SPACING_RE.sub(lambda m: f"{m.group(1)}. ", label)
 
 
 def _emit_canonical_qa(label_letter: str, text: str) -> str:
@@ -359,7 +363,7 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
       Q/A:           \\tQ.\\t{text}    /    \\tA.\\t{text}
       Speaker:       \\t\\t\\t{LABEL}:  {text}   (two spaces after colon)
       Parenthetical: \\t\\t\\t\\t({text}.)        (four leading tabs)
-      Honorifics:    MR.  / MS.  / DR.  (two spaces after period)
+      Honorifics:    MR. / MS. / DR. (one space after period)
 
     The function accepts both canonical input (already conforming) and the
     legacy intermediate shape ("Q.\\t…", "LABEL:\\t…") and converts every
@@ -374,12 +378,12 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
 
         # ── Dunnell mis-attribution rescue ──
         # VIDEOGRAPHER block saying "Billy Dunnell here on behalf of..." is
-        # relabeled to MR.  DUNNELL with canonical 3-tab prefix and double
+        # relabeled to MR. DUNNELL with canonical 3-tab prefix and single
         # space inside the honorific label.
         dunnell_match = _DUNNELL_RE.match(line)
         if dunnell_match:
             lines.append(
-                _emit_canonical_speaker("MR.  DUNNELL", dunnell_match.group("text"))
+                _emit_canonical_speaker("MR. DUNNELL", dunnell_match.group("text"))
             )
             continue
 

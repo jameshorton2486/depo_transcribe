@@ -137,14 +137,24 @@ def test_postprocess_emits_canonical_speaker_three_tabs_two_spaces_after_colon()
     assert result == "\t\t\tTHE WITNESS:  Yes."
 
 
-def test_postprocess_normalizes_honorific_to_double_space_after_period():
-    """Canonical honorifics MR./MS./DR. take two spaces after the period in labels."""
+def test_postprocess_normalizes_honorific_to_single_space_after_period():
+    """Canonical honorifics MR./MS./DR. take ONE space after the period in labels.
+
+    Confirmed by James 2026-05-15: single space is the canonical UFM /
+    Miah Bardot rule. The two-spaces-after-colon rule is unchanged.
+    """
+    # Single-space input is preserved
     assert _postprocess_formatted_text("MR. DUNNELL:\tObjection. Form.") == \
-           "\t\t\tMR.  DUNNELL:  Objection.  Form."
+           "\t\t\tMR. DUNNELL:  Objection.  Form."
     assert _postprocess_formatted_text("MS. MALONEY:\tWhat year was this?") == \
-           "\t\t\tMS.  MALONEY:  What year was this?"
+           "\t\t\tMS. MALONEY:  What year was this?"
     assert _postprocess_formatted_text("DR. KARAM:\tI am.") == \
-           "\t\t\tDR.  KARAM:  I am."
+           "\t\t\tDR. KARAM:  I am."
+    # Double-space input is collapsed down to single space (recovery path)
+    assert _postprocess_formatted_text("MR.  DUNNELL:\tObjection.") == \
+           "\t\t\tMR. DUNNELL:  Objection."
+    assert _postprocess_formatted_text("MS.  MALONEY:\tHello.") == \
+           "\t\t\tMS. MALONEY:  Hello."
 
 
 def test_postprocess_normalizes_court_reporter_variants_to_the_reporter():
@@ -166,11 +176,11 @@ def test_postprocess_normalizes_bare_videographer_to_the_videographer():
 
 
 def test_postprocess_rescues_dunnell_misattributed_to_videographer():
-    """VIDEOGRAPHER block saying 'Billy Dunnell here on behalf of…' is relabeled to MR.  DUNNELL."""
+    """VIDEOGRAPHER block saying 'Billy Dunnell here on behalf of…' is relabeled to MR. DUNNELL."""
     result = _postprocess_formatted_text(
         "VIDEOGRAPHER:\tBilly Dunnell here on behalf of Dr. Karam."
     )
-    assert result == "\t\t\tMR.  DUNNELL:  Billy Dunnell here on behalf of Dr. Karam."
+    assert result == "\t\t\tMR. DUNNELL:  Billy Dunnell here on behalf of Dr. Karam."
 
 
 def test_postprocess_emits_canonical_parenthetical_four_tabs():
@@ -190,8 +200,8 @@ def test_postprocess_round_trips_already_canonical_input():
     """Canonical input should pass through unchanged (idempotency)."""
     assert _postprocess_formatted_text("\tQ.\tAlready canonical.") == \
            "\tQ.\tAlready canonical."
-    assert _postprocess_formatted_text("\t\t\tMS.  MALONEY:  Already canonical.") == \
-           "\t\t\tMS.  MALONEY:  Already canonical."
+    assert _postprocess_formatted_text("\t\t\tMS. MALONEY:  Already canonical.") == \
+           "\t\t\tMS. MALONEY:  Already canonical."
     assert _postprocess_formatted_text("\t\t\t\t(Already canonical.)") == \
            "\t\t\t\t(Already canonical.)"
 
@@ -208,7 +218,7 @@ def test_postprocess_applies_label_and_title_rules_across_full_block():
     result = _postprocess_formatted_text(text)
 
     assert "\t\t\tTHE REPORTER:  Dr. Bianca Caram is here." in result
-    assert "\t\t\tMR.  DUNNELL:  Billy Dunnell here on behalf of Dr. Karam." in result
+    assert "\t\t\tMR. DUNNELL:  Billy Dunnell here on behalf of Dr. Karam." in result
     assert "\t\t\tTHE VIDEOGRAPHER:  The time is 8:12 a.m." in result
     assert "\tQ.\tDid Dr. Brittany Anders speak with Ms. Kuipers?" in result
 
