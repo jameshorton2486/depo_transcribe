@@ -223,14 +223,14 @@ A. FORMAT  (one tab + A. + TWO SPACES + text):
 
 EXAMINATION HEADER (left-aligned, bold in final DOCX, no punctuation):
   EXAMINATION
-  BY MS.  MALONEY:
+  BY MS. MALONEY:
 
 For subsequent examinations:
   CROSS-EXAMINATION
-  BY MR.  DUNNELL:
+  BY MR. DUNNELL:
 
   REDIRECT EXAMINATION
-  BY MS.  MALONEY:
+  BY MS. MALONEY:
 
 Use "EXAMINATION" (not "DIRECT EXAMINATION") unless specified on the record.
 
@@ -495,7 +495,7 @@ OUTPUT FORMAT (exact, no exceptions):
 
   Examination headers (bold in DOCX, left-aligned, no punctuation):
     EXAMINATION
-    BY MS.  MALONEY:
+    BY MS. MALONEY:
 
   Parentheticals (four tabs):
     [TAB][TAB][TAB][TAB](The witness was sworn.)
