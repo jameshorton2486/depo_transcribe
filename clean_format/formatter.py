@@ -8,13 +8,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from core.config import AI_MODEL, MIN_UTTERANCE_RETENTION_DOCUMENT
-from config import ANTHROPIC_API_KEY, LOW_CONFIDENCE_THRESHOLD
-from clean_format.prompt import CLEAN_FORMAT_SYSTEM_PROMPT
 from clean_format.low_confidence_markers import (
     inject_markers,
     validate_marker_round_trip,
 )
+from clean_format.prompt import CLEAN_FORMAT_SYSTEM_PROMPT
+from config import ANTHROPIC_API_KEY, LOW_CONFIDENCE_THRESHOLD
+from core.config import AI_MODEL, MIN_UTTERANCE_RETENTION_DOCUMENT
 
 try:
     from anthropic import Anthropic
@@ -22,10 +22,13 @@ except ImportError:  # pragma: no cover
     Anthropic = None  # type: ignore[assignment]
 
 CHUNK_CHAR_LIMIT = 80_000
-# Raised from 8,192 after real transcript runs hit stop_reason=max_tokens on
-# multi-chunk clean-format jobs. Keep this a bounded increase rather than
-# introducing new orchestration here.
-MAX_TOKENS = 12_288
+# Sonnet 4.6 synchronous Messages API hard cap is 64,000 output tokens; we
+# stay well below that. 32,768 gives ~2.6x headroom over the prior 12,288
+# value, which was insufficient for 80,000-char input chunks where the
+# cleaned output is roughly the same size as the input. Raising max_tokens
+# has no rate-limit downside per Anthropic docs — only actually-generated
+# output tokens count against OTPM.
+MAX_TOKENS = 32_768
 
 # ── Sentence / punctuation normalisation ─────────────────────────────────────
 # Two spaces after sentence-ending . or ? before the next non-space character.
@@ -46,35 +49,43 @@ _SPACED_DOUBLE_HYPHEN_RE = re.compile(r"\s*--\s*")
 # normaliser above; protect it with a placeholder round-trip.
 _MIDWORD_FALSE_START_RE = re.compile(r"(?<=\w)--(?=\s*[A-Za-z])")
 
+# Honorific double-space rule: MR./MS./DR. inside ALL-CAPS speaker labels
+# must be followed by two spaces (canonical UFM / Miah Bardot spec).
+# Example: "MR. DUNNELL" → "MR.  DUNNELL"
+_HONORIFIC_DOUBLE_SPACE_RE = re.compile(r"\b(MR|MS|DR)\.\s+(?=[A-Z])")
+
 # ── Line-type detection regexes ───────────────────────────────────────────────
-# Q/A lines from the AI arrive as \tQ.\t… or \tA.\t… (per prompt.py §4 / §11).
-# A bare "Q.\t" or "A.\t" (no leading tab) is the legacy format; we handle
-# both so the formatter is backward-compatible during rollout.
+# Q/A lines: canonical input is "\tQ.\t…" / "\tA.\t…"; the formatter also
+# tolerates the legacy bare "Q.\t…" / "A.\t…" form from older AI prompts.
 _QA_LINE_RE = re.compile(r"^\t?(?P<label>[QA])\.\t(?P<text>.*)$")
 
-# Speaker label lines: one or more leading tabs, then ALL-CAPS label, colon,
-# one or two spaces or a tab, then body text.  Matches both the new format
-# (\t\t\tMS.  MALONEY:  text) and the legacy format (LABEL:\ttext).
+# Speaker label lines: zero or more leading tabs, then ALL-CAPS label, colon,
+# then either one tab (legacy intermediate) or one-or-more spaces (canonical
+# "two spaces after colon" form). The output is always canonical regardless
+# of which input variant matched.
 _LABEL_LINE_RE = re.compile(
-    r"^\t*(?P<label>[A-Z][A-Z .'\-]+?):\s+(?P<text>.+)$"
+    r"^\t*(?P<label>[A-Z][A-Z .'\-]+?):[ \t]+(?P<text>.+)$"
 )
 
-# Parenthetical lines: four leading tabs then (…)  OR  bare (…).
-_PAREN_LINE_RE = re.compile(r"^\t*\((?P<content>[^)]+)\)\s*$")
+# Parenthetical lines: any leading tabs, then (…). Canonical output is four
+# leading tabs.
+_PAREN_LINE_RE = re.compile(r"^\t*\((?P<content>[^)]+\.?)\)\s*$")
 
 # Raw Deepgram "Speaker N:" lines in the input (used to count utterances).
 _INPUT_UTTERANCE_RE = re.compile(r"^Speaker\s+\d+:", re.MULTILINE)
 
 # Formatted utterance lines in the output (used to verify retention).
-# Counts \tQ.\t, \tA.\t, and \t\t\tLABEL: patterns.
+# Counts canonical "\tQ.\t", "\tA.\t", and "\t\t\tLABEL:" patterns,
+# plus legacy variants for tolerance during the cutover.
 _OUTPUT_UTTERANCE_RE = re.compile(
-    r"^\t?(?:Q|A)\.\t|^\t{0,3}[A-Z][A-Z .'\-]+:\s",
+    r"^\t?(?:Q|A)\.\t|^\t{0,3}[A-Z][A-Z .'\-]+:[ \t]",
     re.MULTILINE,
 )
 
 # Dunnell mis-attribution: Deepgram sometimes labels Billy Dunnell's
 # appearance statement as a VIDEOGRAPHER block.  Detect and relabel.
-# Handles both legacy format (VIDEOGRAPHER:\t) and new (\t\t\tTHE VIDEOGRAPHER:  ).
+# Handles both legacy ("VIDEOGRAPHER:\t…") and canonical
+# ("\t\t\tTHE VIDEOGRAPHER:  …") input shapes.
 _DUNNELL_RE = re.compile(
     r"^\t*(?:THE\s+)?VIDEOGRAPHER:\s+(?P<text>Billy\s+Dunnell\s+here\s+on\s+behalf\s+of\s+.*)$",
     re.IGNORECASE,
@@ -123,7 +134,7 @@ def _speaker_blocks(raw_text: str) -> list[str]:
 
 
 def split_transcript(
-    raw_text: str, max_chunk_chars: int = CHUNK_CHAR_LIMIT
+        raw_text: str, max_chunk_chars: int = CHUNK_CHAR_LIMIT
 ) -> list[str]:
     """Split raw speaker blocks into chunks near the requested character limit."""
     blocks = _speaker_blocks(raw_text)
@@ -202,7 +213,7 @@ def _case_meta_for_prompt(case_meta: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_user_message(
-    chunk: str, case_meta: dict[str, Any], chunk_index: int, chunk_count: int
+        chunk: str, case_meta: dict[str, Any], chunk_index: int, chunk_count: int
 ) -> str:
     meta_json = json.dumps(
         _case_meta_for_prompt(case_meta), indent=2, ensure_ascii=False
@@ -251,9 +262,8 @@ def _normalize_body_text(text: str) -> str:
     4. Normalise any existing "--" spacing to exactly " -- ".
     5. Protect common lowercase title abbreviations so their trailing period
        is NOT double-spaced (Dr., Mr., Ms., Mrs. → one space, not two).
-       Uppercase honorifics (MR., MS., DR.) intentionally receive two spaces
-       from the sentence-spacing rule in step 6, which is the correct
-       Miah format: "MR.  MALONEY" not "MR. MALONEY".
+       Uppercase honorifics inside labels are handled separately at label
+       emission time.
     6. Apply two-space rule after every sentence-ending . ? ! before the next
        non-space character.
     7. Restore the protected title tokens.
@@ -301,7 +311,60 @@ def _normalize_body_text(text: str) -> str:
     return text
 
 
+def _normalize_label_honorifics(label: str) -> str:
+    """
+    Apply the two-spaces-after-honorific rule for ALL-CAPS speaker labels.
+
+    Canonical UFM / Miah Bardot spec:
+      MR. DUNNELL  → MR.  DUNNELL
+      MS. MALONEY  → MS.  MALONEY
+      DR. KARAM    → DR.  KARAM
+    Already-double-spaced input is preserved (regex matches "one or more"
+    whitespace and replaces with exactly two spaces).
+    """
+    return _HONORIFIC_DOUBLE_SPACE_RE.sub(lambda m: f"{m.group(1)}.  ", label)
+
+
+def _emit_canonical_qa(label_letter: str, text: str) -> str:
+    """Emit a canonical Q. or A. line: \\tQ.\\t<text> or \\tA.\\t<text>."""
+    return f"\t{label_letter}.\t{_normalize_body_text(text)}"
+
+
+def _emit_canonical_speaker(label: str, text: str) -> str:
+    """Emit a canonical speaker colloquy line: \\t\\t\\t<LABEL>:  <text>."""
+    normalized_label = _normalize_label_honorifics(label.strip())
+    body = _normalize_body_text(text)
+    return f"\t\t\t{normalized_label}:  {body}"
+
+
+def _emit_canonical_speaker_label_only(label: str) -> str:
+    """Emit a canonical label-only speaker line: \\t\\t\\t<LABEL>:."""
+    return f"\t\t\t{_normalize_label_honorifics(label.strip())}:"
+
+
+def _emit_canonical_parenthetical(content: str) -> str:
+    """Emit a canonical parenthetical line: \\t\\t\\t\\t(<content>)."""
+    inner = content.strip()
+    if not inner.endswith("."):
+        inner += "."
+    return f"\t\t\t\t({inner})"
+
+
 def _postprocess_formatted_text(formatted_text: str) -> str:
+    """
+    Normalize AI-cleaned transcript text to the canonical UFM / Miah Bardot
+    output contract.
+
+    Canonical output:
+      Q/A:           \\tQ.\\t{text}    /    \\tA.\\t{text}
+      Speaker:       \\t\\t\\t{LABEL}:  {text}   (two spaces after colon)
+      Parenthetical: \\t\\t\\t\\t({text}.)        (four leading tabs)
+      Honorifics:    MR.  / MS.  / DR.  (two spaces after period)
+
+    The function accepts both canonical input (already conforming) and the
+    legacy intermediate shape ("Q.\\t…", "LABEL:\\t…") and converts every
+    output line to canonical regardless of input shape.
+    """
     lines: list[str] = []
     for raw_line in (formatted_text or "").splitlines():
         line = raw_line.rstrip()
@@ -309,55 +372,110 @@ def _postprocess_formatted_text(formatted_text: str) -> str:
             lines.append("")
             continue
 
+        # ── Dunnell mis-attribution rescue ──
+        # VIDEOGRAPHER block saying "Billy Dunnell here on behalf of..." is
+        # relabeled to MR.  DUNNELL with canonical 3-tab prefix and double
+        # space inside the honorific label.
         dunnell_match = _DUNNELL_RE.match(line)
         if dunnell_match:
             lines.append(
-                f"MR. DUNNELL:\t{_normalize_body_text(dunnell_match.group('text'))}"
+                _emit_canonical_speaker("MR.  DUNNELL", dunnell_match.group("text"))
             )
             continue
 
-        if line.startswith("COURT REPORTER:\t") or line.startswith("THE COURT REPORTER:\t"):
-            prefix = "COURT REPORTER:\t" if line.startswith("COURT REPORTER:\t") else "THE COURT REPORTER:\t"
+        # ── Strip leading tabs for prefix-based matching ──
+        # Both canonical (3 leading tabs) and legacy (0 leading tabs) input
+        # share the same content after the leading whitespace is stripped.
+        stripped = line.lstrip("\t")
+
+        # ── REPORTER label normalization ──
+        # Variants: "COURT REPORTER:", "THE COURT REPORTER:", "THE REPORTER:"
+        # all collapse to canonical "THE REPORTER:".
+        matched_reporter = False
+        for prefix in (
+                "THE COURT REPORTER:",
+                "COURT REPORTER:",
+                "THE REPORTER:",
+        ):
+            if stripped.startswith(prefix):
+                remainder = stripped[len(prefix):]
+                body = remainder.lstrip(" \t")
+                if not body:
+                    lines.append(_emit_canonical_speaker_label_only("THE REPORTER"))
+                else:
+                    lines.append(_emit_canonical_speaker("THE REPORTER", body))
+                matched_reporter = True
+                break
+        if matched_reporter:
+            continue
+
+        # ── VIDEOGRAPHER label normalization ──
+        matched_videographer = False
+        for prefix in (
+                "THE VIDEOGRAPHER:",
+                "VIDEOGRAPHER:",
+        ):
+            if stripped.startswith(prefix):
+                remainder = stripped[len(prefix):]
+                body = remainder.lstrip(" \t")
+                if not body:
+                    lines.append(
+                        _emit_canonical_speaker_label_only("THE VIDEOGRAPHER")
+                    )
+                else:
+                    lines.append(
+                        _emit_canonical_speaker("THE VIDEOGRAPHER", body)
+                    )
+                matched_videographer = True
+                break
+        if matched_videographer:
+            continue
+
+        # ── Q/A lines ──
+        if stripped.startswith("Q.\t"):
+            lines.append(_emit_canonical_qa("Q", stripped[3:]))
+            continue
+        if stripped.startswith("A.\t"):
+            lines.append(_emit_canonical_qa("A", stripped[3:]))
+            continue
+
+        # ── Parenthetical lines ──
+        paren_match = _PAREN_LINE_RE.match(line)
+        if paren_match:
             lines.append(
-                "THE REPORTER:\t"
-                + _normalize_body_text(line[len(prefix) :])
+                _emit_canonical_parenthetical(paren_match.group("content"))
             )
             continue
 
-        if line.startswith("VIDEOGRAPHER:\t") or line.startswith("THE VIDEOGRAPHER:\t"):
-            prefix = "VIDEOGRAPHER:\t" if line.startswith("VIDEOGRAPHER:\t") else "THE VIDEOGRAPHER:\t"
-            lines.append(
-                "THE VIDEOGRAPHER:\t"
-                + _normalize_body_text(line[len(prefix) :])
-            )
-            continue
-
-        if line in {"COURT REPORTER:", "THE COURT REPORTER:"}:
-            lines.append("THE REPORTER:")
-            continue
-
-        if line in {"VIDEOGRAPHER:", "THE VIDEOGRAPHER:"}:
-            lines.append("THE VIDEOGRAPHER:")
-            continue
-
-        if line.startswith("Q.\t"):
-            lines.append("Q.\t" + _normalize_body_text(line[3:]))
-            continue
-
-        if line.startswith("A.\t"):
-            lines.append("A.\t" + _normalize_body_text(line[3:]))
-            continue
-
+        # ── Generic ALL-CAPS speaker label ──
         label_match = _LABEL_LINE_RE.match(line)
         if label_match:
-            label = label_match.group("label").strip()
-            text  = _normalize_body_text(label_match.group("text"))
-            lines.append(f"{label}:\t{text}")
+            label = label_match.group("label")
+            text = label_match.group("text")
+            lines.append(_emit_canonical_speaker(label, text))
             continue
 
+        # ── BY-line (flush left, no text after colon) ──
+        # e.g. "BY MR. GARZA:" — preserve as-is per Part 10 of prompt.
+        if stripped.startswith("BY ") and stripped.endswith(":"):
+            lines.append(stripped)
+            continue
+
+        # ── EXAMINATION headers (ALL CAPS, no punctuation) ──
+        if stripped in {"EXAMINATION", "FURTHER EXAMINATION"}:
+            lines.append(stripped)
+            continue
+
+        # ── Fallback: body-text normalization only ──
         lines.append(_normalize_body_text(line))
 
-    return "\n".join(lines).strip()
+    # Trim leading/trailing blank lines but preserve per-line leading tabs
+    # (canonical Q/A and speaker lines start with \t / \t\t\t prefixes).
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
 
 # ── API client helpers ────────────────────────────────────────────────────────
@@ -375,14 +493,14 @@ def _build_client(client: Any | None = None) -> Any:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def format_transcript(
-    raw_text: str,
-    case_meta: dict[str, Any],
-    *,
-    client: Any | None = None,
-    model: str | None = None,
-    max_chunk_chars: int = CHUNK_CHAR_LIMIT,
-    deepgram_words: list[dict[str, Any]] | None = None,
-    low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
+        raw_text: str,
+        case_meta: dict[str, Any],
+        *,
+        client: Any | None = None,
+        model: str | None = None,
+        max_chunk_chars: int = CHUNK_CHAR_LIMIT,
+        deepgram_words: list[dict[str, Any]] | None = None,
+        low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> str:
     """Backward-compatible wrapper — returns formatted text only."""
     formatted_text, _ = format_transcript_with_status(
@@ -398,14 +516,14 @@ def format_transcript(
 
 
 def format_transcript_with_status(
-    raw_text: str,
-    case_meta: dict[str, Any],
-    *,
-    client: Any | None = None,
-    model: str | None = None,
-    max_chunk_chars: int = CHUNK_CHAR_LIMIT,
-    deepgram_words: list[dict[str, Any]] | None = None,
-    low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
+        raw_text: str,
+        case_meta: dict[str, Any],
+        *,
+        client: Any | None = None,
+        model: str | None = None,
+        max_chunk_chars: int = CHUNK_CHAR_LIMIT,
+        deepgram_words: list[dict[str, Any]] | None = None,
+        low_confidence_threshold: float = LOW_CONFIDENCE_THRESHOLD,
 ) -> tuple[str, dict[str, Any]]:
     """Format a raw Deepgram transcript into canonical Miah Bardot / UFM output.
 
@@ -417,10 +535,9 @@ def format_transcript_with_status(
       Step C  Send each chunk to the AI with the system prompt and case
               metadata.  The AI normalises speaker labels, Q./A. format,
               and verbatim fidelity per prompt.py.
-      Step D  Postprocess each AI response: relabel COURT REPORTER →
-              THE REPORTER, VIDEOGRAPHER (Dunnell) → MR.  DUNNELL,
-              ensure canonical Q./A. and label tab/spacing format, apply
-              sentence double-spacing, dash normalisation, etc.
+      Step D  Postprocess each AI response into canonical UFM output
+              (\\tQ.\\t…, \\t\\t\\tLABEL:  …, \\t\\t\\t\\t(parenthetical.)),
+              apply sentence double-spacing, dash normalisation, etc.
       Step E  Validate marker round-trip and utterance retention ratio.
       Step F  Join chunks and return.
     """
@@ -483,7 +600,7 @@ def format_transcript_with_status(
         "\n\n".join(part for part in rendered_chunks if part.strip()).rstrip()
     )
 
-    input_utterance_count  = _count_input_utterances(marked_text)
+    input_utterance_count = _count_input_utterances(marked_text)
     output_utterance_count = _count_output_utterances(final_text)
 
     if input_utterance_count > 0:
@@ -495,7 +612,7 @@ def format_transcript_with_status(
                 threshold=MIN_UTTERANCE_RETENTION_DOCUMENT,
             )
 
-    status["input_utterance_count"]  = input_utterance_count
+    status["input_utterance_count"] = input_utterance_count
     status["output_utterance_count"] = output_utterance_count
     status["utterance_retention_ratio"] = (
         output_utterance_count / input_utterance_count
@@ -519,8 +636,8 @@ def _extract_city(attorney: dict[str, Any]) -> str:
 def _attorneys_from_ufm(ufm_fields: dict[str, Any]) -> list[dict[str, str]]:
     attorneys: list[dict[str, str]] = []
     for role_key, role_name in (
-        ("plaintiff_counsel", "plaintiff"),
-        ("defense_counsel", "defendant"),
+            ("plaintiff_counsel", "plaintiff"),
+            ("defense_counsel", "defendant"),
     ):
         for entry in ufm_fields.get(role_key, []) or []:
             name = _normalize_whitespace(str(entry.get("name", "") or ""))
@@ -603,7 +720,7 @@ def load_case_meta(path: str | Path) -> dict[str, Any]:
 
 
 def load_deepgram_words_from_json(
-    path: str | Path,
+        path: str | Path,
 ) -> list[dict[str, Any]] | None:
     """Load the Deepgram word array from a raw_deepgram.json file.
 
