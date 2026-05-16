@@ -542,12 +542,12 @@ Reminder before producing output:
 - Do not invent. Do not improve. Do not paraphrase.
 - Q./A. format: [TAB]Q.[TAB]text  and  [TAB]A.[TAB]text
   (tab before Q./A., then Q./A., then another tab, then text)
-- Speaker labels: [TAB][TAB][TAB]MS.  MALONEY:  text
-  (three tabs, ALL-CAPS honorific, two spaces after period, colon, two spaces)
+- Speaker labels: [TAB][TAB][TAB]MS. MALONEY:  text
+  (three tabs, ALL-CAPS honorific, one space after period, colon, two spaces)
 - THE REPORTER: — never THE COURT REPORTER:
 - Two spaces after every sentence-ending period before a capital letter.
 - No non-breaking spaces (\\xa0). Regular ASCII spaces only.
-- Objection format: [TAB][TAB][TAB]MR.  DUNNELL:  Objection.  Form.
+- Objection format: [TAB][TAB][TAB]MR. DUNNELL:  Objection.  Form.
   (two spaces between Objection. and the basis)
 - Parentheticals: [TAB][TAB][TAB][TAB](text.)
 - One blank line between every block.
