@@ -1,58 +1,44 @@
-"""UFM RULES (Uniform Format Manual)
+"""Deterministic UFM-format enforcement helpers."""
+from __future__ import annotations
 
-This module defines deterministic formatting and structural rules
-derived from the Uniform Format Manual (UFM) for Texas Reporters' Records.
+from spec_engine.regex_patterns import CANONICAL_QA_RE, QA_PREFIX_RE
 
-IMPORTANT:
-- These rules are NOT dynamically loaded from PDFs
-- They are explicitly encoded for deterministic, testable behavior
-- They are applied across the pipeline in different stages:
 
-PIPELINE USAGE:
-- classifier.py detects Q/A (LOOSE detection)
-- qa_fixer.py enforces Q/A sequence rules
-- emitter.py enforces FINAL strict formatting
+_LOOSE_Q_RE = ("q", "q.", "q:")
+_LOOSE_A_RE = ("a", "a.", "a:")
 
-Source Reference:
-- UFM Section 2.7 (Questions and Answers)
-- UFM Section 2.102.11 (Tab settings)
-- UFM Section 3.22 (Identification of Speakers)
-"""
 
-UFM_RULES = {
-    "qa_format": "\tQ.\t{text}",
-    "answer_format": "\tA.\t{text}",
-    "tab_stops": [0.5, 1.0, 1.5],
-    "speaker_label_format": "LEFT_ALIGNED",
-    "speaker_label_uppercase": True,
-    "verbatim_required": True,
-    "filler_words_preserved": True,
-    "require_qa_sequence": True,
-    "no_orphan_answers": True,
-    "no_nested_qa": True,
-}
+def is_qa_formatted(line: str) -> bool:
+    """Return True when line uses canonical UFM Q/A tab format."""
+    return bool(CANONICAL_QA_RE.match(line or ""))
 
 
 def is_question_loose(line: str) -> bool:
-    """Detect question lines in intermediate pipeline stages."""
-    return line.lstrip().startswith("Q.")
+    """Detect loose question prefixes without mutating text."""
+    text = (line or "").lstrip()
+    lowered = text.lower()
+    return any(lowered.startswith(prefix + " ") or lowered == prefix for prefix in _LOOSE_Q_RE)
 
 
 def is_answer_loose(line: str) -> bool:
-    """Detect answer lines in intermediate pipeline stages."""
-    return line.lstrip().startswith("A.")
+    """Detect loose answer prefixes without mutating text."""
+    text = (line or "").lstrip()
+    lowered = text.lower()
+    return any(lowered.startswith(prefix + " ") or lowered == prefix for prefix in _LOOSE_A_RE)
 
 
-def is_valid_question(line: str) -> bool:
-    """Strict UFM-compliant question format."""
-    return line.startswith("\tQ.\t")
+def normalize_qa_line(line: str) -> str:
+    """Normalize malformed Q/A prefix to canonical tabbed form.
+
+    Preserves body text verbatim except leading/trailing outer whitespace.
+    """
+    match = QA_PREFIX_RE.match(line or "")
+    if not match:
+        return line
+    side, body = match.group(1).upper(), (match.group(2) or "").strip()
+    return f"\t{side}.\t{body}"
 
 
-def is_valid_answer(line: str) -> bool:
-    """Strict UFM-compliant answer format."""
-    return line.startswith("\tA.\t")
-
-
-def has_valid_qa_format(line: str) -> bool:
-    """Check if line is valid Q/A in final format."""
-    return is_valid_question(line) or is_valid_answer(line)
+def enforce_qa_tabs(line: str) -> str:
+    """Enforce canonical tabs for already-prefixed Q/A lines."""
+    return normalize_qa_line(line)
