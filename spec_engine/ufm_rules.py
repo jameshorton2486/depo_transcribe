@@ -15,14 +15,20 @@ def is_qa_formatted(line: str) -> bool:
 
 def is_question_loose(line: str) -> bool:
     """Detect loose question prefixes without mutating text."""
-    text = (line or "").lstrip()
+    raw = line or ""
+    if raw.startswith("\tQ.\t"):
+        return True
+    text = raw.lstrip()
     lowered = text.lower()
     return any(lowered.startswith(prefix + " ") or lowered == prefix for prefix in _LOOSE_Q_RE)
 
 
 def is_answer_loose(line: str) -> bool:
     """Detect loose answer prefixes without mutating text."""
-    text = (line or "").lstrip()
+    raw = line or ""
+    if raw.startswith("\tA.\t"):
+        return True
+    text = raw.lstrip()
     lowered = text.lower()
     return any(lowered.startswith(prefix + " ") or lowered == prefix for prefix in _LOOSE_A_RE)
 

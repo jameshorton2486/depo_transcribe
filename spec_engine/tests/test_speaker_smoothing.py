@@ -4,6 +4,8 @@ from spec_engine.speaker_mapper import (
     ROLE_WITNESS,
     detect_speaker_role,
     enforce_role_consistency,
+    normalize_directive_text,
+    normalize_speaker_label,
     smooth_speaker_sequence,
 )
 
@@ -50,3 +52,11 @@ def test_enforce_role_consistency_carries_forward_last_known_role():
     roles = enforce_role_consistency(blocks)
 
     assert roles == [ROLE_ATTORNEY, ROLE_ATTORNEY]
+
+
+def test_normalize_speaker_label_collapses_colons_and_spaces():
+    assert normalize_speaker_label("  mr smith::  ") == "MR SMITH:"
+
+
+def test_normalize_directive_text_keeps_identity():
+    assert normalize_directive_text("by mr. smith::") == "BY MR. SMITH:"
