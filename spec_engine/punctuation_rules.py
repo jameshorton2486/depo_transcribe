@@ -51,7 +51,7 @@ def normalize_quote_spacing(text: str) -> str:
 def normalize_whitespace(text: str) -> str:
     """Normalize trailing spaces, tab runs, and excessive blank lines."""
     value = text or ""
-    lines = [re.sub(r"[ ]+$", "", line).replace("\t\t", "\t") for line in value.splitlines()]
+    lines = [re.sub(r"[ ]+$", "", re.sub(r"\t+", "\t", line)) for line in value.splitlines()]
     return _MULTIBLANK_RE.sub("\n\n", "\n".join(lines)).strip("\n")
 
 
