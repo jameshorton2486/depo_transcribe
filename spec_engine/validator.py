@@ -25,7 +25,7 @@ def validate_transcript_lines(lines: list[str]) -> list[ValidationIssue]:
     for idx, line in enumerate(lines, start=1):
         stripped = (line or "").rstrip("\n")
 
-        if stripped.lstrip().startswith(("Q", "A")) and not CANONICAL_QA_RE.match(stripped):
+        if QA_PREFIX_RE.match(stripped) and not CANONICAL_QA_RE.match(stripped):
             issues.append(ValidationIssue(idx, "MALFORMED_QA", "Line looks like Q/A but is not canonical tab format", stripped))
 
         if stripped.strip().endswith(":") and (
