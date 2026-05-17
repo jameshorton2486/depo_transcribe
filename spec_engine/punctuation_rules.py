@@ -21,7 +21,7 @@ _MULTIBLANK_RE = re.compile(r"\n{3,}")
 def normalize_punctuation_spacing(text: str) -> str:
     """Apply safe punctuation spacing normalization without semantic edits."""
     value = text or ""
-    value = value.replace("...", "<ELLIPSIS>")
+    value = value.replace("...", "\u0000")
     value = SPACE_BEFORE_PUNCT_RE.sub(r"\1", value)
     value = DUP_PUNCT_RE.sub(r"\1", value)
     value = _SPACE_AFTER_PUNCT_RE.sub(r"\1 ", value)
