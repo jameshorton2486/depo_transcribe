@@ -78,7 +78,7 @@ def _fix_small_numbers(text: str) -> str:
         num = match.group(1)
         start = match.start(1)
         prefix = text[max(0, start - 12):start].lower()
-        if any(token in prefix for token in skip_tokens):
+        if any(re.search(rf"\b{token}\b", prefix) for token in skip_tokens):
             return num
         return _NUMBER_WORDS_SENTENCE.get(num, num)
 
