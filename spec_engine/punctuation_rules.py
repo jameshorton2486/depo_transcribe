@@ -9,7 +9,6 @@ from spec_engine.regex_patterns import (
     ELLIPSIS_VARIANTS_RE,
     MULTISPACE_RE,
     SPACE_BEFORE_PUNCT_RE,
-    TRAILING_SPACE_RE,
 )
 
 
@@ -44,14 +43,13 @@ def normalize_dashes(text: str) -> str:
 def normalize_quote_spacing(text: str) -> str:
     """Normalize spaces inside paired quotes without changing words."""
     value = text or ""
-    value = _QUOTED_INNER_SPACE_RE.sub(lambda m: f'"{m.group(1)}"', value)
-    return value
+    return _QUOTED_INNER_SPACE_RE.sub(lambda m: f'"{m.group(1)}"', value)
 
 
 def normalize_whitespace(text: str) -> str:
     """Normalize trailing spaces, tab runs, and excessive blank lines."""
     value = text or ""
-    lines = [re.sub(r"[ ]+$", "", line).replace("\t\t", "\t") for line in value.splitlines()]
+    lines = [line.rstrip(" ").replace("\t\t", "\t") for line in value.splitlines()]
     return _MULTIBLANK_RE.sub("\n\n", "\n".join(lines)).strip("\n")
 
 
