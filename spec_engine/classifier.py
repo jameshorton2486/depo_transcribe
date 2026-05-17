@@ -27,7 +27,7 @@ def _is_colloquy_speaker(speaker: str) -> bool:
 
 
 def _classify_type(speaker: str, text: str) -> str:
-    stripped = str(text or "").strip()
+    stripped = str(text or "").strip(" \r\n")
     if stripped.startswith("\tQ.\t") or is_question_loose(stripped):
         return "question"
     if stripped.startswith("\tA.\t") or is_answer_loose(stripped):

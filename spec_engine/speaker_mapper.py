@@ -29,6 +29,7 @@ def _propagate_speaker_to_words(
     return [dataclasses.replace(w, speaker=new_speaker) for w in words]
 
 _TRAILING_PUNCT_RE = re.compile(r"[:.;,\s]+$")
+_COLON_RUN_RE = re.compile(r":{2,}")
 _MULTISPACE_RE = re.compile(r"\s+")
 ROLE_ATTORNEY = "ATTORNEY"
 ROLE_WITNESS = "WITNESS"
@@ -38,8 +39,9 @@ ROLE_UNKNOWN = "UNKNOWN"
 
 
 def normalize_speaker_label(label: str) -> str:
-    """Uppercase speaker labels and normalize trailing punctuation to a colon."""
+    """Uppercase speaker labels and normalize trailing punctuation to one colon."""
     cleaned = _MULTISPACE_RE.sub(" ", str(label or "").strip())
+    cleaned = _COLON_RUN_RE.sub(":", cleaned)
     cleaned = _TRAILING_PUNCT_RE.sub("", cleaned).upper()
     if not cleaned:
         return "UNKNOWN:"
