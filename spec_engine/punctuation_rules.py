@@ -26,7 +26,7 @@ def normalize_punctuation_spacing(text: str) -> str:
     value = DUP_PUNCT_RE.sub(r"\1", value)
     value = _SPACE_AFTER_PUNCT_RE.sub(r"\1 ", value)
     value = MULTISPACE_RE.sub(" ", value)
-    return value.replace("<ELLIPSIS>", "...").strip()
+    return value.replace("\u0000", "...").strip()
 
 
 def normalize_ellipsis(text: str) -> str:
