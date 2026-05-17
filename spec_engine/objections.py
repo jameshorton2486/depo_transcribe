@@ -24,7 +24,7 @@ def normalize_objection_line(text: str) -> str:
     tail = _MULTI_SPACE_RE.sub(" ", tail).strip(" .,:;")
     if not tail:
         return "Objection."
-    return f"Objection, {tail.lower()}."
+    return f"Objection, {tail}."
 
 
 def normalize_parenthetical_line(text: str) -> str:
