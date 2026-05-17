@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from .models import TranscriptBlock
+from .objections import looks_like_parenthetical, normalize_objection_line, normalize_parenthetical_line
 
 _QUESTION_STARTERS = (
     "who",
@@ -36,6 +37,17 @@ _SMALL_NUMBER_WORDS = {
     "9": "Nine",
     "10": "Ten",
 }
+_NUMBER_WORDS_SENTENCE = {
+    "1": "one",
+    "2": "two",
+    "3": "three",
+    "4": "four",
+    "5": "five",
+    "6": "six",
+    "7": "seven",
+    "8": "eight",
+    "9": "nine",
+}
 LEGAL_TERMS = {"objection", "form", "foundation", "privilege"}
 
 
@@ -53,6 +65,24 @@ def _fix_sentence_start(text: str) -> str:
         text = f"{_SMALL_NUMBER_WORDS[match.group(1)]}{match.group(2)}"
 
     return text[0].upper() + text[1:] if text else text
+
+
+def _fix_small_numbers(text: str) -> str:
+    """Spell out isolated numbers 1-9 when safe.
+
+    Preserves cause numbers, dates, exhibit references, and alphanumeric IDs.
+    """
+    skip_tokens = ("exhibit", "cause", "page", "line", "section")
+
+    def repl(match: re.Match[str]) -> str:
+        num = match.group(1)
+        start = match.start(1)
+        prefix = text[max(0, start - 12):start].lower()
+        if any(token in prefix for token in skip_tokens):
+            return num
+        return _NUMBER_WORDS_SENTENCE.get(num, num)
+
+    return re.sub(r"\b([1-9])\b", repl, text)
 
 
 def _fix_stutters(text: str) -> str:
@@ -225,6 +255,7 @@ def apply_morsons_rules(text: str) -> str:
     text = _fix_spacing(text)
     text = _normalize_em_dashes(text)
     text = _fix_sentence_start(text)
+    text = _fix_small_numbers(text)
     text = _fix_ellipses(text)
     text = _fix_stutters(text)
     text = _fix_short_answer_commas(text)
@@ -242,12 +273,16 @@ def apply_corrections(
     corrections = _build_corrections_map(confirmed_spellings, keyterms)
     corrected: list[TranscriptBlock] = []
     for block in blocks:
+        corrected_text = apply_proper_noun_corrections(block.text, corrections)
+        corrected_text = apply_morsons_rules(corrected_text)
+        if str(corrected_text).strip().lower().startswith("objection"):
+            corrected_text = normalize_objection_line(corrected_text)
+        if looks_like_parenthetical(corrected_text):
+            corrected_text = normalize_parenthetical_line(corrected_text)
         corrected.append(
             TranscriptBlock(
                 speaker=str(block.speaker or "").strip(),
-                text=apply_morsons_rules(
-                    apply_proper_noun_corrections(block.text, corrections)
-                ),
+                text=corrected_text,
                 type=block.type,
                 source_type=block.source_type,
                 examiner=block.examiner,
