@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from spec_engine.regex_patterns import CANONICAL_QA_RE, SPEAKER_LABEL_RE
+from spec_engine.regex_patterns import CANONICAL_QA_RE, QA_PREFIX_RE, SPEAKER_LABEL_RE
 
 _INVALID_ELLIPSIS_RE = re.compile(r"\.\s+\.\s+\.")
 _INVALID_DASH_RE = re.compile(r"(?<!\s)--|--(?!\s)")
