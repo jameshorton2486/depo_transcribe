@@ -13,7 +13,7 @@ from spec_engine.regex_patterns import (
 )
 
 
-_SPACE_AFTER_PUNCT_RE = re.compile(r"([,;:.!?])(?![\s\n\t\"')\]])")
+_SPACE_AFTER_PUNCT_RE = re.compile(r"([,;:.!?])(?![0-9\s\n\t\"')\]])")
 _QUOTED_INNER_SPACE_RE = re.compile(r'"\s*([^"\n]*?)\s*"')
 _MULTIBLANK_RE = re.compile(r"\n{3,}")
 
